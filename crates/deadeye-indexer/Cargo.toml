@@ -1,0 +1,32 @@
+[package]
+name = "deadeye-indexer"
+description = "Typed HTTP client for the Deadeye Sepolia / mainnet indexer."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["client"]
+# `client` pulls in reqwest. Disable for `no_std` consumers that just need
+# the DTOs.
+client = ["dep:reqwest", "dep:url"]
+
+[dependencies]
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
+reqwest = { workspace = true, optional = true, default-features = false, features = ["json", "rustls-tls"] }
+url = { workspace = true, optional = true, features = ["std"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }

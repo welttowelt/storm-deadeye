@@ -1,0 +1,37 @@
+{
+  "network": "mainnet",
+  "timestamp": "2026-05-05T15:38:06.620Z",
+  "contractsVersion": "0.12.0",
+  "deployer": "0x77b277249a962ad47b04cc60bda09625c1258bbcc3dbab613d23a68833d8f0",
+  "classHashes": {
+    "normalAmmClassHash": "0x4cc3a9257fc059f74805f3c874d0da2f5569d6ea156000dba654bdd54af812a",
+    "normalMathRuntimeClassHash": "0x46d492bbef6f8034b1647a95a96580555742fd4655e766dee04e442a778a753",
+    "normalFactoryPluginClassHash": "0x71992eaee641a397fd942c7e8a79ed8d6f072b42ef76d4ad0477cde71f03aab",
+    "lognormalAmmClassHash": "0x1cd512f570e333aef74f019313d317efb0a749117e3049a2bdfac2546c937af",
+    "lognormalMathRuntimeClassHash": "0x31239619293d85ba74eb616a6b63db6e1409a8f444f2b1c79129a6d8a65e8e6",
+    "lognormalFactoryPluginClassHash": "0x64905a0699573e8e7d4b86a9d656669eaae5312eca161a43f06e1b712dccb0c",
+    "bivariateAmmClassHash": "0x2682c7a7205cee5c4dc44ecfeb9514c57df78dd969e72c7c1a6a915b33b5e3f",
+    "bivariateMathRuntimeClassHash": "0x569dad379af349c3d677483ad38fb02ba90f2206082cc3e8d24d82add2924b4",
+    "bivariateFactoryPluginClassHash": "0x5a62b44ed13aa57afdab3ff6c7228818d6634d5c91f65e3194e537d93da6ee3",
+    "multinoulliAmmClassHash": "0x4c28cb43f3f5ea797efabc4d4d981939540f6961c265e5b6b4ae1b600c68988",
+    "multinoulliMathRuntimeClassHash": "0x55a9154ab0c75739e769d69b6d350fa94b2bbbc4a03b9dcaeef1a1f820f7ba1",
+    "multinoulliFactoryPluginClassHash": "0x4da73c1d5207bc1ce315e5523f1c2aa2a694ed31e3c92a2d90f113df5681941",
+    "distributionFactoryClassHash": "0x70efd1636551376c3cc4bbc5b31e1ce718aec79ed69cbdfbd8263d8adbaccce",
+    "oracleClassHash": "0x37ac74eabc5b86a4ddd831bc942337a2f74a8281d935130d60a3c6ac01e64bd",
+    "restrictedCollateralTokenClassHash": "0x1a6a57394408d5aa4fc2b32bf68cdd35084d5ebdf6668a7f9fc0e6192bbdf28"
+  },
+  "factoryAddress": "0x0224716CC051F21fe7a7e7e0e4a74B13fd09c21b5F31A860861688aC40828dDE",
+  "oracleAddress": "0x02Ab8a8Aa9Dc38438cBA968D07b4212E29C47783C7758FcE906307e2051fE096",
+  "multinoulliPluginAddress": "0x03c6Ee2195bA583b79E4F287B253c8C6A324b1ec44bAB4E16ddcF5ab52e5a5CD",
+  "normalPluginAddress": "0x021DC0b38C1BE22a43caDfF9933649e2DBa84E2010fb22Ca1eC7071D6678eb75",
+  "lognormalPluginAddress": "0x00945672F932A447f2651E36E54d022B626386d0B89A19805a4AE330D8C966c9",
+  "bivariatePluginAddress": "0x0172fCA48454548E69B899D16a9737ddaC8a7eA5D0Bba9eE830bb43e8AE63aBE",
+  "insuranceAddress": "0x0",
+  "markets": [],
+  "extensions": [],
+  "collateralToken": {
+    "address": "0x01d77ce77f1d86035c5e27444da7d2fc77de1d384326074f60f973fa0dd80aff",
+    "symbol": "XP",
+    "decimals": 18
+  }
+}

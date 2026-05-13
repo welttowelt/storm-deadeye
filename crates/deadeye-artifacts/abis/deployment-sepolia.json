@@ -1,0 +1,46 @@
+{
+  "network": "sepolia",
+  "timestamp": "2026-02-07T17:52:00.964Z",
+  "deployer": "0x0217ceefcdecee789b95122c1ca8eececa4d1b19e8421c6670316d3446759e46",
+  "classHashes": {
+    "normalAmmClassHash": "0x2c902606a30e9e5c9e0ae1b9cc93718b8666236a15b97a1609f5bd16f4356ff",
+    "normalMathRuntimeClassHash": "0x25f8a928215172c6ef6d1dae5056d257ce6b986e800ca2f67571505c9e6592",
+    "normalFactoryPluginClassHash": "0x1cae846e733f533a0505062761507c40c3a80cf0d421b0ebd1ad3319add2ae2",
+    "lognormalAmmClassHash": "0x6c361c2a2a0fc23890477774b6432a1403d031d44c5106654054246cd16279c",
+    "lognormalMathRuntimeClassHash": "0x2ff1465ccac2770dcdc5c1b3cb1678470891b71e1ef13ac1902a206cd0cd244",
+    "lognormalFactoryPluginClassHash": "0x63ce3b9d46f69944088eda508fcc02d580ec8d04db5bb6e6a734001e0c40664",
+    "bivariateAmmClassHash": "0x39b00ee7ca8e9d07c72acc2403dfb9f199b43b315557ae3a6cf121e989552eb",
+    "bivariateMathRuntimeClassHash": "0x0b0affa4d0be9e3cda9c5b05f955ff0740c56e81b2e7c7509ede0b63190637f",
+    "bivariateFactoryPluginClassHash": "0x31f974ecf0daf42709f701351ad5ad1daa31b0573f87c609ebe74803d7b467d",
+    "multinoulliAmmClassHash": "0x49e1ff5df90fbb8234837b4382822f6ac35edad479b235446799f40cbf9a9cf",
+    "multinoulliMathRuntimeClassHash": "0x61ad50e4073b244a88c99d0c72a2cd76846a6690418f5b7ff798d180cf8426e",
+    "multinoulliFactoryPluginClassHash": "0x4b040cf76ed2e01c470e6a2021c04f66ed92be8c4e8b04ae32a2b50996f4fc",
+    "distributionFactoryClassHash": "0x5645f5d6b3e0d51f1d18084e1cde9466d0087aab35da829c5220424681b4e93",
+    "oracleClassHash": "0x37ac74eabc5b86a4ddd831bc942337a2f74a8281d935130d60a3c6ac01e64bd",
+    "insuranceClassHash": "0x385363a3a5983806b3c02cabd4506bd9b1d76efdecd5fc2d9596489aaa7a911"
+  },
+  "factoryAddress": "0x024127708aBca7086b5F1237C8Bb2e8887caB270A5E8F4c9f1DBf724A977C32B",
+  "oracleAddress": "0x038099E54333E5469DF45771061586BD1bb3AC386e198dF1469799d026F5f1E0",
+  "multinoulliPluginAddress": "0x042290B8E06D7022B00dB48e723BFEC7a67a3a25761Fa7C4dd7c8f1b82124D2C",
+  "normalPluginAddress": "0x05196d13c800415fBc4a1bC8E7Ba374F7b2369F31Cc73C7ED5Cc16DC02Ef5437",
+  "lognormalPluginAddress": "0x07A83A4f7748B29fec63B6937646340Ca9E14d0a2461a529e636BbD854773Dc9",
+  "bivariatePluginAddress": "0x04F2dC5D7D9dD3b6E2812D08Ed4ba4528aFe720FD87d5776ccDA91bc6e554eea",
+  "markets": [
+    {
+      "address": "0x07ce26aa1b706c9114d2c833290ce3e1ba0489eee2d0cff9dedec1ed60d35b2d",
+      "title": "Will the US confirm that aliens exist before 2027?",
+      "tags": ["Politics", "Science"],
+      "type": "velocitas",
+      "index": 0,
+      "config": {
+        "instrumentId": 1,
+        "gatewayUrl": "/velocitas-api"
+      }
+    }
+  ],
+  "collateralToken": {
+    "address": "0x4583395a85181cd495b8563d277bdadfbca15fc65d2945db6c5c11f7d0e786e",
+    "symbol": "SPICE",
+    "decimals": 18
+  }
+}

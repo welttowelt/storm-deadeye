@@ -1,0 +1,28 @@
+[package]
+name = "deadeye-core"
+description = "Core types, signed Q128.128 fixed-point math, and distribution primitives for the Deadeye prediction-market SDK."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["std"]
+std = ["thiserror/std", "ruint/std"]
+
+[dependencies]
+ruint = { workspace = true, features = ["alloc"] }
+thiserror = { workspace = true }
+
+[dev-dependencies]
+proptest = { workspace = true, features = ["std"] }
+rstest = { workspace = true }

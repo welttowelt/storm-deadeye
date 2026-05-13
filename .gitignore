@@ -1,0 +1,29 @@
+/target
+**/*.rs.bk
+*.profraw
+Cargo.lock.bak
+
+# Editor
+.idea/
+.vscode/
+*.swp
+*.swo
+.DS_Store
+
+# Coverage
+/coverage
+/lcov.info
+/tarpaulin-report.html
+
+# Local env
+.env
+.env.local
+
+# Test / dev scratch
+*.log
+/tmp/
+.deadeye/
+deadeye.toml.local
+
+# OS
+Thumbs.db

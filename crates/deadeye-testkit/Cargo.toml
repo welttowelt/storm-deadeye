@@ -1,0 +1,33 @@
+[package]
+name = "deadeye-testkit"
+description = "Integration-test harness for Deadeye: devnet lifecycle helpers, fixtures, and account/funding utilities."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[dependencies]
+deadeye-core = { workspace = true }
+deadeye-starknet = { workspace = true, features = ["provider", "account"] }
+starknet-accounts = { workspace = true }
+starknet-contract = { workspace = true }
+starknet-core = { workspace = true, features = ["std"] }
+starknet-providers = { workspace = true }
+starknet-signers = { workspace = true }
+reqwest = { workspace = true, default-features = false, features = ["json", "rustls-tls"] }
+serde = { workspace = true, features = ["derive", "std"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+tracing = { workspace = true, features = ["std"] }
+url = { workspace = true, features = ["std"] }

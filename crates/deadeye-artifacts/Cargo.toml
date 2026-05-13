@@ -1,0 +1,29 @@
+[package]
+name = "deadeye-artifacts"
+description = "Versioned Starknet contract ABIs and release manifest for the Deadeye prediction-market protocol."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["parsed"]
+# When `parsed` is enabled the crate exposes lazily-parsed `serde_json::Value`
+# views over each ABI; otherwise consumers get only the raw `&[u8]` blobs.
+parsed = ["dep:serde", "dep:serde_json"]
+
+[dependencies]
+serde = { workspace = true, features = ["derive"], optional = true }
+serde_json = { workspace = true, features = ["alloc"], optional = true }
+
+[dev-dependencies]
+serde_json = { workspace = true, features = ["alloc"] }

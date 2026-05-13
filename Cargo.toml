@@ -1,0 +1,221 @@
+[workspace]
+resolver = "3"
+members = [
+    "crates/deadeye-core",
+    "crates/deadeye-artifacts",
+    "crates/deadeye-collateral",
+    "crates/deadeye-starknet",
+    "crates/deadeye-sdk",
+    "crates/deadeye-testkit",
+    "crates/deadeye-indexer",
+    "crates/deadeye-deployer",
+    "crates/deadeye-optimizer",
+    "crates/deadeye-cli",
+    "crates/deadeye-e2e",
+    "xtask",
+]
+default-members = [
+    "crates/deadeye-core",
+    "crates/deadeye-artifacts",
+    "crates/deadeye-collateral",
+    "crates/deadeye-starknet",
+    "crates/deadeye-sdk",
+    "crates/deadeye-indexer",
+    "crates/deadeye-deployer",
+    "crates/deadeye-optimizer",
+    "crates/deadeye-cli",
+]
+
+[workspace.package]
+version = "0.1.0"
+edition = "2024"
+rust-version = "1.92"
+license = "MIT OR Apache-2.0"
+authors = ["Deadeye Contributors"]
+repository = "https://github.com/the-situation/deadeye-rs"
+homepage = "https://github.com/the-situation/deadeye-rs"
+readme = "README.md"
+keywords = ["starknet", "prediction-markets", "amm", "market-making", "sdk"]
+categories = ["api-bindings", "finance", "cryptography::cryptocurrencies"]
+
+[workspace.dependencies]
+# Internal
+deadeye-core = { path = "crates/deadeye-core", version = "0.1.0" }
+deadeye-artifacts = { path = "crates/deadeye-artifacts", version = "0.1.0" }
+deadeye-collateral = { path = "crates/deadeye-collateral", version = "0.1.0" }
+deadeye-starknet = { path = "crates/deadeye-starknet", version = "0.1.0", default-features = false }
+deadeye-sdk = { path = "crates/deadeye-sdk", version = "0.1.0" }
+deadeye-testkit = { path = "crates/deadeye-testkit", version = "0.1.0" }
+deadeye-indexer = { path = "crates/deadeye-indexer", version = "0.1.0" }
+deadeye-deployer = { path = "crates/deadeye-deployer", version = "0.1.0" }
+deadeye-optimizer = { path = "crates/deadeye-optimizer", version = "0.1.0" }
+
+# Starknet — software-mansion/starknet-rs
+starknet = { version = "0.17", default-features = false }
+starknet-core = { version = "0.16", default-features = false }
+starknet-providers = { version = "0.16", default-features = false }
+starknet-accounts = { version = "0.16", default-features = false }
+starknet-signers = { version = "0.14", default-features = false }
+starknet-crypto = { version = "0.8", default-features = false }
+starknet-contract = { version = "0.16", default-features = false }
+
+# Error handling — thiserror is the lone runtime "framework" dep we accept
+thiserror = { version = "2", default-features = false }
+
+# Numerics — fixed-width big integers, no_std-friendly
+ruint = { version = "1.13", default-features = false }
+
+# Async
+tokio = { version = "1.43", default-features = false }
+futures = { version = "0.3", default-features = false }
+async-trait = { version = "0.1", default-features = false }
+
+# Tracing
+tracing = { version = "0.1", default-features = false }
+tracing-subscriber = { version = "0.3", default-features = false }
+
+# Metrics — emit-only; the binary picks an exporter (Prometheus, OTLP, …).
+metrics = { version = "0.24", default-features = false }
+
+# Misc utilities
+rand = { version = "0.8", default-features = false }
+
+# Serde — only used by artifacts and CLI surfaces
+serde = { version = "1", default-features = false }
+serde_json = { version = "1", default-features = false }
+
+# HTTP for devnet utilities (testkit only)
+reqwest = { version = "0.12", default-features = false }
+url = { version = "2", default-features = false }
+
+# Hex / byte utilities
+hex = { version = "0.4", default-features = false }
+
+# Dev / test
+proptest = { version = "1.6", default-features = false }
+rstest = { version = "0.23", default-features = false }
+insta = { version = "1.42", default-features = false }
+tokio-test = { version = "0.4", default-features = false }
+anyhow = { version = "1", default-features = false }
+wiremock = { version = "0.6", default-features = false }
+tracing-test = { version = "0.2", default-features = false }
+serial_test = { version = "3", default-features = false }
+metrics-util = { version = "0.20", default-features = false }
+
+[workspace.lints.rust]
+unsafe_code = "forbid"
+missing_docs = "warn"
+missing_debug_implementations = "warn"
+missing_copy_implementations = "warn"
+nonstandard_style = { level = "deny", priority = -1 }
+rust_2018_idioms = { level = "deny", priority = -1 }
+unreachable_pub = "warn"
+unused_lifetimes = "warn"
+trivial_casts = "warn"
+elided_lifetimes_in_paths = "warn"
+
+[workspace.lints.clippy]
+# Tiers — pedantic + nursery are mandatory; `all` covers correctness/style
+# and `cargo` lints stay at warn so they surface in CI but don't gate dev.
+all = { level = "deny", priority = -2 }
+pedantic = { level = "deny", priority = -1 }
+nursery = { level = "deny", priority = -1 }
+cargo = { level = "warn", priority = -1 }
+
+# Curated `restriction` lints — handpicked for an MM-grade quality bar.
+allow_attributes_without_reason = "deny"
+assertions_on_result_states = "deny"
+big_endian_bytes = "deny"
+clone_on_ref_ptr = "deny"
+create_dir = "deny"
+dbg_macro = "deny"
+deref_by_slicing = "warn"
+disallowed_script_idents = "deny"
+empty_drop = "deny"
+empty_enum_variants_with_brackets = "deny"
+empty_structs_with_brackets = "deny"
+exit = "deny"
+filetype_is_file = "deny"
+float_cmp_const = "deny"
+fn_to_numeric_cast_any = "deny"
+format_push_string = "warn"
+get_unwrap = "deny"
+host_endian_bytes = "deny"
+infinite_loop = "deny"
+lossy_float_literal = "deny"
+mem_forget = "deny"
+missing_assert_message = "warn"
+mixed_read_write_in_expression = "deny"
+multiple_inherent_impl = "warn"
+mutex_atomic = "deny"
+panic = "warn"
+panic_in_result_fn = "deny"
+pathbuf_init_then_push = "deny"
+print_stderr = "warn"
+print_stdout = "warn"
+pub_without_shorthand = "deny"
+rc_buffer = "deny"
+rc_mutex = "deny"
+ref_patterns = "warn"
+rest_pat_in_fully_bound_structs = "deny"
+same_name_method = "deny"
+self_named_module_files = "deny"
+semicolon_inside_block = "warn"
+shadow_unrelated = "warn"
+str_to_string = "deny"
+string_add = "deny"
+string_slice = "deny"
+suspicious_xor_used_as_pow = "deny"
+tests_outside_test_module = "deny"
+todo = "warn"
+try_err = "deny"
+undocumented_unsafe_blocks = "deny"
+unimplemented = "warn"
+unnecessary_safety_comment = "deny"
+unnecessary_safety_doc = "deny"
+unnecessary_self_imports = "deny"
+unwrap_in_result = "deny"
+unwrap_used = "deny"
+verbose_file_reads = "warn"
+wildcard_enum_match_arm = "warn"
+
+# Pragmatic overrides — pedantic/nursery lints that fire too often on
+# idiomatic numeric / SDK code to be worth the noise.
+cast_possible_truncation = "allow"
+cast_precision_loss = "allow"
+cast_sign_loss = "allow"
+cast_lossless = "allow"
+cast_possible_wrap = "allow"
+missing_errors_doc = "allow"
+missing_panics_doc = "allow"
+must_use_candidate = "allow"
+module_name_repetitions = "allow"
+similar_names = "allow"
+too_many_lines = "allow"
+multiple_crate_versions = "allow"
+option_if_let_else = "allow"
+missing_const_for_fn = "allow"
+future_not_send = "allow"
+
+[profile.release]
+opt-level = 3
+lto = "thin"
+codegen-units = 1
+debug = "line-tables-only"
+panic = "abort"
+strip = "symbols"
+overflow-checks = true
+
+[profile.release-bench]
+inherits = "release"
+debug = true
+strip = "none"
+
+[profile.dev]
+opt-level = 0
+debug = true
+overflow-checks = true
+
+[profile.test]
+opt-level = 1
+overflow-checks = true

@@ -1,0 +1,28 @@
+[package]
+name = "deadeye-e2e"
+description = "End-to-end / integration tests for the Deadeye Rust SDK. Not published."
+version = "0.0.0"
+edition.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+[lib]
+path = "src/lib.rs"
+
+[dev-dependencies]
+deadeye-core = { workspace = true }
+deadeye-collateral = { workspace = true }
+deadeye-optimizer = { workspace = true }
+deadeye-sdk = { workspace = true }
+deadeye-starknet = { workspace = true, features = ["provider", "account"] }
+deadeye-testkit = { workspace = true }
+deadeye-indexer = { workspace = true }
+futures = { workspace = true, features = ["std"] }
+starknet-core = { workspace = true, features = ["std"] }
+starknet-accounts = { workspace = true }
+starknet-providers = { workspace = true }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+url = { workspace = true, features = ["std"] }
+tempfile = "3"

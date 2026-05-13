@@ -1,0 +1,62 @@
+[package]
+name = "deadeye-sdk"
+description = "High-level Rust SDK for trading on Deadeye prediction markets. Designed for market makers — low latency, small dependency surface, no hidden async."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = [
+    "normal-market",
+    "lognormal-market",
+    "multinoulli-market",
+    "bivariate-market",
+    "jsonrpc",
+    "account",
+]
+# Per-market feature gates so binaries can opt in only to the markets they
+# trade — keeps the dependency / compile-time footprint small.
+normal-market = []
+lognormal-market = []
+multinoulli-market = []
+bivariate-market = []
+# JSON-RPC transport pulled from `deadeye-starknet`. Disable for custom transports.
+jsonrpc = ["deadeye-starknet/provider"]
+# Pulls in the account/signer adapter from `deadeye-starknet`. Enabled by
+# default; disable for purely read-only consumers.
+account = ["deadeye-starknet/account"]
+
+[dependencies]
+deadeye-core = { workspace = true }
+deadeye-collateral = { workspace = true }
+deadeye-starknet = { workspace = true, default-features = false }
+deadeye-optimizer = { workspace = true }
+deadeye-indexer = { workspace = true, features = ["client"] }
+deadeye-artifacts = { workspace = true }
+starknet-core = { workspace = true, features = ["std"] }
+starknet-providers = { workspace = true }
+starknet-accounts = { workspace = true }
+starknet-signers = { workspace = true }
+async-trait = { workspace = true }
+futures = { workspace = true, features = ["std", "alloc"] }
+serde = { workspace = true, features = ["std", "derive"] }
+serde_json = { workspace = true, features = ["std"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "time", "macros"] }
+tracing = { workspace = true, features = ["std", "attributes"] }
+url = { workspace = true, features = ["std"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }
+deadeye-optimizer = { workspace = true }
+tempfile = "3"

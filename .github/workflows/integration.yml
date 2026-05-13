@@ -1,0 +1,51 @@
+name: Integration
+
+on:
+  workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1" # weekly, Monday 06:00 UTC
+
+env:
+  CARGO_TERM_COLOR: always
+  RUST_BACKTRACE: 1
+  DEADEYE_RUN_INTEGRATION: "1"
+
+jobs:
+  cartridge:
+    name: Cartridge Sepolia smoke
+    runs-on: ubuntu-latest
+    env:
+      DEADEYE_TEST_TARGET: cartridge
+      DEADEYE_TEST_NETWORK: sepolia
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p deadeye-e2e --no-fail-fast -- --nocapture
+
+  sepolia-indexer:
+    name: Sepolia indexer smoke (situation-indexer.fly.dev)
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p deadeye-e2e --test indexer_smoke -- --nocapture
+
+  devnet:
+    name: starknet-devnet smoke
+    runs-on: ubuntu-latest
+    services:
+      devnet:
+        image: shardlabs/starknet-devnet-rs:latest
+        ports:
+          - 5050:5050
+        options: >-
+          --health-cmd "curl --silent --fail http://localhost:5050/is_alive || exit 1"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    env:
+      DEADEYE_TEST_TARGET: devnet
+    steps:
+      - uses: actions/checkout@v4
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo test -p deadeye-e2e --no-fail-fast -- --nocapture

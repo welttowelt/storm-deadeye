@@ -1,0 +1,216 @@
+//! `deadeye lp …` — add / remove liquidity (Driver B).
+
+use anyhow::{Context as _, Result};
+use deadeye_core::Sq128;
+use deadeye_sdk::bulk::Family;
+use deadeye_starknet::{
+    BivariateMarketReader, BivariateMarketWriter, LognormalMarketReader, LognormalMarketWriter,
+    MultinoulliMarketReader, MultinoulliMarketWriter, NormalMarketReader, NormalMarketWriter,
+};
+
+use crate::{
+    cli::{LpAddArgs, LpCmd, LpRemoveArgs},
+    commands::{
+        render_helpers::{submission_from_receipt, submission_from_trade_error},
+        runtime_resolver::{build_owned_account, build_provider, family_label, parse_felt},
+    },
+    context::AppContext,
+    output::OutputMode,
+};
+
+pub(crate) async fn run(action: LpCmd, ctx: &AppContext, confirm: bool) -> Result<()> {
+    match action {
+        LpCmd::Add(args) => add(ctx, args, confirm).await,
+        LpCmd::Remove(args) => remove(ctx, args, confirm).await,
+    }
+}
+
+async fn add(ctx: &AppContext, args: LpAddArgs, confirm: bool) -> Result<()> {
+    let market = parse_felt("market address", &args.market)?;
+    let provider = build_provider(ctx)?;
+    let client = deadeye_sdk::DeadeyeClient::new(provider);
+    let family = match args.family {
+        Some(f) => f.as_sdk(),
+        None => super::markets::detect_family(&client, market).await?,
+    };
+    let label = family_label(family);
+
+    if !confirm
+        && std::io::IsTerminal::is_terminal(&std::io::stdin())
+        && ctx.renderer.mode() != OutputMode::Json
+    {
+        eprintln!(
+            "About to add {} LP shares to {label} market {market:#x}.",
+            args.amount
+        );
+        super::confirm_or_bail("Continue?")?;
+    }
+
+    let account = build_owned_account(ctx)?;
+    let writer_provider = build_provider(ctx)?;
+    let share_amount = Sq128::from_f64(args.amount)?.to_raw();
+    let market_hex = format!("{market:#x}");
+
+    let result = match family {
+        Family::Normal => {
+            let writer = NormalMarketWriter::new(
+                NormalMarketReader::new(&writer_provider, market),
+                account,
+            );
+            match writer.add_liquidity(share_amount).await {
+                Ok(receipt) => submission_from_receipt("lp_add", market_hex, receipt),
+                Err(e) => submission_from_trade_error(
+                    "lp_add",
+                    market_hex,
+                    &deadeye_starknet::TradeError::from_contract(e),
+                ),
+            }
+        },
+        Family::Lognormal => {
+            let writer = LognormalMarketWriter::new(
+                LognormalMarketReader::new(&writer_provider, market),
+                account,
+            );
+            match writer.add_liquidity(share_amount).await {
+                Ok(receipt) => submission_from_receipt("lp_add", market_hex, receipt),
+                Err(e) => submission_from_trade_error(
+                    "lp_add",
+                    market_hex,
+                    &deadeye_starknet::TradeError::from_contract(e),
+                ),
+            }
+        },
+        Family::Multinoulli => {
+            let _ = (writer_provider, account, share_amount);
+            let _ = MultinoulliMarketReader::<&deadeye_sdk::starknet::JsonRpcProvider>::new;
+            let _ = MultinoulliMarketWriter::<
+                &deadeye_sdk::starknet::JsonRpcProvider,
+                deadeye_starknet::OwnedAccount,
+            >::new;
+            anyhow::bail!(
+                "lp_add is not yet wired for multinoulli markets (no `add_liquidity` on the writer)"
+            );
+        },
+        Family::Bivariate => {
+            let writer = BivariateMarketWriter::new(
+                BivariateMarketReader::new(&writer_provider, market),
+                account,
+            );
+            match writer.add_liquidity(share_amount).await {
+                Ok(receipt) => submission_from_receipt("lp_add", market_hex, receipt),
+                Err(e) => submission_from_trade_error(
+                    "lp_add",
+                    market_hex,
+                    &deadeye_starknet::TradeError::from_contract(e),
+                ),
+            }
+        },
+    };
+    ctx.renderer.print(&result)
+}
+
+async fn remove(ctx: &AppContext, args: LpRemoveArgs, confirm: bool) -> Result<()> {
+    if !(args.fraction > 0.0 && args.fraction <= 1.0) {
+        anyhow::bail!("`--fraction` must be in (0, 1]");
+    }
+    let market = parse_felt("market address", &args.market)?;
+    let provider = build_provider(ctx)?;
+    let client = deadeye_sdk::DeadeyeClient::new(provider);
+    let family = match args.family {
+        Some(f) => f.as_sdk(),
+        None => super::markets::detect_family(&client, market).await?,
+    };
+    let label = family_label(family);
+
+    let writer_provider = build_provider(ctx)?;
+    let share_amount_f64 = match family {
+        Family::Normal => {
+            let reader = NormalMarketReader::new(&writer_provider, market);
+            let lp = reader.lp_info().await.context("reading LP info")?;
+            Sq128::from_raw(lp.total_shares).to_f64() * args.fraction
+        },
+        Family::Lognormal => {
+            let reader = LognormalMarketReader::new(&writer_provider, market);
+            let lp = reader.lp_info().await.context("reading LP info")?;
+            Sq128::from_raw(lp.total_shares).to_f64() * args.fraction
+        },
+        Family::Multinoulli => {
+            let reader = MultinoulliMarketReader::new(&writer_provider, market);
+            let lp = reader.lp_info().await.context("reading LP info")?;
+            Sq128::from_raw(lp.total_shares).to_f64() * args.fraction
+        },
+        Family::Bivariate => {
+            let reader = BivariateMarketReader::new(&writer_provider, market);
+            let lp = reader.lp_info().await.context("reading LP info")?;
+            Sq128::from_raw(lp.total_shares).to_f64() * args.fraction
+        },
+    };
+
+    if !confirm
+        && std::io::IsTerminal::is_terminal(&std::io::stdin())
+        && ctx.renderer.mode() != OutputMode::Json
+    {
+        eprintln!(
+            "About to remove {share_amount_f64:.6} LP shares ({:.2}%) from {label} market {market:#x}.",
+            args.fraction * 100.0
+        );
+        super::confirm_or_bail("Continue?")?;
+    }
+
+    let account = build_owned_account(ctx)?;
+    let share_amount = Sq128::from_f64(share_amount_f64)?.to_raw();
+    let writer_provider_for_write = build_provider(ctx)?;
+    let market_hex = format!("{market:#x}");
+
+    let result = match family {
+        Family::Normal => {
+            let writer = NormalMarketWriter::new(
+                NormalMarketReader::new(&writer_provider_for_write, market),
+                account,
+            );
+            match writer.remove_liquidity(share_amount).await {
+                Ok(receipt) => submission_from_receipt("lp_remove", market_hex, receipt),
+                Err(e) => submission_from_trade_error(
+                    "lp_remove",
+                    market_hex,
+                    &deadeye_starknet::TradeError::from_contract(e),
+                ),
+            }
+        },
+        Family::Lognormal => {
+            let writer = LognormalMarketWriter::new(
+                LognormalMarketReader::new(&writer_provider_for_write, market),
+                account,
+            );
+            match writer.remove_liquidity(share_amount).await {
+                Ok(receipt) => submission_from_receipt("lp_remove", market_hex, receipt),
+                Err(e) => submission_from_trade_error(
+                    "lp_remove",
+                    market_hex,
+                    &deadeye_starknet::TradeError::from_contract(e),
+                ),
+            }
+        },
+        Family::Multinoulli => {
+            let _ = (writer_provider_for_write, account, share_amount);
+            anyhow::bail!(
+                "lp_remove is not yet wired for multinoulli markets (no `remove_liquidity` on the writer)"
+            );
+        },
+        Family::Bivariate => {
+            let writer = BivariateMarketWriter::new(
+                BivariateMarketReader::new(&writer_provider_for_write, market),
+                account,
+            );
+            match writer.remove_liquidity(share_amount).await {
+                Ok(receipt) => submission_from_receipt("lp_remove", market_hex, receipt),
+                Err(e) => submission_from_trade_error(
+                    "lp_remove",
+                    market_hex,
+                    &deadeye_starknet::TradeError::from_contract(e),
+                ),
+            }
+        },
+    };
+    ctx.renderer.print(&result)
+}

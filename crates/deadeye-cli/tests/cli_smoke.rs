@@ -1,0 +1,184 @@
+//! End-to-end smoke tests for the `deadeye` binary.
+//!
+//! These exercise the CLI surface via `assert_cmd` so the
+//! flag-parsing + dispatch layer is covered. They deliberately do not
+//! depend on a live RPC for the common-case checks — the only test that
+//! talks to Sepolia is gated behind `DEADEYE_RUN_SEPOLIA=1`.
+
+#![allow(
+    clippy::unwrap_used,
+    clippy::expect_used,
+    clippy::panic,
+    clippy::print_stderr,
+    clippy::tests_outside_test_module,
+    reason = "test harness — panics are how assertions are written"
+)]
+
+use std::process::Command;
+
+use assert_cmd::prelude::*;
+use predicates::str::contains;
+
+fn deadeye() -> Command {
+    Command::cargo_bin("deadeye").expect("binary built")
+}
+
+/// `deadeye --help` succeeds and mentions "Deadeye".
+#[test]
+fn help_mentions_deadeye() {
+    deadeye()
+        .arg("--help")
+        .assert()
+        .success()
+        .stdout(contains("Deadeye"));
+}
+
+/// `deadeye config show` is offline-friendly: it must work when no
+/// config file is present and prints the resolved config from env vars.
+#[test]
+fn config_show_with_env_overrides() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cfg_path = tmp.path().join("config.toml");
+    deadeye()
+        .env("DEADEYE_CONFIG", &cfg_path)
+        .env("DEADEYE_PROFILE", "envtest")
+        .env("DEADEYE_RPC_URL", "https://example.com/rpc")
+        .env("DEADEYE_INDEXER_URL", "https://example.com/idx")
+        .env("DEADEYE_ADDRESS", "0xabc123")
+        .arg("config")
+        .arg("show")
+        .arg("--no-color")
+        .arg("--output")
+        .arg("plain")
+        .assert()
+        .success()
+        .stdout(contains("active_profile: envtest"))
+        .stdout(contains("rpc_url: https://example.com/rpc"))
+        .stdout(contains("address: 0xabc123"));
+}
+
+/// `deadeye config init` writes a valid TOML file. `deadeye config show`
+/// then reads back the same profile.
+#[test]
+fn config_init_then_show() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cfg_path = tmp.path().join("config.toml");
+    deadeye()
+        .env("DEADEYE_CONFIG", &cfg_path)
+        .arg("config")
+        .arg("init")
+        .arg("--profile")
+        .arg("smoke")
+        .arg("--rpc-url")
+        .arg("https://rpc.example/")
+        .arg("--indexer-url")
+        .arg("https://idx.example/")
+        .arg("--address")
+        .arg("0xdeadbeef")
+        .arg("--set-default")
+        .assert()
+        .success();
+
+    assert!(cfg_path.exists(), "config file must exist after init");
+    let contents = std::fs::read_to_string(&cfg_path).expect("read config file");
+    assert!(contents.contains("[profiles.smoke]"));
+    assert!(contents.contains("0xdeadbeef"));
+
+    deadeye()
+        .env("DEADEYE_CONFIG", &cfg_path)
+        .arg("config")
+        .arg("show")
+        .arg("--output")
+        .arg("plain")
+        .assert()
+        .success()
+        .stdout(contains("active_profile: smoke"))
+        .stdout(contains("address: 0xdeadbeef"));
+}
+
+/// `deadeye config profile-list --output json` returns a JSON array.
+#[test]
+fn profile_list_json_is_valid_array() {
+    let tmp = tempfile::tempdir().expect("tempdir");
+    let cfg_path = tmp.path().join("config.toml");
+    deadeye()
+        .env("DEADEYE_CONFIG", &cfg_path)
+        .arg("config")
+        .arg("init")
+        .arg("--profile")
+        .arg("a")
+        .arg("--address")
+        .arg("0x1")
+        .assert()
+        .success();
+    let output = deadeye()
+        .env("DEADEYE_CONFIG", &cfg_path)
+        .arg("config")
+        .arg("profile-list")
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output).expect("profile-list JSON parses");
+    assert!(parsed.is_array(), "profile-list JSON must be an array");
+}
+
+/// `deadeye markets show <addr> --output json` against the live Sepolia
+/// indexer-discovered market produces parseable JSON. Gated.
+#[test]
+#[ignore = "requires Sepolia access; set DEADEYE_RUN_SEPOLIA=1 and \
+            DEADEYE_SEPOLIA_MARKET_ADDR=0x… to enable"]
+fn markets_show_json_sepolia_gated() {
+    if std::env::var_os("DEADEYE_RUN_SEPOLIA").is_none() {
+        eprintln!("skip: DEADEYE_RUN_SEPOLIA not set");
+        return;
+    }
+    let market = std::env::var("DEADEYE_SEPOLIA_MARKET_ADDR")
+        .expect("DEADEYE_SEPOLIA_MARKET_ADDR required for this gated test");
+    let output = deadeye()
+        .arg("markets")
+        .arg("show")
+        .arg(&market)
+        .arg("--output")
+        .arg("json")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output).expect("markets show JSON parses");
+    assert!(parsed.is_object());
+    assert!(parsed.get("address").is_some(), "address field present");
+}
+
+/// `deadeye markets list` against the live indexer returns a non-empty
+/// list. Gated.
+#[test]
+#[ignore = "requires Sepolia access; set DEADEYE_RUN_SEPOLIA=1 to enable"]
+fn markets_list_sepolia_gated() {
+    if std::env::var_os("DEADEYE_RUN_SEPOLIA").is_none() {
+        eprintln!("skip: DEADEYE_RUN_SEPOLIA not set");
+        return;
+    }
+    let output = deadeye()
+        .arg("markets")
+        .arg("list")
+        .arg("--output")
+        .arg("json")
+        .arg("--limit")
+        .arg("3")
+        .assert()
+        .success()
+        .get_output()
+        .stdout
+        .clone();
+    let parsed: serde_json::Value =
+        serde_json::from_slice(&output).expect("markets list JSON parses");
+    let arr = parsed.as_array().expect("array");
+    assert!(!arr.is_empty(), "Sepolia indexer should return ≥1 market");
+}

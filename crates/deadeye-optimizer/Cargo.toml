@@ -1,0 +1,24 @@
+[package]
+name = "deadeye-optimizer"
+description = "EV-maximizing trade picker and LP P&L math for Deadeye normal markets."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = []
+
+[dependencies]
+deadeye-collateral = { workspace = true }
+
+[dev-dependencies]

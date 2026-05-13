@@ -1,0 +1,224 @@
+{
+  "name": "the-situation-contracts",
+  "version": "0.12.0",
+  "timestamp": "2026-05-05T10:15:44Z",
+  "commit": "0ea2d4ae30062bfaf3c88e05dd2b430fcc57e45b",
+  "source": {
+    "kind": "packages",
+    "artifact_dir": "/Users/theodorepender/Coding/the-situation-stack/the-situation/target/dev",
+    "artifact_manifests": [
+      "factory.starknet_artifacts.json",
+      "restricted_collateral_token.starknet_artifacts.json"
+    ]
+  },
+  "contracts": [
+    {
+      "name": "bounded_loss_amm",
+      "package": "onchain_bounded_loss_amm",
+      "module_path": "onchain_bounded_loss_amm::contract::bounded_loss_amm",
+      "sierra": "factory_bounded_loss_amm.contract_class.json",
+      "casm": "factory_bounded_loss_amm.compiled_contract_class.json",
+      "abi": "factory_bounded_loss_amm.abi.json"
+    },
+    {
+      "name": "multinoulli_math_runtime",
+      "package": "onchain_multinoulli_math",
+      "module_path": "onchain_multinoulli_math::contract::multinoulli_math_runtime",
+      "sierra": "factory_multinoulli_math_runtime.contract_class.json",
+      "casm": "factory_multinoulli_math_runtime.compiled_contract_class.json",
+      "abi": "factory_multinoulli_math_runtime.abi.json"
+    },
+    {
+      "name": "multinoulli_amm",
+      "package": "onchain_multinoulli_amm",
+      "module_path": "onchain_multinoulli_amm::contract::multinoulli_amm",
+      "sierra": "factory_multinoulli_amm.contract_class.json",
+      "casm": "factory_multinoulli_amm.compiled_contract_class.json",
+      "abi": "factory_multinoulli_amm.abi.json"
+    },
+    {
+      "name": "normal_amm",
+      "package": "onchain_normal_amm",
+      "module_path": "onchain_normal_amm::contract::normal_amm",
+      "sierra": "factory_normal_amm.contract_class.json",
+      "casm": "factory_normal_amm.compiled_contract_class.json",
+      "abi": "factory_normal_amm.abi.json"
+    },
+    {
+      "name": "bivariate_amm",
+      "package": "onchain_bivariate_amm",
+      "module_path": "onchain_bivariate_amm::contract::bivariate_amm",
+      "sierra": "factory_bivariate_amm.contract_class.json",
+      "casm": "factory_bivariate_amm.compiled_contract_class.json",
+      "abi": "factory_bivariate_amm.abi.json"
+    },
+    {
+      "name": "bivariate_math_runtime",
+      "package": "onchain_bivariate_math",
+      "module_path": "onchain_bivariate_math::contract::bivariate_math_runtime",
+      "sierra": "factory_bivariate_math_runtime.contract_class.json",
+      "casm": "factory_bivariate_math_runtime.compiled_contract_class.json",
+      "abi": "factory_bivariate_math_runtime.abi.json"
+    },
+    {
+      "name": "skew_normal_factory_plugin",
+      "package": "factory",
+      "module_path": "factory::plugins::skew_normal::skew_normal_factory_plugin",
+      "sierra": "factory_skew_normal_factory_plugin.contract_class.json",
+      "casm": "factory_skew_normal_factory_plugin.compiled_contract_class.json",
+      "abi": "factory_skew_normal_factory_plugin.abi.json"
+    },
+    {
+      "name": "lognormal_factory_plugin",
+      "package": "factory",
+      "module_path": "factory::plugins::lognormal::lognormal_factory_plugin",
+      "sierra": "factory_lognormal_factory_plugin.contract_class.json",
+      "casm": "factory_lognormal_factory_plugin.compiled_contract_class.json",
+      "abi": "factory_lognormal_factory_plugin.abi.json"
+    },
+    {
+      "name": "normal_factory_plugin",
+      "package": "factory",
+      "module_path": "factory::plugins::normal::normal_factory_plugin",
+      "sierra": "factory_normal_factory_plugin.contract_class.json",
+      "casm": "factory_normal_factory_plugin.compiled_contract_class.json",
+      "abi": "factory_normal_factory_plugin.abi.json"
+    },
+    {
+      "name": "funding_math_runtime",
+      "package": "onchain_funding_math",
+      "module_path": "onchain_funding_math::contract::funding_math_runtime",
+      "sierra": "factory_funding_math_runtime.contract_class.json",
+      "casm": "factory_funding_math_runtime.compiled_contract_class.json",
+      "abi": "factory_funding_math_runtime.abi.json"
+    },
+    {
+      "name": "skew_normal_math_runtime",
+      "package": "onchain_skew_normal_math",
+      "module_path": "onchain_skew_normal_math::math::contract::skew_normal_math_runtime",
+      "sierra": "factory_skew_normal_math_runtime.contract_class.json",
+      "casm": "factory_skew_normal_math_runtime.compiled_contract_class.json",
+      "abi": "factory_skew_normal_math_runtime.abi.json"
+    },
+    {
+      "name": "policy_amm",
+      "package": "onchain_policy_amm",
+      "module_path": "onchain_policy_amm::contract::policy_amm",
+      "sierra": "factory_policy_amm.contract_class.json",
+      "casm": "factory_policy_amm.compiled_contract_class.json",
+      "abi": "factory_policy_amm.abi.json"
+    },
+    {
+      "name": "bounded_loss_factory_plugin",
+      "package": "factory",
+      "module_path": "factory::plugins::bounded_loss::bounded_loss_factory_plugin",
+      "sierra": "factory_bounded_loss_factory_plugin.contract_class.json",
+      "casm": "factory_bounded_loss_factory_plugin.compiled_contract_class.json",
+      "abi": "factory_bounded_loss_factory_plugin.abi.json"
+    },
+    {
+      "name": "bounded_loss_math_runtime",
+      "package": "onchain_bounded_loss_math",
+      "module_path": "onchain_bounded_loss_math::_v1_a_contract::bounded_loss_math_runtime",
+      "sierra": "factory_bounded_loss_math_runtime.contract_class.json",
+      "casm": "factory_bounded_loss_math_runtime.compiled_contract_class.json",
+      "abi": "factory_bounded_loss_math_runtime.abi.json"
+    },
+    {
+      "name": "policy_math_runtime",
+      "package": "onchain_policy_math",
+      "module_path": "onchain_policy_math::_v1_a_contract::policy_math_runtime",
+      "sierra": "factory_policy_math_runtime.contract_class.json",
+      "casm": "factory_policy_math_runtime.compiled_contract_class.json",
+      "abi": "factory_policy_math_runtime.abi.json"
+    },
+    {
+      "name": "bivariate_normal_factory_plugin",
+      "package": "factory",
+      "module_path": "factory::plugins::bivariate_normal::bivariate_normal_factory_plugin",
+      "sierra": "factory_bivariate_normal_factory_plugin.contract_class.json",
+      "casm": "factory_bivariate_normal_factory_plugin.compiled_contract_class.json",
+      "abi": "factory_bivariate_normal_factory_plugin.abi.json"
+    },
+    {
+      "name": "funding_factory_plugin",
+      "package": "factory",
+      "module_path": "factory::plugins::funding::funding_factory_plugin",
+      "sierra": "factory_funding_factory_plugin.contract_class.json",
+      "casm": "factory_funding_factory_plugin.compiled_contract_class.json",
+      "abi": "factory_funding_factory_plugin.abi.json"
+    },
+    {
+      "name": "normal_math_runtime",
+      "package": "onchain_normal_math",
+      "module_path": "onchain_normal_math::contract::normal_math_runtime",
+      "sierra": "factory_normal_math_runtime.contract_class.json",
+      "casm": "factory_normal_math_runtime.compiled_contract_class.json",
+      "abi": "factory_normal_math_runtime.abi.json"
+    },
+    {
+      "name": "policy_factory_plugin",
+      "package": "factory",
+      "module_path": "factory::plugins::policy::policy_factory_plugin",
+      "sierra": "factory_policy_factory_plugin.contract_class.json",
+      "casm": "factory_policy_factory_plugin.compiled_contract_class.json",
+      "abi": "factory_policy_factory_plugin.abi.json"
+    },
+    {
+      "name": "skew_normal_amm",
+      "package": "onchain_skew_normal_amm",
+      "module_path": "onchain_skew_normal_amm::contract::skew_normal_amm",
+      "sierra": "factory_skew_normal_amm.contract_class.json",
+      "casm": "factory_skew_normal_amm.compiled_contract_class.json",
+      "abi": "factory_skew_normal_amm.abi.json"
+    },
+    {
+      "name": "multinoulli_factory_plugin",
+      "package": "factory",
+      "module_path": "factory::plugins::multinoulli::multinoulli_factory_plugin",
+      "sierra": "factory_multinoulli_factory_plugin.contract_class.json",
+      "casm": "factory_multinoulli_factory_plugin.compiled_contract_class.json",
+      "abi": "factory_multinoulli_factory_plugin.abi.json"
+    },
+    {
+      "name": "distribution_factory",
+      "package": "factory",
+      "module_path": "factory::contract::distribution_factory",
+      "sierra": "factory_distribution_factory.contract_class.json",
+      "casm": "factory_distribution_factory.compiled_contract_class.json",
+      "abi": "factory_distribution_factory.abi.json"
+    },
+    {
+      "name": "funding_amm",
+      "package": "onchain_funding_amm",
+      "module_path": "onchain_funding_amm::contract::funding_amm",
+      "sierra": "factory_funding_amm.contract_class.json",
+      "casm": "factory_funding_amm.compiled_contract_class.json",
+      "abi": "factory_funding_amm.abi.json"
+    },
+    {
+      "name": "lognormal_math_runtime",
+      "package": "onchain_lognormal_math",
+      "module_path": "onchain_lognormal_math::contract::lognormal_math_runtime",
+      "sierra": "factory_lognormal_math_runtime.contract_class.json",
+      "casm": "factory_lognormal_math_runtime.compiled_contract_class.json",
+      "abi": "factory_lognormal_math_runtime.abi.json"
+    },
+    {
+      "name": "lognormal_amm",
+      "package": "onchain_lognormal_amm",
+      "module_path": "onchain_lognormal_amm::contract::lognormal_amm",
+      "sierra": "factory_lognormal_amm.contract_class.json",
+      "casm": "factory_lognormal_amm.compiled_contract_class.json",
+      "abi": "factory_lognormal_amm.abi.json"
+    },
+    {
+      "name": "restricted_collateral_token",
+      "package": "restricted_collateral_token",
+      "module_path": "restricted_collateral_token::contract::restricted_collateral_token",
+      "sierra": "restricted_collateral_token_restricted_collateral_token.contract_class.json",
+      "casm": "restricted_collateral_token_restricted_collateral_token.compiled_contract_class.json",
+      "abi": "restricted_collateral_token_restricted_collateral_token.abi.json"
+    }
+  ]
+}

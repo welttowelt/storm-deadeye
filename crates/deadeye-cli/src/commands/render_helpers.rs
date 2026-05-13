@@ -1,0 +1,558 @@
+//! Shared `Render` impls for command-result types.
+//!
+//! Every Driver-B command outputs a small data record (e.g.
+//! [`QuoteResult`], [`SubmissionResult`], [`WatchUpdate`]) implementing
+//! [`crate::output::Render`] for pretty / plain rendering and
+//! [`serde::Serialize`] for `--output json`.
+
+use std::io::{self, Write};
+
+use deadeye_starknet::{TradeRejectionReason, VerificationSubReason};
+use serde::Serialize;
+
+use crate::output::{Render, Renderer};
+
+/// Human-readable explanation of a [`TradeRejectionReason`].
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct RejectionExplanation {
+    /// The variant name (`"VerificationFailed"`, `"LowCollateral"`, …).
+    pub(crate) variant: String,
+    /// Optional sub-variant (e.g. `"CurvatureInvalid"`).
+    pub(crate) sub_variant: Option<String>,
+    /// One-line summary.
+    pub(crate) summary: &'static str,
+    /// Suggested action.
+    pub(crate) suggested_fix: &'static str,
+}
+
+/// The single source-of-truth mapping
+/// `TradeRejectionReason` → human-friendly explanation.
+pub(crate) fn pretty_rejection(reason: &TradeRejectionReason) -> RejectionExplanation {
+    use TradeRejectionReason as R;
+    let (variant, sub_variant, summary, suggested_fix): (
+        String,
+        Option<String>,
+        &'static str,
+        &'static str,
+    ) = match *reason {
+        R::InvalidDistribution => (
+            "InvalidDistribution".to_owned(),
+            None,
+            "The candidate distribution failed basic invariants (e.g. σ ≤ 0, σ² ≠ σ·σ).",
+            "Re-check the candidate's `mean`, `variance`, and `sigma` fields — they must satisfy σ² = σ·σ and σ > 0.",
+        ),
+        R::InvalidHints => (
+            "InvalidHints".to_owned(),
+            None,
+            "The sqrt hints didn't round-trip against the math runtime.",
+            "Let `quote_trade` fetch fresh hints from the runtime; do not hand-roll them in f64.",
+        ),
+        R::BackingFail => (
+            "BackingFail".to_owned(),
+            None,
+            "Pool backing check failed — the AMM cannot absorb this trade given current LP shares.",
+            "Wait for more LP, reduce the candidate's |Δμ|, or split the trade into smaller steps.",
+        ),
+        R::SigmaTooLow => (
+            "SigmaTooLow".to_owned(),
+            None,
+            "Candidate σ is below the market's per-trade σ floor.",
+            "Widen `--variance` (σ² = variance) so σ ≥ market.min_sigma.",
+        ),
+        R::LowCollateral => (
+            "LowCollateral".to_owned(),
+            None,
+            "Supplied collateral is below the AMM's minimum-trade-collateral floor.",
+            "Increase `--max-collateral` (try at least `min_trade_collateral` × 1.1).",
+        ),
+        R::VerificationFailed { sub_reason } => {
+            let (sub, sum, fix): (Option<&'static str>, &'static str, &'static str) =
+                match sub_reason {
+                    Some(VerificationSubReason::SideInvalid) => (
+                        Some("SideInvalid"),
+                        "Verifier rejected the chosen trade side at chain precision.",
+                        "Pick a candidate strictly inside the policy region — check that |Δμ| < tolerance · σ.",
+                    ),
+                    Some(VerificationSubReason::StationaryInvalid) => (
+                        Some("StationaryInvalid"),
+                        "d'(x*) is outside the chain's tolerance — the off-chain x* missed the stationary point.",
+                        "Let `quote_trade` re-derive x* from the candidate instead of supplying your own.",
+                    ),
+                    Some(VerificationSubReason::CurvatureInvalid) => (
+                        Some("CurvatureInvalid"),
+                        "d''(x*) ≤ 0 at chain precision — the off-chain x* is at a saddle, not a minimum.",
+                        "Increase supplied collateral (raise `--max-collateral`) or widen the candidate's σ.",
+                    ),
+                    Some(VerificationSubReason::CollateralInsufficient) => (
+                        Some("CollateralInsufficient"),
+                        "Chain-recomputed required collateral exceeded the supplied amount.",
+                        "Raise `--max-collateral` — the off-chain solver underestimated by < 5%; +10% pad usually works.",
+                    ),
+                    Some(VerificationSubReason::MinimumInvalid) => (
+                        Some("MinimumInvalid"),
+                        "Verifier's minimum-finding routine couldn't converge.",
+                        "Re-quote — chain state may have drifted; if it persists, reduce |Δμ|.",
+                    ),
+                    None => (
+                        None,
+                        "Generic verifier failure — chain rejected the trade without a refined sub-reason.",
+                        "Re-quote to refresh chain state; if it persists, widen σ and re-pad collateral.",
+                    ),
+                    Some(_) => (
+                        None,
+                        "Unknown verifier sub-reason — newer SDK variant.",
+                        "Update the CLI to match the SDK's VerificationSubReason variants.",
+                    ),
+                };
+            (
+                "VerificationFailed".to_owned(),
+                sub.map(str::to_owned),
+                sum,
+                fix,
+            )
+        },
+        R::StaleState { field } => (
+            "StaleState".to_owned(),
+            Some(field.to_owned()),
+            "An `expected_*` guard mismatched live chain state (chain moved between quote + execute).",
+            "Re-run `deadeye trade quote` and submit again — this is the canonical MM retry path.",
+        ),
+        R::MarketSettled => (
+            "MarketSettled".to_owned(),
+            None,
+            "Market has been settled — trading is permanently closed.",
+            "There is nothing to do. If you have a position, run `deadeye claim`.",
+        ),
+        R::MarketPaused => (
+            "MarketPaused".to_owned(),
+            None,
+            "Market is paused — admin froze trading.",
+            "Wait for admin to call `unpause_market`. Reads + claims remain available.",
+        ),
+        R::NoPosition => (
+            "NoPosition".to_owned(),
+            None,
+            "Trader has no position on this market.",
+            "Open one via `deadeye trade execute` first, then sell or claim.",
+        ),
+        R::AlreadyClaimed => (
+            "AlreadyClaimed".to_owned(),
+            None,
+            "Position has already been claimed; no payout remains.",
+            "Inspect `deadeye position show` to verify the payout was credited.",
+        ),
+        R::RequiresAdditionalCollateral => (
+            "RequiresAdditionalCollateral".to_owned(),
+            None,
+            "Trade requires more collateral than was supplied.",
+            "Raise `--max-collateral`.",
+        ),
+        R::NoCollateralOut => (
+            "NoCollateralOut".to_owned(),
+            None,
+            "Sell would return zero collateral — the position is exhausted.",
+            "Skip the sell; the position has no remaining payout.",
+        ),
+        R::ConversionFailed => (
+            "ConversionFailed".to_owned(),
+            None,
+            "Token / internal-unit conversion overflowed.",
+            "Reduce the trade size — you're hitting Q128.128 bounds.",
+        ),
+        R::OnlyOwner => (
+            "OnlyOwner".to_owned(),
+            None,
+            "Entrypoint is restricted to the factory owner.",
+            "Run this command from the factory owner's address (see `deadeye account show`).",
+        ),
+        R::NotAuthorized => (
+            "NotAuthorized".to_owned(),
+            None,
+            "Entrypoint requires admin / owner privilege.",
+            "Confirm the active profile's address is on the admin list.",
+        ),
+        R::MinOutNotMet => (
+            "MinOutNotMet".to_owned(),
+            None,
+            "Slippage floor breached — `min_out` set above actual collateral-out.",
+            "Lower `--min-out` or accept the worse fill.",
+        ),
+        R::InvalidMinOutcome => (
+            "InvalidMinOutcome".to_owned(),
+            None,
+            "Multinoulli `min_outcome_index` did not match the candidate's argmin.",
+            "Let the SDK derive `min_outcome_index` — do not hand-pick it.",
+        ),
+        R::Reentrant => (
+            "Reentrant".to_owned(),
+            None,
+            "Re-entrant call detected — the AMM is currently mid-flight.",
+            "Retry once; if it persists, the AMM is wedged and an admin must investigate.",
+        ),
+        R::MarketNotInitialized => (
+            "MarketNotInitialized".to_owned(),
+            None,
+            "Market has not been initialised yet — admin must seed initial LP.",
+            "Admin should run the initialize flow before traders can interact.",
+        ),
+        R::AlreadySettled => (
+            "AlreadySettled".to_owned(),
+            None,
+            "Settle entrypoint called twice.",
+            "Skip — the market is already settled.",
+        ),
+        R::AlreadyPaused => (
+            "AlreadyPaused".to_owned(),
+            None,
+            "Pause called on an already-paused market.",
+            "Skip — market is already paused.",
+        ),
+        R::NotPaused => (
+            "NotPaused".to_owned(),
+            None,
+            "Unpause called on a market that wasn't paused.",
+            "Skip — market is already live.",
+        ),
+        R::MarketNotSettled => (
+            "MarketNotSettled".to_owned(),
+            None,
+            "Claim called before the market was settled.",
+            "Wait for admin to call `settle_*` before claiming.",
+        ),
+        R::NoClaim => (
+            "NoClaim".to_owned(),
+            None,
+            "Claim path produced an empty result (no entitled payout).",
+            "Inspect `deadeye position show` — your position contributed zero at settlement.",
+        ),
+        R::TraderClaimsPending => (
+            "TraderClaimsPending".to_owned(),
+            None,
+            "LP withdraw is blocked because trader positions remain unclaimed.",
+            "Wait for traders to claim, then retry the LP withdraw.",
+        ),
+        R::OnlyFactory => (
+            "OnlyFactory".to_owned(),
+            None,
+            "Entrypoint is restricted to the factory.",
+            "Use `deadeye admin collect-fees` (which routes through the factory).",
+        ),
+        R::InvalidMatrixMode => (
+            "InvalidMatrixMode".to_owned(),
+            None,
+            "Multinoulli matrix-mode validation failed.",
+            "File a bug — the SDK should never submit an invalid matrix mode.",
+        ),
+        R::InvalidSettlementMode => (
+            "InvalidSettlementMode".to_owned(),
+            None,
+            "Multinoulli LP claim path saw an unexpected settlement-mode discriminant.",
+            "File a bug — the chain is in an unexpected state.",
+        ),
+        R::MissingSnapshotRef => (
+            "MissingSnapshotRef".to_owned(),
+            None,
+            "Multinoulli snapshot bookkeeping is inconsistent.",
+            "File a bug — the chain is in an unexpected state.",
+        ),
+        R::Other { raw } => (
+            "Other".to_owned(),
+            Some(raw.to_owned()),
+            "Unmapped revert reason — the SDK saw a known short string but doesn't have a dedicated variant.",
+            "Capture the raw string in your bug report; the SDK team will add a typed variant.",
+        ),
+        _ => (
+            "Unknown".to_owned(),
+            None,
+            "Unrecognised rejection variant — likely a newer SDK version with additional variants.",
+            "Update the CLI to match the SDK's TradeRejectionReason variants.",
+        ),
+    };
+    RejectionExplanation {
+        variant,
+        sub_variant,
+        summary,
+        suggested_fix,
+    }
+}
+
+/// Renderable form of a preflighted trade quote.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct QuoteResult {
+    pub(crate) family: &'static str,
+    pub(crate) market: String,
+    pub(crate) candidate_mean: Option<f64>,
+    pub(crate) candidate_variance: Option<f64>,
+    pub(crate) candidate_sigma: Option<f64>,
+    pub(crate) candidate_mu1: Option<f64>,
+    pub(crate) candidate_mu2: Option<f64>,
+    pub(crate) candidate_rho: Option<f64>,
+    pub(crate) x_star: Option<f64>,
+    pub(crate) required_collateral: Option<f64>,
+    pub(crate) padded_collateral: Option<f64>,
+    pub(crate) on_chain_will_accept: bool,
+    pub(crate) rejection: Option<RejectionExplanation>,
+    pub(crate) execute_hint: String,
+}
+
+impl Render for QuoteResult {
+    fn render_pretty(&self, r: &Renderer) {
+        if self.on_chain_will_accept {
+            r.success("Preflight: chain will accept");
+        } else {
+            r.error("Preflight: chain WILL REJECT this trade");
+        }
+        r.kv("family", self.family);
+        r.kv("market", &self.market);
+        if let (Some(m), Some(v)) = (self.candidate_mean, self.candidate_variance) {
+            r.kv("candidate", &format!("μ={m:.6}, σ²={v:.6}"));
+        }
+        if let (Some(m1), Some(m2)) = (self.candidate_mu1, self.candidate_mu2) {
+            r.kv("candidate", &format!("μ₁={m1:.6}, μ₂={m2:.6}"));
+        }
+        if let Some(rho) = self.candidate_rho {
+            r.kv("rho", &format!("{rho:.6}"));
+        }
+        if let Some(xs) = self.x_star {
+            r.kv("x_star", &format!("{xs:.6}"));
+        }
+        if let Some(rc) = self.required_collateral {
+            r.kv("required_collateral", &format!("{rc:.6} STRK"));
+        }
+        if let Some(pc) = self.padded_collateral {
+            r.kv("padded_collateral", &format!("{pc:.6} STRK"));
+        }
+        if let Some(rej) = &self.rejection {
+            r.kv(
+                "rejected",
+                &format!("{} ({})", rej.variant, rej.sub_variant.as_deref().unwrap_or("-")),
+            );
+            r.kv("what_this_means", rej.summary);
+            r.kv("suggested_fix", rej.suggested_fix);
+        }
+        if self.on_chain_will_accept {
+            println!();
+            println!("  {}", r.dim("to execute, run:"));
+            println!("  {}", r.highlight(&self.execute_hint));
+        }
+    }
+
+    fn render_plain(&self, w: &mut dyn Write) -> io::Result<()> {
+        writeln!(w, "family: {}", self.family)?;
+        writeln!(w, "market: {}", self.market)?;
+        if let Some(m) = self.candidate_mean {
+            writeln!(w, "candidate_mean: {m}")?;
+        }
+        if let Some(v) = self.candidate_variance {
+            writeln!(w, "candidate_variance: {v}")?;
+        }
+        if let Some(s) = self.candidate_sigma {
+            writeln!(w, "candidate_sigma: {s}")?;
+        }
+        if let Some(m) = self.candidate_mu1 {
+            writeln!(w, "candidate_mu1: {m}")?;
+        }
+        if let Some(m) = self.candidate_mu2 {
+            writeln!(w, "candidate_mu2: {m}")?;
+        }
+        if let Some(rho) = self.candidate_rho {
+            writeln!(w, "candidate_rho: {rho}")?;
+        }
+        if let Some(xs) = self.x_star {
+            writeln!(w, "x_star: {xs}")?;
+        }
+        if let Some(rc) = self.required_collateral {
+            writeln!(w, "required_collateral: {rc}")?;
+        }
+        if let Some(pc) = self.padded_collateral {
+            writeln!(w, "padded_collateral: {pc}")?;
+        }
+        writeln!(w, "on_chain_will_accept: {}", self.on_chain_will_accept)?;
+        if let Some(rej) = &self.rejection {
+            writeln!(w, "rejection_variant: {}", rej.variant)?;
+            if let Some(sub) = &rej.sub_variant {
+                writeln!(w, "rejection_sub_variant: {sub}")?;
+            }
+            writeln!(w, "rejection_summary: {}", rej.summary)?;
+            writeln!(w, "rejection_suggested_fix: {}", rej.suggested_fix)?;
+        }
+        writeln!(w, "execute_hint: {}", self.execute_hint)
+    }
+}
+
+/// Renderable form of a write-path submission result.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct SubmissionResult {
+    pub(crate) action: &'static str,
+    pub(crate) market: String,
+    pub(crate) tx_hash: Option<String>,
+    pub(crate) call_count: Option<usize>,
+    pub(crate) accepted: bool,
+    pub(crate) rejection: Option<RejectionExplanation>,
+    pub(crate) note: Option<String>,
+}
+
+impl Render for SubmissionResult {
+    fn render_pretty(&self, r: &Renderer) {
+        if self.accepted {
+            r.success(&format!("{} submitted", self.action));
+        } else {
+            r.error(&format!("{} REJECTED", self.action));
+        }
+        r.kv("market", &self.market);
+        if let Some(h) = &self.tx_hash {
+            r.kv("tx_hash", h);
+        }
+        if let Some(c) = self.call_count {
+            r.kv("call_count", &c.to_string());
+        }
+        if let Some(rej) = &self.rejection {
+            r.kv("rejection", &rej.variant);
+            if let Some(sub) = &rej.sub_variant {
+                r.kv("sub_variant", sub);
+            }
+            r.kv("what_this_means", rej.summary);
+            r.kv("suggested_fix", rej.suggested_fix);
+        }
+        if let Some(n) = &self.note {
+            r.kv("note", n);
+        }
+    }
+
+    fn render_plain(&self, w: &mut dyn Write) -> io::Result<()> {
+        writeln!(w, "action: {}", self.action)?;
+        writeln!(w, "market: {}", self.market)?;
+        if let Some(h) = &self.tx_hash {
+            writeln!(w, "tx_hash: {h}")?;
+        }
+        if let Some(c) = self.call_count {
+            writeln!(w, "call_count: {c}")?;
+        }
+        writeln!(w, "accepted: {}", self.accepted)?;
+        if let Some(rej) = &self.rejection {
+            writeln!(w, "rejection_variant: {}", rej.variant)?;
+            if let Some(sub) = &rej.sub_variant {
+                writeln!(w, "rejection_sub_variant: {sub}")?;
+            }
+            writeln!(w, "rejection_summary: {}", rej.summary)?;
+            writeln!(w, "rejection_suggested_fix: {}", rej.suggested_fix)?;
+        }
+        if let Some(n) = &self.note {
+            writeln!(w, "note: {n}")?;
+        }
+        Ok(())
+    }
+}
+
+/// One emitted block-update line from `deadeye watch`.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct WatchUpdate {
+    pub(crate) family: &'static str,
+    pub(crate) market: String,
+    pub(crate) block_number: u64,
+    pub(crate) timestamp_unix_ms: u128,
+    pub(crate) mean: Option<f64>,
+    pub(crate) sigma: Option<f64>,
+    pub(crate) variance: Option<f64>,
+    pub(crate) lp_total_backing: Option<f64>,
+    pub(crate) lp_total_shares: Option<f64>,
+    pub(crate) quote_accepts: Option<bool>,
+    pub(crate) quote_required_collateral: Option<f64>,
+    pub(crate) quote_x_star: Option<f64>,
+}
+
+impl Render for WatchUpdate {
+    fn render_pretty(&self, r: &Renderer) {
+        println!(
+            "{} {} block {}  μ={:.6}  σ={:.6}",
+            r.highlight(self.family),
+            r.dim(&self.market),
+            self.block_number,
+            self.mean.unwrap_or(f64::NAN),
+            self.sigma.unwrap_or(f64::NAN),
+        );
+        if let Some(b) = self.lp_total_backing {
+            r.kv("LP backing", &format!("{b:.6}"));
+        }
+        if let Some(s) = self.lp_total_shares {
+            r.kv("LP shares", &format!("{s:.6}"));
+        }
+        if let Some(acc) = self.quote_accepts {
+            r.kv("quote_accepts", &format!("{acc}"));
+            if let Some(rc) = self.quote_required_collateral {
+                r.kv("quote_required_collateral", &format!("{rc:.6} STRK"));
+            }
+            if let Some(xs) = self.quote_x_star {
+                r.kv("quote_x_star", &format!("{xs:.6}"));
+            }
+        }
+    }
+
+    fn render_plain(&self, w: &mut dyn Write) -> io::Result<()> {
+        writeln!(w, "family: {}", self.family)?;
+        writeln!(w, "market: {}", self.market)?;
+        writeln!(w, "block_number: {}", self.block_number)?;
+        writeln!(w, "timestamp_unix_ms: {}", self.timestamp_unix_ms)?;
+        if let Some(m) = self.mean {
+            writeln!(w, "mean: {m}")?;
+        }
+        if let Some(s) = self.sigma {
+            writeln!(w, "sigma: {s}")?;
+        }
+        if let Some(v) = self.variance {
+            writeln!(w, "variance: {v}")?;
+        }
+        if let Some(b) = self.lp_total_backing {
+            writeln!(w, "lp_total_backing: {b}")?;
+        }
+        if let Some(s) = self.lp_total_shares {
+            writeln!(w, "lp_total_shares: {s}")?;
+        }
+        if let Some(acc) = self.quote_accepts {
+            writeln!(w, "quote_accepts: {acc}")?;
+        }
+        if let Some(rc) = self.quote_required_collateral {
+            writeln!(w, "quote_required_collateral: {rc}")?;
+        }
+        if let Some(xs) = self.quote_x_star {
+            writeln!(w, "quote_x_star: {xs}")?;
+        }
+        Ok(())
+    }
+}
+
+/// Render a [`TradeError`] → human-readable explanation, returning a
+/// fully-populated [`SubmissionResult`] caller can pass to `Renderer::print`.
+pub(crate) fn submission_from_trade_error(
+    action: &'static str,
+    market: String,
+    err: &deadeye_starknet::TradeError,
+) -> SubmissionResult {
+    let rejection = err.rejection().map(|r| pretty_rejection(&r));
+    SubmissionResult {
+        action,
+        market,
+        tx_hash: None,
+        call_count: None,
+        accepted: false,
+        rejection,
+        note: Some(format!("{err}")),
+    }
+}
+
+/// Render the `SubmissionResult` from a successful receipt.
+pub(crate) fn submission_from_receipt(
+    action: &'static str,
+    market: String,
+    receipt: deadeye_starknet::ExecutionReceipt,
+) -> SubmissionResult {
+    SubmissionResult {
+        action,
+        market,
+        tx_hash: Some(format!("{:#x}", receipt.transaction_hash)),
+        call_count: Some(receipt.call_count),
+        accepted: true,
+        rejection: None,
+        note: None,
+    }
+}

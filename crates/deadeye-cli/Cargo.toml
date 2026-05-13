@@ -1,0 +1,55 @@
+[package]
+name = "deadeye-cli"
+description = "Market-maker-grade command-line interface for the Deadeye Rust SDK."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "deadeye"
+path = "src/main.rs"
+
+[dependencies]
+# Workspace SDK surface — read-only paths only in this driver.
+deadeye-core = { workspace = true, features = ["std"] }
+deadeye-sdk = { workspace = true }
+deadeye-starknet = { workspace = true }
+deadeye-indexer = { workspace = true, features = ["client"] }
+starknet-core = { workspace = true, features = ["std"] }
+starknet-providers = { workspace = true }
+
+# CLI / I/O surface.
+clap = { version = "4", features = ["derive", "env", "wrap_help"] }
+tokio = { workspace = true, features = ["rt-multi-thread", "macros", "sync", "signal", "time"] }
+serde = { workspace = true, features = ["std", "derive"] }
+serde_json = { workspace = true, features = ["std"] }
+toml = { version = "0.8", default-features = false, features = ["parse", "display"] }
+owo-colors = { version = "4", default-features = false, features = ["supports-colors"] }
+comfy-table = { version = "7", default-features = false }
+dirs = "5"
+anyhow = { workspace = true, features = ["std"] }
+url = { workspace = true, features = ["std"] }
+tracing = { workspace = true, features = ["std", "attributes"] }
+tracing-subscriber = { workspace = true, features = ["registry", "fmt", "env-filter"] }
+futures = { workspace = true, features = ["std", "alloc", "async-await"] }
+
+[dev-dependencies]
+assert_cmd = "2"
+predicates = "3"
+tempfile = "3"
+serde_json = { workspace = true, features = ["std"] }
+deadeye-testkit = { workspace = true }
+deadeye-core = { workspace = true }
+starknet-providers = { workspace = true }
+starknet-core = { workspace = true, features = ["std"] }
+tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

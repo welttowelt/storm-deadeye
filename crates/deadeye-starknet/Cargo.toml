@@ -1,0 +1,55 @@
+[package]
+name = "deadeye-starknet"
+description = "Starknet contract bindings, Cairo Serde encoders, and view-call wrappers for Deadeye markets."
+version.workspace = true
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+homepage.workspace = true
+readme.workspace = true
+keywords.workspace = true
+categories.workspace = true
+
+[lints]
+workspace = true
+
+[features]
+default = ["provider", "account"]
+# `provider` pulls in the JSON-RPC client; turn it off for environments
+# (e.g. WASM) that supply their own transport via the `Provider` trait.
+provider = ["dep:starknet-providers"]
+# `account` pulls in starknet-accounts + starknet-signers and enables the
+# write paths. Requires `provider` since the signing flow needs an RPC.
+account = ["provider", "dep:starknet-accounts", "dep:starknet-signers", "dep:reqwest", "dep:serde", "dep:serde_json", "dep:hex", "dep:rand"]
+
+[dependencies]
+deadeye-core = { workspace = true }
+deadeye-collateral = { workspace = true }
+starknet-core = { workspace = true, features = ["std"] }
+starknet-providers = { workspace = true, optional = true }
+starknet-accounts = { workspace = true, optional = true }
+starknet-signers = { workspace = true, optional = true }
+async-trait = { workspace = true }
+futures = { workspace = true, features = ["std", "alloc"] }
+thiserror = { workspace = true }
+tokio = { workspace = true, features = ["sync", "rt", "time", "macros"] }
+tracing = { workspace = true, features = ["std", "attributes"] }
+url = { workspace = true, features = ["std"] }
+metrics = { workspace = true }
+reqwest = { workspace = true, optional = true, default-features = false, features = ["json", "rustls-tls"] }
+serde = { workspace = true, optional = true, features = ["std", "derive"] }
+serde_json = { workspace = true, optional = true, features = ["std"] }
+hex = { workspace = true, optional = true, features = ["std"] }
+rand = { workspace = true, optional = true, features = ["std", "std_rng"] }
+
+[dev-dependencies]
+tokio = { workspace = true, features = ["macros", "rt-multi-thread"] }
+wiremock = { workspace = true }
+tracing-subscriber = { workspace = true, features = ["registry", "fmt", "env-filter"] }
+tracing-test = { workspace = true }
+serial_test = { workspace = true, features = ["async"] }
+metrics-util = { workspace = true, features = ["debugging"] }
+serde_json = { workspace = true, features = ["std"] }
+url = { workspace = true, features = ["std"] }
