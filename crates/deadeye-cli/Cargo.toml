@@ -48,7 +48,10 @@ assert_cmd = "2"
 predicates = "3"
 tempfile = "3"
 serde_json = { workspace = true, features = ["std"] }
-deadeye-testkit = { workspace = true }
+# Path-only: testkit is `publish = false`, so `cargo publish` can't
+# resolve a version constraint for it. Path-only dev-deps are skipped
+# entirely when this crate is consumed from crates.io.
+deadeye-testkit = { path = "../deadeye-testkit" }
 deadeye-core = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-core = { workspace = true, features = ["std"] }
