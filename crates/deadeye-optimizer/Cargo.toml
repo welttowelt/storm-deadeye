@@ -1,7 +1,7 @@
 [package]
 name = "deadeye-optimizer"
 description = "EV-maximizing trade picker and LP P&L math for Deadeye normal markets."
-version.workspace = true
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -20,5 +20,6 @@ default = []
 
 [dependencies]
 deadeye-collateral = { workspace = true }
+deadeye-core = { workspace = true }
 
 [dev-dependencies]

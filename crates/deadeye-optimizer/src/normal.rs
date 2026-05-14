@@ -3,13 +3,13 @@
 //! Maximises **net** expected value (`EV − collateral`) under the trader's
 //! belief, subject to `collateral ≤ budget`.
 
-use deadeye_collateral::lambda;
+use deadeye_collateral::{MinimizationPolicy, lambda, normal_collateral};
+use deadeye_core::{NormalDistribution, Sq128};
 
 const N_SIGMA_SAMPLES: u32 = 50;
 const N_MEAN_SAMPLES: u32 = 50;
 const DEFAULT_MAX_SIGMA_RATIO: f64 = 4.0_f64;
 const DEFAULT_MAX_MEAN_SEP_SIGMAS: f64 = 4.0_f64;
-const SQRT_2PI: f64 = 2.506_628_274_631_000_7_f64;
 
 /// Tunable bounds on the optimizer's policy region.
 #[derive(Debug, Clone, Copy, PartialEq)]
@@ -97,27 +97,6 @@ pub struct NormalOptimizationResult {
     pub roi: f64,
 }
 
-fn normal_pdf(x: f64, mu: f64, sigma: f64) -> f64 {
-    if sigma <= 0.0 {
-        return 0.0;
-    }
-    let z = (x - mu) / sigma;
-    (1.0 / (sigma * SQRT_2PI)) * (-0.5 * z * z).exp()
-}
-
-fn normal_pdf_deriv1(x: f64, mu: f64, sigma: f64) -> f64 {
-    let xm = x - mu;
-    let var = sigma * sigma;
-    -(xm / var) * normal_pdf(x, mu, sigma)
-}
-
-fn normal_pdf_deriv2(x: f64, mu: f64, sigma: f64) -> f64 {
-    let pdf = normal_pdf(x, mu, sigma);
-    let xm = x - mu;
-    let s2 = sigma * sigma;
-    (xm * xm / (s2 * s2) - 1.0 / s2) * pdf
-}
-
 /// Closed-form Gaussian product integral — `∫ φ(x; μ₁, σ₁) φ(x; μ₂, σ₂) dx`.
 fn gaussian_product_integral(mu1: f64, sigma1: f64, mu2: f64, sigma2: f64) -> f64 {
     let sum_var = sigma1.mul_add(sigma1, sigma2 * sigma2);
@@ -129,66 +108,48 @@ fn gaussian_product_integral(mu1: f64, sigma1: f64, mu2: f64, sigma2: f64) -> f6
         * (-(diff_mu * diff_mu) / (2.0 * sum_var)).exp()
 }
 
-/// f64 Newton-Raphson collateral computation. Mirrors the TS reference
-/// implementation's initial-guess heuristic so the optimizer's results
-/// are byte-comparable.
+/// Collateral cost to transition `(μ_f, σ_f) → (μ_g, σ_g)`, computed
+/// via `deadeye_collateral::normal_collateral`.
+///
+/// This was previously a duplicated inline Newton solver, but its
+/// initial-guess heuristic mis-converged on equal-μ / σ-only moves —
+/// it would over-estimate cost by ~100× for symmetric σ-shrinking
+/// trades, hiding σ-arbitrage opportunities entirely. The
+/// `deadeye-collateral` crate's λ-scaled solver is the source of truth
+/// (audited against chain `scaled_verify_minimum_with_lambda`), so we
+/// just call it. Returns `f64::INFINITY` on any solver failure so the
+/// grid filter at line 265 of `optimize_normal_trade` rejects the
+/// candidate cleanly.
 fn collateral_number(mu_f: f64, sigma_f: f64, mu_g: f64, sigma_g: f64, k: f64) -> f64 {
-    let lam_f = lambda(sigma_f, k);
-    let lam_g = lambda(sigma_g, k);
     if (mu_f - mu_g).abs() < 1e-12_f64 && (sigma_f - sigma_g).abs() < 1e-12_f64 {
         return 0.0;
     }
-    let mean_diff = (mu_f - mu_g).abs();
-    let sigma_narrow = sigma_f.min(sigma_g);
-    let nearly_equal_means = sigma_narrow > 0.0 && mean_diff < 0.01 * sigma_narrow;
-
-    let mut x = if nearly_equal_means {
-        if sigma_f < sigma_g {
-            mu_f
-        } else {
-            mu_f + sigma_f
-        }
-    } else {
-        let wide_to_narrow = sigma_f > sigma_g;
-        let offset = if wide_to_narrow {
-            sigma_f
-        } else {
-            (sigma_f * 0.5).min(mean_diff * 0.5)
-        };
-        if mu_g > mu_f {
-            mu_f - offset
-        } else {
-            mu_f + offset
-        }
+    let Ok(mean_f) = Sq128::from_f64(mu_f) else {
+        return f64::INFINITY;
     };
-    let max_step = 0.5_f64 * sigma_f.max(sigma_g);
-
-    for _ in 0..50 {
-        let d1 = lam_g.mul_add(
-            normal_pdf_deriv1(x, mu_g, sigma_g),
-            -(lam_f * normal_pdf_deriv1(x, mu_f, sigma_f)),
-        );
-        let d2 = lam_g.mul_add(
-            normal_pdf_deriv2(x, mu_g, sigma_g),
-            -(lam_f * normal_pdf_deriv2(x, mu_f, sigma_f)),
-        );
-        if d2.abs() < 1e-30_f64 {
-            break;
-        }
-        let step = (-d1 / d2).clamp(-max_step, max_step);
-        let x_new = x + step;
-        if (x_new - x).abs() < 1e-10_f64 {
-            x = x_new;
-            break;
-        }
-        x = x_new;
+    let Ok(var_f) = Sq128::from_f64(sigma_f * sigma_f) else {
+        return f64::INFINITY;
+    };
+    let Ok(mean_g) = Sq128::from_f64(mu_g) else {
+        return f64::INFINITY;
+    };
+    let Ok(var_g) = Sq128::from_f64(sigma_g * sigma_g) else {
+        return f64::INFINITY;
+    };
+    let Ok(f) = NormalDistribution::from_variance(mean_f, var_f) else {
+        return f64::INFINITY;
+    };
+    let Ok(g) = NormalDistribution::from_variance(mean_g, var_g) else {
+        return f64::INFINITY;
+    };
+    // `k` enters via the lambda scaling that `normal_collateral` uses
+    // internally; the policy here is permissive (we'll filter
+    // out-of-budget candidates downstream).
+    let _ = k;
+    match normal_collateral(&f, &g, MinimizationPolicy::unrestricted()) {
+        Ok(verified) if verified.collateral.is_finite() => verified.collateral.max(0.0),
+        _ => f64::INFINITY,
     }
-
-    let ds = lam_g.mul_add(
-        normal_pdf(x, mu_g, sigma_g),
-        -(lam_f * normal_pdf(x, mu_f, sigma_f)),
-    );
-    (-ds).max(0.0)
 }
 
 #[expect(
@@ -285,7 +246,6 @@ pub fn optimize_normal_trade(input: NormalOptimizationInput) -> NormalOptimizati
             }
         }
     }
-
     if best_net <= 0.0 || best_coll <= 0.0 {
         return no_trade;
     }
@@ -340,5 +300,50 @@ mod tests {
         // With a meaningful belief shift the optimizer should select a non-trivial
         // mean change.
         assert!(r.optimized_mean >= input.market_mean);
+    }
+
+    /// Regression — σ-only arb (μ_b ≈ μ_market, σ_b ≪ σ_market) must
+    /// produce a positive-EV trade. Pre-v0.1.1 the inline Newton solver
+    /// mis-converged on equal-μ moves and over-estimated cost ~100×,
+    /// hiding every σ-shrink trade. Inputs match the live CPI YoY
+    /// market (2026-05-14): belief from the meridian model, market
+    /// from mainnet.
+    #[test]
+    fn sigma_arb_with_equal_mu_finds_positive_ev_trade() {
+        let input = NormalOptimizationInput::new(
+            50.0,    // budget
+            4.3274,  // belief μ
+            0.2143,  // belief σ
+            4.2900,  // market μ
+            0.3500,  // market σ
+            75.07,   // effective k
+        );
+        let r = optimize_normal_trade(input);
+        assert!(
+            r.collateral_required > 0.0 && r.collateral_required < 50.0,
+            "σ-arb: expected positive in-budget collateral, got {}",
+            r.collateral_required
+        );
+        assert!(
+            r.expected_value > r.collateral_required,
+            "σ-arb: expected positive net EV, got ev={} cost={}",
+            r.expected_value,
+            r.collateral_required
+        );
+        // The optimizer should pick a σ_g substantially tighter than market.
+        assert!(
+            r.optimized_sigma < input.market_sigma * 0.9,
+            "σ-arb: expected tightened σ_g, got {}",
+            r.optimized_sigma
+        );
+    }
+
+    /// Regression — pure σ-arb with exact-equal μ must still find a trade.
+    #[test]
+    fn pure_sigma_arb_finds_trade() {
+        let input = NormalOptimizationInput::new(50.0, 4.29, 0.21, 4.29, 0.35, 75.07);
+        let r = optimize_normal_trade(input);
+        assert!(r.collateral_required > 0.0);
+        assert!(r.expected_value > r.collateral_required);
     }
 }

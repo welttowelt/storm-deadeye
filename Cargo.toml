@@ -48,7 +48,7 @@ deadeye-sdk = { path = "crates/deadeye-sdk", version = "0.1.0" }
 deadeye-testkit = { path = "crates/deadeye-testkit", version = "0.1.0" }
 deadeye-indexer = { path = "crates/deadeye-indexer", version = "0.1.0" }
 deadeye-deployer = { path = "crates/deadeye-deployer", version = "0.1.0" }
-deadeye-optimizer = { path = "crates/deadeye-optimizer", version = "0.1.0" }
+deadeye-optimizer = { path = "crates/deadeye-optimizer", version = "0.1.1" }
 
 # Starknet — software-mansion/starknet-rs
 starknet = { version = "0.17", default-features = false }
