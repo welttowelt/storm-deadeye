@@ -123,7 +123,10 @@ async fn deadeye_trade_quote_and_execute_devnet() {
     let stdout = String::from_utf8_lossy(&output.stdout);
     let stderr = String::from_utf8_lossy(&output.stderr);
     eprintln!("trade quote stdout:\n{stdout}\nstderr:\n{stderr}");
-    assert!(output.status.success(), "trade quote returned non-zero exit");
+    assert!(
+        output.status.success(),
+        "trade quote returned non-zero exit"
+    );
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
     let on_chain = parsed
         .get("on_chain_will_accept")
@@ -163,10 +166,12 @@ async fn deadeye_trade_quote_and_execute_devnet() {
         "trade execute returned non-zero exit"
     );
     let parsed: serde_json::Value = serde_json::from_str(&stdout).expect("valid JSON");
-    assert!(parsed
-        .get("tx_hash")
-        .and_then(serde_json::Value::as_str)
-        .is_some());
+    assert!(
+        parsed
+            .get("tx_hash")
+            .and_then(serde_json::Value::as_str)
+            .is_some()
+    );
 
     // ── claim (graceful no-op on un-settled market) ────────────
     let output = Command::new(cli_binary())

@@ -2,9 +2,14 @@
 //! belief and market μ are close but the belief σ is tighter?
 //!
 //! Driven by the live CPI mainnet numbers (2026-05-14):
-//!   belief : μ=4.3274 σ=0.2143 (cpi_decomposition_v3 against live FRED)
-//!   market : μ=4.2900 σ=0.3500 (mainnet AMM via Cartridge RPC)
-//!   k_eff  : 75.07 (live, via fly.dev indexer)
+//!   belief : `μ=4.3274` `σ=0.2143` (`cpi_decomposition_v3` against live FRED)
+//!   market : `μ=4.2900` `σ=0.3500` (mainnet AMM via Cartridge RPC)
+//!   `k_eff` : 75.07 (live, via fly.dev indexer)
+
+#![allow(
+    clippy::print_stdout,
+    reason = "dev-only example binary; stdout is the entire UX"
+)]
 
 use deadeye_optimizer::{NormalOptimizationInput, optimize_normal_trade};
 

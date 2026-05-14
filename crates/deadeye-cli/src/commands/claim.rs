@@ -37,10 +37,8 @@ pub(crate) async fn run(args: ClaimArgs, ctx: &AppContext) -> Result<()> {
     // than an error. Any other revert is surfaced verbatim.
     let result = match family {
         Family::Normal => {
-            let writer = NormalMarketWriter::new(
-                NormalMarketReader::new(&writer_provider, market),
-                account,
-            );
+            let writer =
+                NormalMarketWriter::new(NormalMarketReader::new(&writer_provider, market), account);
             let outcome = if let Some(t) = trader_override {
                 writer.claim_for(t).await
             } else {

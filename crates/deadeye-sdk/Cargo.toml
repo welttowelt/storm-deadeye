@@ -1,7 +1,7 @@
 [package]
 name = "deadeye-sdk"
 description = "High-level Rust SDK for trading on Deadeye prediction markets. Designed for market makers — low latency, small dependency surface, no hidden async."
-version.workspace = true
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

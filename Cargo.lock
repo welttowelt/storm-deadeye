@@ -690,13 +690,14 @@ dependencies = [
 
 [[package]]
 name = "deadeye-cli"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "anyhow",
  "assert_cmd",
  "clap",
  "comfy-table",
  "deadeye-core",
+ "deadeye-deployer",
  "deadeye-indexer",
  "deadeye-sdk",
  "deadeye-starknet",
@@ -705,8 +706,11 @@ dependencies = [
  "futures",
  "owo-colors",
  "predicates",
+ "rand 0.8.6",
  "serde",
  "serde_json",
+ "starknet-accounts",
+ "starknet-contract",
  "starknet-core",
  "starknet-providers",
  "tempfile",
@@ -738,13 +742,15 @@ dependencies = [
 
 [[package]]
 name = "deadeye-deployer"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "deadeye-artifacts",
  "serde",
  "serde_json",
  "starknet-core",
+ "tempfile",
  "thiserror 2.0.18",
+ "toml",
 ]
 
 [[package]]
@@ -789,7 +795,7 @@ dependencies = [
 
 [[package]]
 name = "deadeye-sdk"
-version = "0.1.0"
+version = "0.1.1"
 dependencies = [
  "async-trait",
  "deadeye-artifacts",

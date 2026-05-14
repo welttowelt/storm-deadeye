@@ -183,12 +183,15 @@ impl Renderer {
     /// Render a `key: value` pair in pretty mode.
     pub(crate) fn kv(&self, key: &str, value: &str) {
         if self.color_enabled {
-            println!("  {} {}", format!("{key}:").style(Style::new().dimmed()), value);
+            println!(
+                "  {} {}",
+                format!("{key}:").style(Style::new().dimmed()),
+                value
+            );
         } else {
             println!("{key}: {value}");
         }
     }
-
 }
 
 /// Renderable types render twice — once for `pretty` (boxes, color) and

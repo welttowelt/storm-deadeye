@@ -6,7 +6,32 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+### Added — deadeye-sdk v0.1.1
+
+- `NormalMarket::optimize_quote_offline(belief_mean, belief_sigma, budget_xp)`
+  — chain-bit-exact off-chain EV optimizer for the **no-math-runtime**
+  preflight path. Reads live `(distribution, params, lp_info)`, derives
+  σ via [`Sq128::sqrt`] (matches `sqrt_verified` 20/20 on devnet), and
+  emits hints via the same `sqrt(mul_down(...))` chain the on-chain
+  `compute_hints_view` runs. The output `NormalTradeQuote` survives the
+  on-chain `INVALID_DISTRIBUTION` / `INVALID_HINTS` checks by construction.
+  See [`docs/OFFLINE_PREFLIGHT.md`](docs/OFFLINE_PREFLIGHT.md).
+- Integration test `deadeye-e2e/tests/offline_optimize_quote_parity.rs`
+  — runs both `optimize_quote` and `optimize_quote_offline` against a
+  freshly-bootstrapped devnet market and asserts limb-for-limb agreement
+  on the candidate distribution and hints (10/10).
+
+### Changed — deadeye-sdk v0.1.1
+
+- `NormalMarket::optimize_quote` now constructs the candidate via
+  `NormalDistribution::from_variance` (instead of `from_sigma`), so the
+  candidate σ is **Sq128-derived** instead of f64-derived. Internal
+  behaviour change only — the public API is unchanged. This brings the
+  chain-preflight path into bit-parity with the new offline path.
+
 ### Added
+
+
 
 - Initial workspace scaffold:
   - `deadeye-core` — signed Q128.128 fixed-point, distribution traits

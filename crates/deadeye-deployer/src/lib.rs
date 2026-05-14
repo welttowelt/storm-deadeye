@@ -29,6 +29,8 @@
 
 #![doc(html_no_source)]
 
+pub mod runtime;
+
 use serde::{Deserialize, Serialize};
 use starknet_core::types::Felt;
 use thiserror::Error;

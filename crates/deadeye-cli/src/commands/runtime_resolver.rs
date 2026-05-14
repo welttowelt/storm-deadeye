@@ -55,10 +55,7 @@ pub(crate) const fn family_label(family: Family) -> &'static str {
 /// Resolve the math-runtime contract address for `family`.
 ///
 /// Priority: `--runtime` flag → `DEADEYE_<FAMILY>_RUNTIME_ADDR` env var.
-pub(crate) fn resolve_runtime(
-    cli_runtime: Option<&str>,
-    family: Family,
-) -> Result<Felt> {
+pub(crate) fn resolve_runtime(cli_runtime: Option<&str>, family: Family) -> Result<Felt> {
     if let Some(raw) = cli_runtime {
         return parse_felt("runtime address", raw);
     }
@@ -70,9 +67,7 @@ pub(crate) fn resolve_runtime(
     };
     match std::env::var(env_var) {
         Ok(s) => parse_felt("runtime address", &s),
-        Err(_) => bail!(
-            "math runtime address required: pass `--runtime 0x...` or set `{env_var}`"
-        ),
+        Err(_) => bail!("math runtime address required: pass `--runtime 0x...` or set `{env_var}`"),
     }
 }
 
@@ -133,9 +128,7 @@ where
 /// from `DEADEYE_PRIVATE_KEY`.
 pub(crate) fn build_owned_account(ctx: &AppContext) -> Result<OwnedAccount> {
     if !ctx.config.has_private_key {
-        bail!(
-            "this command requires a private key; set DEADEYE_PRIVATE_KEY in your environment"
-        );
+        bail!("this command requires a private key; set DEADEYE_PRIVATE_KEY in your environment");
     }
     let address = ctx.resolved_address_felt()?;
     let raw_key = std::env::var("DEADEYE_PRIVATE_KEY")

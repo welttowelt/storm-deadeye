@@ -325,7 +325,11 @@ impl Render for QuoteResult {
         if let Some(rej) = &self.rejection {
             r.kv(
                 "rejected",
-                &format!("{} ({})", rej.variant, rej.sub_variant.as_deref().unwrap_or("-")),
+                &format!(
+                    "{} ({})",
+                    rej.variant,
+                    rej.sub_variant.as_deref().unwrap_or("-")
+                ),
             );
             r.kv("what_this_means", rej.summary);
             r.kv("suggested_fix", rej.suggested_fix);

@@ -128,7 +128,6 @@ pub(crate) enum Command {
     },
 
     // ─── Driver B subcommands ─────────────────────────────────────────
-
     /// Trade preflight / execute / journal (Driver B).
     Trade {
         #[command(subcommand)]
@@ -349,6 +348,65 @@ pub(crate) enum AdminCmd {
     Unpause(AdminPauseArgs),
     /// Collect protocol fees.
     CollectFees(AdminCollectFeesArgs),
+    /// Deploy an instance of a math-runtime class via the legacy UDC.
+    ///
+    /// Math runtime classes are pre-declared on mainnet, but no instances
+    /// exist — consumers (e.g. cpi-arb) need an instance to do
+    /// chain-faithful preflight. This command is idempotent: it caches
+    /// successful deploys in `~/.config/deadeye/runtimes.toml` keyed by
+    /// `(chain_id, family)` and re-uses them on subsequent invocations.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// # Dry-run on mainnet — projects the deploy address without spending gas.
+    /// deadeye admin deploy-math-runtime --family normal
+    ///
+    /// # Check that previously-cached runtimes are still alive on-chain.
+    /// deadeye admin deploy-math-runtime --status
+    ///
+    /// # Real deploy (requires --confirm + DEADEYE_PRIVATE_KEY).
+    /// deadeye admin deploy-math-runtime --family normal --confirm
+    /// ```
+    DeployMathRuntime(AdminDeployMathRuntimeArgs),
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum DeployFamilyArg {
+    /// Normal (Gaussian) market family.
+    Normal,
+    /// Lognormal market family.
+    Lognormal,
+    /// Multinoulli (categorical) market family.
+    Multinoulli,
+    /// Bivariate normal market family.
+    Bivariate,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct AdminDeployMathRuntimeArgs {
+    /// Market family whose math runtime should be deployed.
+    /// Required unless `--status` is set.
+    #[arg(long, value_name = "FAMILY")]
+    pub(crate) family: Option<DeployFamilyArg>,
+    /// Optional deterministic salt (hex felt). Defaults to a fresh random
+    /// felt; pass the same salt across runs for a content-addressed deploy.
+    #[arg(long, value_name = "FELT")]
+    pub(crate) salt: Option<String>,
+    /// Override the math-runtime class hash. Defaults to the canonical
+    /// class hash for `(chain_id, family)` from the bundled deployment
+    /// manifest (sepolia) or the pinned mainnet constants. Required on
+    /// chains other than mainnet / sepolia.
+    #[arg(long, value_name = "0x...")]
+    pub(crate) class_hash: Option<String>,
+    /// Required for a real on-chain deploy. Without it, the command is a
+    /// dry-run: it prints the projected address + class hash and exits 0.
+    #[arg(long)]
+    pub(crate) confirm: bool,
+    /// Query the local cache + verify each entry against the chain via
+    /// `getClassHashAt`. Implies `--family` is optional.
+    #[arg(long)]
+    pub(crate) status: bool,
 }
 
 #[derive(Debug, clap::Args)]
@@ -595,6 +653,18 @@ impl FamilyArg {
             Self::Lognormal => deadeye_sdk::bulk::Family::Lognormal,
             Self::Multinoulli => deadeye_sdk::bulk::Family::Multinoulli,
             Self::Bivariate => deadeye_sdk::bulk::Family::Bivariate,
+        }
+    }
+}
+
+impl DeployFamilyArg {
+    /// Convert to the [`deadeye_deployer::runtime::Family`] enum.
+    pub(crate) const fn as_deployer(self) -> deadeye_deployer::runtime::Family {
+        match self {
+            Self::Normal => deadeye_deployer::runtime::Family::Normal,
+            Self::Lognormal => deadeye_deployer::runtime::Family::Lognormal,
+            Self::Multinoulli => deadeye_deployer::runtime::Family::Multinoulli,
+            Self::Bivariate => deadeye_deployer::runtime::Family::Bivariate,
         }
     }
 }

@@ -72,6 +72,37 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 }
 ```
 
+## Normal-market: chain vs. offline preflight
+
+The `NormalMarket` handle ships **two** preflight entry points, chosen by
+whether a math-runtime contract instance is deployed on your target
+network:
+
+| Method | When to use | Chain round-trips | Guarantees |
+| --- | --- | --- | --- |
+| `optimize_quote(runtime, μ_b, σ_b, budget)` | A math-runtime instance is deployed (devnet, Sepolia, or self-hosted). | 4 view calls (`distribution`, `params`, `compute_hints_view × 2`, `check_trade_view`) | Chain-validated: `on_chain_will_accept` reflects `check_trade_view`'s verdict. |
+| `optimize_quote_offline(μ_b, σ_b, budget)` | **Mainnet today** — the normal AMM uses library dispatch (class hash) with no separate runtime contract. | 3 view calls (`distribution`, `params`, `lp_info`) — no math-runtime hops. | σ + hints are **bit-exact** with what the chain would derive (`Sq128::sqrt` matches `sqrt_verified` 20/20 on devnet; see [`docs/SQ128_SQRT.md`](docs/SQ128_SQRT.md)). |
+
+The offline path eliminates `INVALID_DISTRIBUTION` and `INVALID_HINTS`
+rejections by construction. The chain still re-verifies the trade on
+submit (balance, nonce, policy envelope) — but the σ/hint precision
+footgun is gone.
+
+```rust
+let market = client.normal_market(market_addr);
+let quote = market
+    .optimize_quote_offline(belief_mean, belief_sigma, budget_xp)
+    .await?;
+if quote.on_chain_will_accept {
+    // hand to a signed handle for execute_quote()
+}
+```
+
+Parity test: `deadeye-e2e/tests/offline_optimize_quote_parity.rs`
+(gated on `DEADEYE_RUN_INTEGRATION=1`) — runs both paths against a
+deployed runtime and asserts limb-for-limb agreement on
+`(μ_g, σ_g, σ_g²)` and `(l2_norm_denom, backing_denom)`.
+
 ## Development
 
 ```bash

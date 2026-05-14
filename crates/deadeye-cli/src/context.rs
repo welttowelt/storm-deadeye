@@ -31,7 +31,10 @@ impl AppContext {
             profile: cli.profile.clone(),
         };
         let config = ResolvedConfig::resolve(&cfg_file, inputs)?;
-        let mode = OutputMode::detect(cli.output.map(super::cli::OutputModeArg::into_mode), cli.no_color);
+        let mode = OutputMode::detect(
+            cli.output.map(super::cli::OutputModeArg::into_mode),
+            cli.no_color,
+        );
         let renderer = Renderer::new(mode);
         Ok(Self { config, renderer })
     }

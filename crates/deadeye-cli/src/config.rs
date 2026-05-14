@@ -70,8 +70,8 @@ pub(crate) fn load() -> Result<ConfigFile> {
     }
     let raw = fs::read_to_string(&path)
         .with_context(|| format!("reading config file at {}", path.display()))?;
-    let parsed: ConfigFile = toml::from_str(&raw)
-        .with_context(|| format!("parsing TOML in {}", path.display()))?;
+    let parsed: ConfigFile =
+        toml::from_str(&raw).with_context(|| format!("parsing TOML in {}", path.display()))?;
     Ok(parsed)
 }
 
@@ -91,8 +91,8 @@ pub(crate) fn save(cfg: &ConfigFile) -> Result<PathBuf> {
          # See `deadeye config --help` for management commands.\n\n",
     );
     header.push_str(&body);
-    let mut file = fs::File::create(&path)
-        .with_context(|| format!("opening {} for write", path.display()))?;
+    let mut file =
+        fs::File::create(&path).with_context(|| format!("opening {} for write", path.display()))?;
     file.write_all(header.as_bytes())
         .with_context(|| format!("writing {}", path.display()))?;
     Ok(path)

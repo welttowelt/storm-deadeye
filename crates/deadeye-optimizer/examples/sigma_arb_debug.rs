@@ -1,11 +1,18 @@
 //! Step through the optimizer's inner loop manually.
 
+#![allow(
+    clippy::print_stdout,
+    clippy::unwrap_used,
+    clippy::suboptimal_flops,
+    reason = "dev-only example binary; stdout is the UX, panics on bad input are fine"
+)]
+
 use deadeye_collateral::{MinimizationPolicy, lambda, normal_collateral};
 use deadeye_core::NormalDistribution;
 use deadeye_core::Sq128;
 
 fn gpi(mu1: f64, s1: f64, mu2: f64, s2: f64) -> f64 {
-    let sv = s1 * s1 + s2 * s2;
+    let sv = (s1 * s1) + (s2 * s2);
     (1.0 / (2.0 * std::f64::consts::PI * sv).sqrt()) * (-(mu1 - mu2).powi(2) / (2.0 * sv)).exp()
 }
 

@@ -29,10 +29,12 @@ pub(crate) async fn run(action: MarketsCmd, ctx: &AppContext) -> Result<()> {
 
 async fn list(ctx: &AppContext, family: Option<FamilyArg>, limit: usize) -> Result<()> {
     let indexer = ctx.indexer_client()?;
-    let mut markets = indexer
-        .markets()
-        .await
-        .with_context(|| format!("indexer GET /api/markets ({}) failed", ctx.config.indexer_url))?;
+    let mut markets = indexer.markets().await.with_context(|| {
+        format!(
+            "indexer GET /api/markets ({}) failed",
+            ctx.config.indexer_url
+        )
+    })?;
     if let Some(f) = family {
         let slug = f.as_indexer_slug();
         markets.retain(|m| m.market_type == slug);
@@ -45,11 +47,7 @@ async fn list(ctx: &AppContext, family: Option<FamilyArg>, limit: usize) -> Resu
     ctx.renderer.print_table(&rows)
 }
 
-async fn show(
-    ctx: &AppContext,
-    address: &str,
-    family_override: Option<FamilyArg>,
-) -> Result<()> {
+async fn show(ctx: &AppContext, address: &str, family_override: Option<FamilyArg>) -> Result<()> {
     let market = parse_address(address)?;
     let client = ctx.deadeye_client()?;
 
@@ -113,9 +111,7 @@ pub(crate) async fn detect_family(
     {
         return Ok(Family::Bivariate);
     }
-    anyhow::bail!(
-        "no family responded to `get_params` — is the address a Deadeye AMM contract?"
-    )
+    anyhow::bail!("no family responded to `get_params` — is the address a Deadeye AMM contract?")
 }
 
 fn params_view(p: AmmParamsRaw) -> MarketParamsView {

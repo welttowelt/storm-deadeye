@@ -40,7 +40,10 @@ impl Render for AccountView {
         r.kv("indexer", &r.dim(&self.indexer_url));
         match (self.strk_balance_base, self.strk_balance_strk) {
             (Some(base), Some(strk)) => {
-                r.kv("STRK balance", &format!("{strk:.6} STRK  ({base} base units)"));
+                r.kv(
+                    "STRK balance",
+                    &format!("{strk:.6} STRK  ({base} base units)"),
+                );
             },
             _ => {
                 r.kv("STRK balance", &r.dim("(unknown — address required)"));
@@ -138,7 +141,11 @@ impl Render for MarketRow {
                 opt_f(self.sigma),
                 opt_f(self.k),
                 self.backing.clone().unwrap_or_else(|| "-".into()),
-                if self.settled { "yes".into() } else { "no".into() },
+                if self.settled {
+                    "yes".into()
+                } else {
+                    "no".into()
+                },
             ]);
         });
     }
@@ -158,7 +165,9 @@ fn make_market_table() -> Table {
     let mut t = Table::new();
     t.load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec!["addr", "family", "title", "μ", "σ", "k", "backing", "settled"]);
+        .set_header(vec![
+            "addr", "family", "title", "μ", "σ", "k", "backing", "settled",
+        ]);
     t
 }
 
@@ -166,7 +175,13 @@ fn make_position_table() -> Table {
     let mut t = Table::new();
     t.load_preset(UTF8_FULL)
         .set_content_arrangement(ContentArrangement::Dynamic)
-        .set_header(vec!["market", "family", "collateral", "share_pct", "claimed"]);
+        .set_header(vec![
+            "market",
+            "family",
+            "collateral",
+            "share_pct",
+            "claimed",
+        ]);
     t
 }
 
@@ -228,7 +243,10 @@ impl Render for MarketShowView {
                 ),
             );
             if status.is_settled {
-                r.kv("settlement_value", &format!("{:.6}", status.settlement_value));
+                r.kv(
+                    "settlement_value",
+                    &format!("{:.6}", status.settlement_value),
+                );
             }
         }
         // Distribution: render the underlying JSON as a series of kv pairs.
@@ -239,7 +257,10 @@ impl Render for MarketShowView {
         }
         r.kv("params.k", &format!("{:.6}", self.params.k));
         r.kv("params.backing", &format!("{:.6}", self.params.backing));
-        r.kv("params.tolerance", &format!("{:.3e}", self.params.tolerance));
+        r.kv(
+            "params.tolerance",
+            &format!("{:.3e}", self.params.tolerance),
+        );
         r.kv(
             "params.min_trade_collateral",
             &format!("{:.6}", self.params.min_trade_collateral),
@@ -303,7 +324,11 @@ impl Render for MarketShowView {
         )?;
         writeln!(w, "fees.lp_bps: {}", self.fee_config.lp_fee_bps)?;
         writeln!(w, "fees.protocol_bps: {}", self.fee_config.protocol_fee_bps)?;
-        writeln!(w, "fees.settlement_bps: {}", self.fee_config.settlement_fee_bps)?;
+        writeln!(
+            w,
+            "fees.settlement_bps: {}",
+            self.fee_config.settlement_fee_bps
+        )?;
         writeln!(w, "fees.total_bps: {}", self.fee_config.total_bps)?;
         Ok(())
     }
@@ -421,7 +446,11 @@ impl Render for PositionRow {
                 self.family.clone(),
                 opt_f(self.collateral_f64),
                 self.settlement_state.clone().unwrap_or_else(|| "-".into()),
-                if self.claimed { "yes".into() } else { "no".into() },
+                if self.claimed {
+                    "yes".into()
+                } else {
+                    "no".into()
+                },
             ]);
         });
     }
@@ -446,7 +475,10 @@ pub(crate) struct PositionShowView {
 
 impl Render for PositionShowView {
     fn render_pretty(&self, r: &Renderer) {
-        r.header(&format!("Position {} on {}", self.trader, self.market_address));
+        r.header(&format!(
+            "Position {} on {}",
+            self.trader, self.market_address
+        ));
         r.kv("family", &r.highlight(&self.family));
         r.kv("total_collateral", &format!("{:.6}", self.total_collateral));
         r.kv("flags", &format!("{:#x}", self.flags));
@@ -492,9 +524,7 @@ impl Render for ConfigShowView {
         r.kv("config_path", &r.dim(&self.config_path));
         r.kv(
             "default_profile",
-            self.default_profile
-                .as_deref()
-                .unwrap_or(&r.dim("(none)")),
+            self.default_profile.as_deref().unwrap_or(&r.dim("(none)")),
         );
         r.kv("active_profile", &r.highlight(&self.active_profile));
         r.kv("rpc_url", &self.rpc_url);
@@ -506,7 +536,8 @@ impl Render for ConfigShowView {
         );
         r.kv(
             "private_key",
-            self.private_key.unwrap_or(&r.dim("(unset; use DEADEYE_PRIVATE_KEY)")),
+            self.private_key
+                .unwrap_or(&r.dim("(unset; use DEADEYE_PRIVATE_KEY)")),
         );
     }
 
@@ -540,11 +571,7 @@ pub(crate) struct ProfileRow {
 impl Render for ProfileRow {
     fn render_pretty(&self, r: &Renderer) {
         let star = if self.is_default { "*" } else { " " };
-        println!(
-            "{} {}",
-            r.highlight(star),
-            r.highlight(&self.name),
-        );
+        println!("{} {}", r.highlight(star), r.highlight(&self.name),);
         r.kv("rpc_url", self.rpc_url.as_deref().unwrap_or("-"));
         r.kv("indexer_url", self.indexer_url.as_deref().unwrap_or("-"));
         r.kv("address", self.address.as_deref().unwrap_or("-"));

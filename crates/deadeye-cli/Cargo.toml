@@ -1,7 +1,7 @@
 [package]
 name = "deadeye-cli"
 description = "Market-maker-grade command-line interface for the Deadeye Rust SDK."
-version.workspace = true
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true
@@ -25,8 +25,12 @@ deadeye-core = { workspace = true, features = ["std"] }
 deadeye-sdk = { workspace = true }
 deadeye-starknet = { workspace = true }
 deadeye-indexer = { workspace = true, features = ["client"] }
+deadeye-deployer = { workspace = true }
 starknet-core = { workspace = true, features = ["std"] }
 starknet-providers = { workspace = true }
+starknet-contract = { workspace = true }
+starknet-accounts = { workspace = true }
+rand = { workspace = true, features = ["std", "std_rng"] }
 
 # CLI / I/O surface.
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
@@ -53,6 +57,7 @@ serde_json = { workspace = true, features = ["std"] }
 # entirely when this crate is consumed from crates.io.
 deadeye-testkit = { path = "../deadeye-testkit" }
 deadeye-core = { workspace = true }
+deadeye-deployer = { workspace = true }
 starknet-providers = { workspace = true }
 starknet-core = { workspace = true, features = ["std"] }
 tokio = { workspace = true, features = ["macros", "rt-multi-thread", "time"] }

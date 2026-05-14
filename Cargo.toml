@@ -44,10 +44,10 @@ deadeye-core = { path = "crates/deadeye-core", version = "0.1.0" }
 deadeye-artifacts = { path = "crates/deadeye-artifacts", version = "0.1.0" }
 deadeye-collateral = { path = "crates/deadeye-collateral", version = "0.1.0" }
 deadeye-starknet = { path = "crates/deadeye-starknet", version = "0.1.0", default-features = false }
-deadeye-sdk = { path = "crates/deadeye-sdk", version = "0.1.0" }
+deadeye-sdk = { path = "crates/deadeye-sdk", version = "0.1.1" }
 deadeye-testkit = { path = "crates/deadeye-testkit", version = "0.1.0" }
 deadeye-indexer = { path = "crates/deadeye-indexer", version = "0.1.0" }
-deadeye-deployer = { path = "crates/deadeye-deployer", version = "0.1.0" }
+deadeye-deployer = { path = "crates/deadeye-deployer", version = "0.1.1" }
 deadeye-optimizer = { path = "crates/deadeye-optimizer", version = "0.1.1" }
 
 # Starknet — software-mansion/starknet-rs

@@ -74,10 +74,8 @@ async fn sell(ctx: &AppContext, args: PositionSellArgs, confirm: bool) -> Result
     let result = match family {
         Family::Normal => {
             let runtime = resolve_runtime(args.runtime.as_deref(), family)?;
-            let writer = NormalMarketWriter::new(
-                NormalMarketReader::new(&writer_provider, market),
-                account,
-            );
+            let writer =
+                NormalMarketWriter::new(NormalMarketReader::new(&writer_provider, market), account);
             match writer.sell_position(runtime, args.min_out).await {
                 Ok(receipt) => submission_from_receipt("sell", market_hex.clone(), receipt),
                 Err(e) => submission_from_trade_error("sell", market_hex.clone(), &e),
@@ -129,11 +127,9 @@ async fn list(
 ) -> Result<()> {
     let trader_str = match trader {
         Some(s) => s,
-        None => ctx
-            .config
-            .address
-            .clone()
-            .context("no trader address — pass --trader, set DEADEYE_ADDRESS, or configure a profile")?,
+        None => ctx.config.address.clone().context(
+            "no trader address — pass --trader, set DEADEYE_ADDRESS, or configure a profile",
+        )?,
     };
     let indexer = ctx.indexer_client()?;
     let positions = indexer
@@ -179,11 +175,9 @@ async fn show(
     let market = parse_address(market_str)?;
     let trader_str = match trader_opt {
         Some(s) => s,
-        None => ctx
-            .config
-            .address
-            .clone()
-            .context("no trader address — pass --trader, set DEADEYE_ADDRESS, or configure a profile")?,
+        None => ctx.config.address.clone().context(
+            "no trader address — pass --trader, set DEADEYE_ADDRESS, or configure a profile",
+        )?,
     };
     let trader = parse_address(&trader_str)?;
     let client = ctx.deadeye_client()?;

@@ -53,10 +53,8 @@ async fn add(ctx: &AppContext, args: LpAddArgs, confirm: bool) -> Result<()> {
 
     let result = match family {
         Family::Normal => {
-            let writer = NormalMarketWriter::new(
-                NormalMarketReader::new(&writer_provider, market),
-                account,
-            );
+            let writer =
+                NormalMarketWriter::new(NormalMarketReader::new(&writer_provider, market), account);
             match writer.add_liquidity(share_amount).await {
                 Ok(receipt) => submission_from_receipt("lp_add", market_hex, receipt),
                 Err(e) => submission_from_trade_error(

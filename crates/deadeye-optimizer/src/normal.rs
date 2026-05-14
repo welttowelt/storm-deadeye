@@ -302,10 +302,10 @@ mod tests {
         assert!(r.optimized_mean >= input.market_mean);
     }
 
-    /// Regression — σ-only arb (μ_b ≈ μ_market, σ_b ≪ σ_market) must
+    /// Regression — σ-only arb (`μ_b` ≈ `μ_market`, `σ_b` ≪ `σ_market`) must
     /// produce a positive-EV trade. Pre-v0.1.1 the inline Newton solver
     /// mis-converged on equal-μ moves and over-estimated cost ~100×,
-    /// hiding every σ-shrink trade. Inputs match the live CPI YoY
+    /// hiding every σ-shrink trade. Inputs match the live CPI `YoY`
     /// market (2026-05-14): belief from the meridian model, market
     /// from mainnet.
     #[test]

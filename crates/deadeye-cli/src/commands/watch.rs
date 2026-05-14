@@ -61,9 +61,10 @@ pub(crate) async fn run(args: WatchArgs, ctx: &AppContext) -> Result<()> {
         .transpose()?;
     // Resolve runtime once if a quote is requested.
     let runtime: Option<Felt> = if candidate_quote.is_some() {
-        Some(
-            crate::commands::runtime_resolver::resolve_runtime(args.runtime.as_deref(), family)?,
-        )
+        Some(crate::commands::runtime_resolver::resolve_runtime(
+            args.runtime.as_deref(),
+            family,
+        )?)
     } else {
         None
     };
@@ -109,9 +110,9 @@ pub(crate) async fn run(args: WatchArgs, ctx: &AppContext) -> Result<()> {
 
 fn build_provider_owned(ctx: &AppContext) -> Result<JsonRpcProvider> {
     let url = Url::parse(&ctx.config.rpc_url)?;
-    Ok(JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(
-        url,
-    ))))
+    Ok(JsonRpcProvider::new(JsonRpcClient::new(
+        HttpTransport::new(url),
+    )))
 }
 
 /// Local mirror of the parsed `--show-quote-for` spec.
@@ -142,7 +143,8 @@ fn parse_quote_spec(s: &str, family: Family) -> Result<QuoteSpec> {
         }
     }
     let mean = mean.ok_or_else(|| anyhow::anyhow!("--show-quote-for missing `mean`"))?;
-    let variance = variance.ok_or_else(|| anyhow::anyhow!("--show-quote-for missing `variance`"))?;
+    let variance =
+        variance.ok_or_else(|| anyhow::anyhow!("--show-quote-for missing `variance`"))?;
     let _ = family;
     Ok(QuoteSpec {
         mean,
@@ -211,12 +213,7 @@ fn build_candidate_quote(
     }
 }
 
-fn emit(
-    ctx: &AppContext,
-    label: &'static str,
-    family: Family,
-    update: &MarketStateUpdate,
-) {
+fn emit(ctx: &AppContext, label: &'static str, family: Family, update: &MarketStateUpdate) {
     let (mean, sigma, variance) = match &update.distribution {
         Some(DistributionSnapshot::Normal(d)) => (
             Some(Sq128::from_raw(d.mean).to_f64()),

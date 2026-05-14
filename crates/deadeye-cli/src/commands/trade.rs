@@ -89,7 +89,9 @@ async fn quote_normal(
             .await
             .context("optimize_quote")?
     } else {
-        let mean = args.mean.context("`--mean` is required (or pair --belief / --budget)")?;
+        let mean = args
+            .mean
+            .context("`--mean` is required (or pair --belief / --budget)")?;
         let variance = args
             .variance
             .context("`--variance` is required (or pair --belief / --budget)")?;
@@ -167,7 +169,9 @@ async fn quote_lognormal(
     let runtime = resolve_runtime(args.runtime.as_deref(), family)?;
     let provider = client.provider();
     let reader = LognormalMarketReader::new(provider, market);
-    let mean = args.mean.context("--mean is required for lognormal quote")?;
+    let mean = args
+        .mean
+        .context("--mean is required for lognormal quote")?;
     let variance = args
         .variance
         .context("--variance is required for lognormal quote")?;
@@ -249,7 +253,9 @@ async fn execute_normal(
     let market_handle = client.normal_market(market);
 
     let mean = args.mean.context("--mean required for normal execute")?;
-    let variance = args.variance.context("--variance required for normal execute")?;
+    let variance = args
+        .variance
+        .context("--variance required for normal execute")?;
     let sigma = variance.sqrt();
     let candidate = deadeye_core::distribution::NormalDistributionRaw {
         mean: Sq128::from_f64(mean)?.to_raw(),
@@ -286,9 +292,7 @@ async fn execute_normal(
             call_count: None,
             accepted: false,
             rejection,
-            note: Some(
-                "preflight rejected — fix the cause and re-quote before retrying".into(),
-            ),
+            note: Some("preflight rejected — fix the cause and re-quote before retrying".into()),
         };
         return ctx.renderer.print(&result);
     }
@@ -314,10 +318,8 @@ async fn execute_normal(
 
     let account = build_owned_account(ctx)?;
     let writer_provider = build_provider(ctx)?;
-    let writer = NormalMarketWriter::new(
-        NormalMarketReader::new(&writer_provider, market),
-        account,
-    );
+    let writer =
+        NormalMarketWriter::new(NormalMarketReader::new(&writer_provider, market), account);
 
     let result = match writer.execute_quote(quote).await {
         Ok(receipt) => {
@@ -367,9 +369,7 @@ async fn execute_lognormal(
             call_count: None,
             accepted: false,
             rejection,
-            note: Some(
-                "preflight rejected — fix the cause and re-quote before retrying".into(),
-            ),
+            note: Some("preflight rejected — fix the cause and re-quote before retrying".into()),
         };
         return ctx.renderer.print(&result);
     }
@@ -444,8 +444,8 @@ fn journal_cmd(ctx: &AppContext, args: TradeJournalArgs) -> Result<()> {
 }
 
 fn default_journal_path() -> Result<std::path::PathBuf> {
-    let mut dir = dirs::data_dir()
-        .context("could not locate user data dir; pass --path explicitly")?;
+    let mut dir =
+        dirs::data_dir().context("could not locate user data dir; pass --path explicitly")?;
     dir.push("deadeye");
     std::fs::create_dir_all(&dir).ok();
     dir.push("journal.jsonl");
@@ -463,8 +463,8 @@ where
     P: deadeye_starknet::Provider,
     A: Account,
 {
-    let mut journal = TradeJournal::open(path)
-        .with_context(|| format!("opening journal {}", path.display()))?;
+    let mut journal =
+        TradeJournal::open(path).with_context(|| format!("opening journal {}", path.display()))?;
     let entry = JournalEntry::new(
         Family::Normal,
         market,
