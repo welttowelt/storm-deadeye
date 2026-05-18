@@ -147,6 +147,17 @@ pub(crate) enum Command {
     },
     /// Block-driven live stream for one market.
     Watch(WatchArgs),
+    /// Restricted-collateral-token (XP) operations.
+    ///
+    /// Wraps the deployed `restricted_collateral_token` contract — the
+    /// ERC-20 that the Deadeye AMMs accept as `transfer_from` source. The
+    /// `claim-grant` subcommand calls `claim_initial_grant()` on the
+    /// token, which mints a fixed amount to a fresh wallet so it can
+    /// start trading.
+    Collateral {
+        #[command(subcommand)]
+        action: CollateralCmd,
+    },
 }
 
 // ─── Driver B argument types ─────────────────────────────────────────
@@ -321,6 +332,57 @@ pub(crate) struct LpRemoveArgs {
     /// Fraction of LP shares to remove (0 < f ≤ 1).
     #[arg(long)]
     pub(crate) fraction: f64,
+}
+
+/// `deadeye collateral …`
+#[derive(Debug, Subcommand)]
+pub(crate) enum CollateralCmd {
+    /// Mint the one-shot initial grant of XP into the active wallet.
+    ///
+    /// The XP token's `claim_initial_grant()` mints `initial_grant()`
+    /// tokens to the caller iff `has_claimed_initial_grant(caller)` is
+    /// still `false`. Re-running on an already-claimed wallet is a clean
+    /// no-op — the command short-circuits before submitting.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// # Dry-run (default): show what would happen.
+    /// deadeye collateral claim-grant
+    ///
+    /// # Real submission.
+    /// deadeye collateral claim-grant --execute
+    ///
+    /// # Custom token address (sepolia / devnet).
+    /// deadeye collateral claim-grant --token 0x4583… --execute
+    /// ```
+    ClaimGrant(CollateralClaimGrantArgs),
+    /// Show the wallet's XP balance + grant-claim status.
+    Balance(CollateralBalanceArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct CollateralClaimGrantArgs {
+    /// Override the collateral-token address. Defaults to the bundled
+    /// mainnet XP address (`MAINNET_XP_TOKEN_ADDRESS`). Required on
+    /// sepolia / devnet.
+    #[arg(long, value_name = "0x...")]
+    pub(crate) token: Option<String>,
+    /// Submit the transaction. Without this flag, the command performs
+    /// the pre-flight reads and prints the plan but never signs.
+    #[arg(long)]
+    pub(crate) execute: bool,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct CollateralBalanceArgs {
+    /// Override the collateral-token address. Defaults to the bundled
+    /// mainnet XP address.
+    #[arg(long, value_name = "0x...")]
+    pub(crate) token: Option<String>,
+    /// Account to inspect. Defaults to `--address` / `DEADEYE_ADDRESS`.
+    #[arg(long, value_name = "0x...")]
+    pub(crate) account: Option<String>,
 }
 
 /// `deadeye claim …`

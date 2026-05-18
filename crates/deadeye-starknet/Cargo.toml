@@ -1,7 +1,11 @@
 [package]
 name = "deadeye-starknet"
 description = "Starknet contract bindings, Cairo Serde encoders, and view-call wrappers for Deadeye markets."
-version.workspace = true
+# Pinned independently of the workspace version (which governs deadeye-core /
+# artifacts / collateral / indexer). Bumped to 0.1.1 to surface the new
+# CollateralTokenReader / CollateralTokenWriter API; the workspace-inherited
+# crates remain at 0.1.0 because their public surface is unchanged.
+version = "0.1.1"
 edition.workspace = true
 rust-version.workspace = true
 license.workspace = true

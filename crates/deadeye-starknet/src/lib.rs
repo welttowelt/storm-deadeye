@@ -23,6 +23,7 @@
 pub mod account;
 pub mod bivariate_amm;
 pub mod cairo_serde;
+pub mod collateral;
 pub mod error;
 pub mod execution;
 pub mod factory;
@@ -50,6 +51,9 @@ pub use account::{
 };
 pub use bivariate_amm::{BivariateMarketReader, BivariateMarketWriter, BivariateTradeQuote};
 pub use cairo_serde::{CairoSerde, CairoSerdeError};
+pub use collateral::{
+    CollateralTokenReader, CollateralTokenWriter, MAINNET_XP_TOKEN_ADDRESS, U256Value,
+};
 pub use error::{
     ContractError, ContractResult, TradeError, TradeRejectionReason, TradeResult,
     VerificationSubReason, parse_revert_reason,

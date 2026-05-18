@@ -19,6 +19,7 @@ use crate::{
 pub(crate) mod account;
 pub(crate) mod admin;
 pub(crate) mod claim;
+pub(crate) mod collateral;
 pub(crate) mod config_cmd;
 pub(crate) mod lp;
 pub(crate) mod markets;
@@ -62,5 +63,6 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
         Command::Claim(args) => claim::run(args, &ctx).await,
         Command::Admin { action } => admin::run(action, &ctx, confirm).await,
         Command::Watch(args) => watch::run(args, &ctx).await,
+        Command::Collateral { action } => collateral::run(action, &ctx).await,
     }
 }
