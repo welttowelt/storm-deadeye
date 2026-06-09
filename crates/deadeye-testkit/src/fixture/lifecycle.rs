@@ -105,7 +105,7 @@ fn sq(v: f64) -> Sq128Raw {
 /// Installs a normal-market deploy profile suitable for chaos tests.
 ///
 /// Defaults: `k=50`, `backing=50`, `tolerance=1e-3`, `min_trade_collateral=1.0`,
-/// fees=0, `payout_amplifier=1.0`, no extension.
+/// fees=0, no extension.
 ///
 /// **Why `backing=50` and not the production `1000`:** the devnet
 /// predeployed STRK token funds each account with **1000 STRK**, and the
@@ -149,7 +149,6 @@ where
         },
         extension: Felt::ZERO,
         extension_call_points: 0,
-        payout_amplifier: sq(1.0),
     };
     upsert_deploy_profile(account, factory, profile_id, params).await?;
     Ok(())
@@ -196,7 +195,6 @@ where
         },
         extension: Felt::ZERO,
         extension_call_points: 0,
-        payout_amplifier: sq(1.0),
     };
     upsert_deploy_profile(account, factory, profile_id, params).await?;
     Ok(())
@@ -225,7 +223,6 @@ fn encode_zero_overrides(out: &mut Vec<Felt>) {
     out.push(Felt::ZERO); // fee_config.settlement_fee_bps
     out.push(Felt::ZERO); // extension
     out.push(Felt::ZERO); // extension_call_points
-    zero.encode(out); // payout_amplifier
 }
 
 /// Deploys a normal market and returns the deployed contract address by
@@ -414,7 +411,6 @@ where
         },
         extension: Felt::ZERO,
         extension_call_points: 0,
-        payout_amplifier: sq(1.0),
     };
     upsert_deploy_profile(account, factory, profile_id, params).await?;
     Ok(())
@@ -540,7 +536,6 @@ where
         },
         extension: Felt::ZERO,
         extension_call_points: 0,
-        payout_amplifier: sq(1.0),
     };
     upsert_deploy_profile(account, factory, profile_id, params).await?;
     Ok(())
@@ -666,7 +661,6 @@ where
         },
         extension: Felt::ZERO,
         extension_call_points: 0,
-        payout_amplifier: sq(1.0),
     };
     upsert_deploy_profile(account, factory, profile_id, params).await?;
     Ok(())

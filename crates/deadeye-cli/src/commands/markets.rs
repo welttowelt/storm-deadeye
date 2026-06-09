@@ -120,7 +120,6 @@ fn params_view(p: AmmParamsRaw) -> MarketParamsView {
         backing: Sq128::from_raw(p.backing).to_f64(),
         tolerance: Sq128::from_raw(p.tolerance).to_f64(),
         min_trade_collateral: Sq128::from_raw(p.min_trade_collateral).to_f64(),
-        payout_amplifier: Sq128::from_raw(p.payout_amplifier).to_f64(),
     }
 }
 

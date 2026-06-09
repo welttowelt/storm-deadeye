@@ -829,13 +829,12 @@ mod tests {
             variance: deadeye_core::Sq128::from_f64(1.0).unwrap().to_raw(),
             sigma: deadeye_core::Sq128::from_f64(1.0).unwrap().to_raw(),
         };
-        // Params: k, backing, tolerance, min_trade_collateral, payout_amplifier
+        // Params: k, backing, tolerance, min_trade_collateral
         let params = crate::types::common::AmmParamsRaw {
             k: deadeye_core::Sq128::from_f64(1.0).unwrap().to_raw(),
             backing: deadeye_core::Sq128::from_f64(1000.0).unwrap().to_raw(),
             tolerance: deadeye_core::Sq128::from_f64(1.0).unwrap().to_raw(),
             min_trade_collateral: deadeye_core::Sq128::from_f64(0.001).unwrap().to_raw(),
-            payout_amplifier: deadeye_core::Sq128::from_f64(1.0).unwrap().to_raw(),
         };
         // Mutex pops responses LIFO — push params *first* then dist so
         // distribution() (first await) gets dist, and params() gets params.

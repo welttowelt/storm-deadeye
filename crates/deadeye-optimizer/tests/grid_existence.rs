@@ -61,9 +61,7 @@
 
 use deadeye_collateral::{MinimizationPolicy, lambda, normal_collateral};
 use deadeye_core::{Distribution as _DistributionPdf, NormalDistribution, Sq128};
-use deadeye_optimizer::{
-    NormalOptimizationInput, OptimizerConstraints, optimize_normal_trade,
-};
+use deadeye_optimizer::{NormalOptimizationInput, OptimizerConstraints, optimize_normal_trade};
 use proptest::prelude::*;
 
 // ── Grid constants ──────────────────────────────────────────────────────
@@ -104,13 +102,7 @@ fn gaussian_product_integral(mu1: f64, sigma1: f64, mu2: f64, sigma2: f64) -> f6
 /// what `normal_collateral.collateral` reports — was the bug that hid
 /// the unit-mismatch in `optimize_normal_trade` from Driver A's
 /// proptest.
-fn lambda_scaled_collateral_at(
-    mu_f: f64,
-    sigma_f: f64,
-    mu_g: f64,
-    sigma_g: f64,
-    k: f64,
-) -> f64 {
+fn lambda_scaled_collateral_at(mu_f: f64, sigma_f: f64, mu_g: f64, sigma_g: f64, k: f64) -> f64 {
     if (mu_f - mu_g).abs() < 1e-12_f64 && (sigma_f - sigma_g).abs() < 1e-12_f64 {
         return 0.0;
     }
@@ -289,7 +281,6 @@ proptest! {
             market_mean: mu_m,
             market_sigma: sigma_m,
             effective_k: k,
-            payout_amplifier: 1.0,
             constraints: OptimizerConstraints::default(),
         };
         let result = optimize_normal_trade(input);
@@ -356,15 +347,51 @@ fn sigma_only_arb_chain_frame_outcomes() {
     let cases = [
         // (label, mu_b, sigma_b, mu_m, sigma_m, budget, k, expect_trade)
         // "Modest" tight beliefs at k≈50–75: chain charge dominates EV.
-        ("live-CPI-2026-05-14", 4.3274, 0.2143, 4.2900, 0.3500, 50.0, 75.07, false),
-        ("pure σ-arb equal-μ",  4.2900, 0.2143, 4.2900, 0.3500, 50.0, 75.07, false),
-        ("σ-widening",          4.2900, 0.7000, 4.2900, 0.3500, 50.0, 50.00, false),
+        (
+            "live-CPI-2026-05-14",
+            4.3274,
+            0.2143,
+            4.2900,
+            0.3500,
+            50.0,
+            75.07,
+            false,
+        ),
+        (
+            "pure σ-arb equal-μ",
+            4.2900,
+            0.2143,
+            4.2900,
+            0.3500,
+            50.0,
+            75.07,
+            false,
+        ),
+        (
+            "σ-widening",
+            4.2900,
+            0.7000,
+            4.2900,
+            0.3500,
+            50.0,
+            50.00,
+            false,
+        ),
         // Aggressively tight belief (σ_b=0.05 ≪ σ_m=0.35) at k=50: λ_g
         // shoots up enough that the GPI peak in the EV dominates the
         // chain charge — this IS chain-profitable.
-        ("σ-tightening 7x",     4.2900, 0.0500, 4.2900, 0.3500, 50.0, 50.00, true),
+        (
+            "σ-tightening 7x",
+            4.2900,
+            0.0500,
+            4.2900,
+            0.3500,
+            50.0,
+            50.00,
+            true,
+        ),
         // Low-k cases where σ-arb IS chain-profitable.
-        ("low-k σ-shrink",      0.0,    0.5,    0.0,    4.0,    100.0, 1.0,  true),
+        ("low-k σ-shrink", 0.0, 0.5, 0.0, 4.0, 100.0, 1.0, true),
     ];
     for (label, mu_b, sigma_b, mu_m, sigma_m, budget, k, expect_trade) in cases {
         let r = optimize_normal_trade(NormalOptimizationInput::new(
@@ -372,8 +399,14 @@ fn sigma_only_arb_chain_frame_outcomes() {
         ));
         if expect_trade {
             let net = r.expected_value - r.collateral_required;
-            assert!(net > 0.0, "{label}: expected chain-profitable trade, got net={net:.6}");
-            assert!(r.collateral_required <= budget + 1e-9, "{label}: budget filter leak");
+            assert!(
+                net > 0.0,
+                "{label}: expected chain-profitable trade, got net={net:.6}"
+            );
+            assert!(
+                r.collateral_required <= budget + 1e-9,
+                "{label}: budget filter leak"
+            );
         } else {
             assert!(
                 r.collateral_required.abs() < 1e-12_f64,

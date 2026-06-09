@@ -20,5 +20,6 @@ pub mod normal;
 
 pub use lp::{compute_lp_claim_component_value, compute_total_lp_claim_value, f_at};
 pub use normal::{
-    NormalOptimizationInput, NormalOptimizationResult, OptimizerConstraints, optimize_normal_trade,
+    NormalOptimizationInput, NormalOptimizationResult, OptimizerConstraints, normal_sigma_floor,
+    optimize_normal_trade,
 };

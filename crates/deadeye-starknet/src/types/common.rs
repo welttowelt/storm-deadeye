@@ -81,8 +81,6 @@ pub struct AmmParamsRaw {
     pub tolerance: Sq128Raw,
     /// Minimum collateral a single trade must supply.
     pub min_trade_collateral: Sq128Raw,
-    /// Payout amplifier applied at settlement (defaults to 1.0).
-    pub payout_amplifier: Sq128Raw,
 }
 
 impl CairoSerde for AmmParamsRaw {
@@ -91,21 +89,18 @@ impl CairoSerde for AmmParamsRaw {
         self.backing.encode(out);
         self.tolerance.encode(out);
         self.min_trade_collateral.encode(out);
-        self.payout_amplifier.encode(out);
     }
     fn decode(slice: &[Felt]) -> Result<(Self, &[Felt]), CairoSerdeError> {
         let (k, slice) = Sq128Raw::decode(slice)?;
         let (backing, slice) = Sq128Raw::decode(slice)?;
         let (tolerance, slice) = Sq128Raw::decode(slice)?;
         let (min_trade_collateral, slice) = Sq128Raw::decode(slice)?;
-        let (payout_amplifier, slice) = Sq128Raw::decode(slice)?;
         Ok((
             Self {
                 k,
                 backing,
                 tolerance,
                 min_trade_collateral,
-                payout_amplifier,
             },
             slice,
         ))

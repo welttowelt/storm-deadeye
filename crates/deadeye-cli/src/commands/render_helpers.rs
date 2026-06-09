@@ -290,6 +290,18 @@ pub(crate) struct QuoteResult {
     pub(crate) x_star: Option<f64>,
     pub(crate) required_collateral: Option<f64>,
     pub(crate) padded_collateral: Option<f64>,
+    /// Backing-derived σ-floor: candidate σ below this is rejected SIGMA_TOO_LOW.
+    pub(crate) sigma_floor: Option<f64>,
+    /// Current on-chain market curve.
+    pub(crate) market_mean: Option<f64>,
+    pub(crate) market_sigma: Option<f64>,
+    /// Trader belief (optimizer path only).
+    pub(crate) belief_mean: Option<f64>,
+    pub(crate) belief_sigma: Option<f64>,
+    /// Expected value of the candidate under the belief (XP).
+    pub(crate) expected_value: Option<f64>,
+    /// Budget cap the optimizer respected (XP).
+    pub(crate) budget: Option<f64>,
     pub(crate) on_chain_will_accept: bool,
     pub(crate) rejection: Option<RejectionExplanation>,
     pub(crate) execute_hint: String,
@@ -304,6 +316,12 @@ impl Render for QuoteResult {
         }
         r.kv("family", self.family);
         r.kv("market", &self.market);
+        if let (Some(mm), Some(ms)) = (self.market_mean, self.market_sigma) {
+            r.kv("market_curve", &format!("μ={mm:.6}, σ={ms:.6}"));
+        }
+        if let (Some(bm), Some(bs)) = (self.belief_mean, self.belief_sigma) {
+            r.kv("belief", &format!("μ={bm:.6}, σ={bs:.6}"));
+        }
         if let (Some(m), Some(v)) = (self.candidate_mean, self.candidate_variance) {
             r.kv("candidate", &format!("μ={m:.6}, σ²={v:.6}"));
         }
@@ -321,6 +339,15 @@ impl Render for QuoteResult {
         }
         if let Some(pc) = self.padded_collateral {
             r.kv("padded_collateral", &format!("{pc:.6} STRK"));
+        }
+        if let Some(ev) = self.expected_value {
+            r.kv("expected_value", &format!("{ev:.6} XP"));
+        }
+        if let Some(sf) = self.sigma_floor {
+            r.kv(
+                "sigma_floor",
+                &format!("{sf:.6}  (candidate σ must be ≥ this, else SIGMA_TOO_LOW)"),
+            );
         }
         if let Some(rej) = &self.rejection {
             r.kv(
@@ -370,6 +397,27 @@ impl Render for QuoteResult {
         }
         if let Some(pc) = self.padded_collateral {
             writeln!(w, "padded_collateral: {pc}")?;
+        }
+        if let Some(sf) = self.sigma_floor {
+            writeln!(w, "sigma_floor: {sf}")?;
+        }
+        if let Some(ev) = self.expected_value {
+            writeln!(w, "expected_value: {ev}")?;
+        }
+        if let Some(mm) = self.market_mean {
+            writeln!(w, "market_mean: {mm}")?;
+        }
+        if let Some(ms) = self.market_sigma {
+            writeln!(w, "market_sigma: {ms}")?;
+        }
+        if let Some(bm) = self.belief_mean {
+            writeln!(w, "belief_mean: {bm}")?;
+        }
+        if let Some(bs) = self.belief_sigma {
+            writeln!(w, "belief_sigma: {bs}")?;
+        }
+        if let Some(b) = self.budget {
+            writeln!(w, "budget: {b}")?;
         }
         writeln!(w, "on_chain_will_accept: {}", self.on_chain_will_accept)?;
         if let Some(rej) = &self.rejection {

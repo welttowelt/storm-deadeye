@@ -106,8 +106,6 @@ pub struct DeployProfileParams {
     pub extension: Felt,
     /// Extension call-points bitfield.
     pub extension_call_points: u16,
-    /// Payout amplifier.
-    pub payout_amplifier: Sq128Raw,
 }
 
 /// Upsert a deploy profile on the factory.
@@ -133,7 +131,6 @@ where
     profile.fee_config.encode(&mut calldata);
     calldata.push(profile.extension);
     profile.extension_call_points.encode(&mut calldata);
-    profile.payout_amplifier.encode(&mut calldata);
 
     let call = Call {
         to: factory,

@@ -78,8 +78,6 @@ pub struct MarketDeployProfileRaw {
     pub extension: Felt,
     /// Extension call-points bitfield.
     pub extension_call_points: u16,
-    /// Settlement payout amplifier.
-    pub payout_amplifier: Sq128Raw,
 }
 
 impl CairoSerde for MarketDeployProfileRaw {
@@ -95,7 +93,6 @@ impl CairoSerde for MarketDeployProfileRaw {
         self.fee_config.encode(out);
         self.extension.encode(out);
         self.extension_call_points.encode(out);
-        self.payout_amplifier.encode(out);
     }
     fn decode(slice: &[Felt]) -> Result<(Self, &[Felt]), CairoSerdeError> {
         let (market_type, slice) = u8::decode(slice)?;
@@ -109,7 +106,6 @@ impl CairoSerde for MarketDeployProfileRaw {
         let (fee_config, slice) = FeeConfigRaw::decode(slice)?;
         let (extension, slice) = Felt::decode(slice)?;
         let (extension_call_points, slice) = u16::decode(slice)?;
-        let (payout_amplifier, slice) = Sq128Raw::decode(slice)?;
         Ok((
             Self {
                 market_type,
@@ -123,7 +119,6 @@ impl CairoSerde for MarketDeployProfileRaw {
                 fee_config,
                 extension,
                 extension_call_points,
-                payout_amplifier,
             },
             slice,
         ))
@@ -168,8 +163,6 @@ pub struct MarketDeployOverridesRaw {
     pub extension: Felt,
     /// Override extension call points.
     pub extension_call_points: u16,
-    /// Override settlement payout amplifier.
-    pub payout_amplifier: Sq128Raw,
 }
 
 impl CairoSerde for MarketDeployOverridesRaw {
@@ -185,7 +178,6 @@ impl CairoSerde for MarketDeployOverridesRaw {
         self.fee_config.encode(out);
         self.extension.encode(out);
         self.extension_call_points.encode(out);
-        self.payout_amplifier.encode(out);
     }
     fn decode(slice: &[Felt]) -> Result<(Self, &[Felt]), CairoSerdeError> {
         let (mask, slice) = u16::decode(slice)?;
@@ -199,7 +191,6 @@ impl CairoSerde for MarketDeployOverridesRaw {
         let (fee_config, slice) = FeeConfigRaw::decode(slice)?;
         let (extension, slice) = Felt::decode(slice)?;
         let (extension_call_points, slice) = u16::decode(slice)?;
-        let (payout_amplifier, slice) = Sq128Raw::decode(slice)?;
         Ok((
             Self {
                 mask,
@@ -213,7 +204,6 @@ impl CairoSerde for MarketDeployOverridesRaw {
                 fee_config,
                 extension,
                 extension_call_points,
-                payout_amplifier,
             },
             slice,
         ))

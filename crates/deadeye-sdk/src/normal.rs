@@ -42,20 +42,15 @@
 //! ```
 
 use deadeye_collateral::{MinimizationPolicy, lambda as collateral_lambda, normal_collateral};
-use deadeye_core::{
-    NormalDistribution, Sq128,
-    distribution::NormalSqrtHintsRaw,
-    sq128::Sq128Raw,
-};
+use deadeye_core::{NormalDistribution, Sq128, distribution::NormalSqrtHintsRaw, sq128::Sq128Raw};
 // Bring `Distribution::pdf` into scope for `λ_f f(x*) − λ_g g(x*)`
 // computation below. Aliased to `_` to avoid name conflicts with the
 // pub-use at the bottom of this module.
 use deadeye_core::Distribution as _CollateralPdf;
-use deadeye_optimizer::{NormalOptimizationInput, optimize_normal_trade};
+use deadeye_optimizer::{NormalOptimizationInput, normal_sigma_floor, optimize_normal_trade};
 use deadeye_starknet::{
     Account, ExecutionReceipt, Felt, NormalMarketReader, NormalMarketWriter, NormalTradeQuote,
-    Provider,
-    types::normal::TradeInput,
+    Provider, TradeRejectionReason, types::normal::TradeInput,
 };
 use tracing::instrument;
 
@@ -299,6 +294,72 @@ fn optimize_quote_offline_inner(
     })
 }
 
+/// Pure offline quote for a **fixed** candidate `(μ, variance)` — no optimizer
+/// and no math-runtime contract. Mirrors the chain's verify path:
+/// chain-bit-exact σ (via [`NormalDistribution::from_variance`]), offline sqrt
+/// hints, and the λ-scaled collateral at the true stationary point, plus the
+/// backing-derived **σ-floor** gate: a candidate σ below
+/// `normal_sigma_floor(effective_k, backing)` is rejected up front with
+/// [`TradeRejectionReason::SigmaTooLow`] (exactly what the AMM would do), so we
+/// never hand back a quote the chain would reject for `SIGMA_TOO_LOW`.
+fn quote_candidate_offline_inner(
+    current: &NormalDistribution,
+    candidate_mean: f64,
+    candidate_variance: f64,
+    effective_k: f64,
+    backing: f64,
+) -> SdkResult<NormalTradeQuote> {
+    let cand_mean = Sq128::from_f64(candidate_mean)?;
+    let cand_variance = Sq128::from_f64(candidate_variance)?;
+    let candidate = NormalDistribution::from_variance(cand_mean, cand_variance)?;
+    let candidate_sigma = candidate.sigma();
+    let candidate_hints = compute_normal_hints_offline(candidate_sigma)?;
+    let cand_sigma_f64 = candidate_sigma.to_f64();
+
+    // Backing-derived σ-floor: a tighter candidate pushes the scaled-PDF peak
+    // above the pool backing → the AMM reverts with SIGMA_TOO_LOW.
+    let sigma_floor = normal_sigma_floor(effective_k, backing);
+    if sigma_floor > 0.0 && cand_sigma_f64 < sigma_floor {
+        return Ok(NormalTradeQuote {
+            candidate: candidate.to_raw(),
+            candidate_hints,
+            x_star: cand_mean.to_raw(),
+            required_collateral: Sq128::ZERO.to_raw(),
+            padded_collateral: Sq128::ZERO.to_raw(),
+            on_chain_will_accept: false,
+            rejection: Some(TradeRejectionReason::SigmaTooLow),
+        });
+    }
+
+    let sigma_f_f64 = current.sigma().to_f64();
+    let (x_star, collateral_f64) =
+        match normal_collateral(current, &candidate, MinimizationPolicy::standard()) {
+            Ok(v) if v.collateral.is_finite() && v.collateral > 0.0 => {
+                let lam_f = collateral_lambda(sigma_f_f64, effective_k);
+                let lam_g = collateral_lambda(cand_sigma_f64, effective_k);
+                let x_q = Sq128::from_f64(v.x_min)?;
+                let f_at = current.pdf(x_q).map(Sq128::to_f64).unwrap_or(0.0);
+                let g_at = candidate.pdf(x_q).map(Sq128::to_f64).unwrap_or(0.0);
+                let scaled = lam_f.mul_add(f_at, -(lam_g * g_at)).max(0.0);
+                (x_q, scaled)
+            },
+            // Solver failure / zero collateral (identical distributions): no
+            // trade rather than an unscaled (chain-rejected) claim.
+            Ok(_) | Err(_) => (cand_mean, 0.0_f64),
+        };
+
+    let collateral_required = Sq128::from_f64(collateral_f64)?;
+    Ok(NormalTradeQuote {
+        candidate: candidate.to_raw(),
+        candidate_hints,
+        x_star: x_star.to_raw(),
+        required_collateral: collateral_required.to_raw(),
+        padded_collateral: collateral_required.to_raw(),
+        on_chain_will_accept: collateral_f64 > 0.0,
+        rejection: None,
+    })
+}
+
 /// Handle to a deployed normal AMM market.
 ///
 /// A handle bundles a reader (and optionally a writer) bound to a single
@@ -513,8 +574,7 @@ where
         // mirrors the path `optimize_quote_offline` uses below.
         let cand_mean = Sq128::from_f64(opt.optimized_mean)?;
         let cand_variance = Sq128::from_f64(opt.optimized_variance)?;
-        let candidate =
-            deadeye_core::NormalDistribution::from_variance(cand_mean, cand_variance)?;
+        let candidate = deadeye_core::NormalDistribution::from_variance(cand_mean, cand_variance)?;
 
         // Derive the real stationary point `x*` and the chain-aligned
         // λ-scaled collateral via the audited `normal_collateral`
@@ -699,6 +759,51 @@ where
             budget_xp,
             effective_k_override,
         )
+    }
+
+    /// Offline quote for a **fixed candidate** `(mean, variance)` — no
+    /// optimizer, no math-runtime contract. Reads only the market
+    /// distribution + params + LP info (all cheap views), derives the
+    /// effective `k` and backing, then computes the chain-bit-exact candidate,
+    /// hints, λ-scaled collateral, and the backing-derived σ-floor verdict
+    /// locally. This is the zero-config path the CLI uses for
+    /// `trade quote --mean --variance` so a read-only quote never needs a
+    /// runtime address or an on-chain transaction.
+    #[instrument(skip(self), fields(market = %self.reader.address()))]
+    pub async fn quote_candidate_offline(
+        &self,
+        candidate_mean: f64,
+        candidate_variance: f64,
+    ) -> SdkResult<NormalTradeQuote> {
+        let current = self.distribution().await?;
+        let params = self.reader.params().await?;
+        let lp_info = self.reader.lp_info().await?;
+        let base_k = Sq128::from_raw(params.k);
+        let pool_backing = Sq128::from_raw(lp_info.total_backing_deposited);
+        let initial_backing = Sq128::from_raw(params.backing);
+        let effective_k = live_effective_k(base_k, pool_backing, initial_backing).to_f64();
+        quote_candidate_offline_inner(
+            &current,
+            candidate_mean,
+            candidate_variance,
+            effective_k,
+            pool_backing.to_f64(),
+        )
+    }
+
+    /// The backing-derived **σ-floor** for this market: the narrowest σ the
+    /// pool backing can support. A trade whose candidate σ is below this is
+    /// rejected on-chain with `SIGMA_TOO_LOW`. Surfaced in the quote so an
+    /// agent can size variance above the floor before submitting.
+    #[instrument(skip(self), fields(market = %self.reader.address()))]
+    pub async fn sigma_floor(&self) -> SdkResult<f64> {
+        let params = self.reader.params().await?;
+        let lp_info = self.reader.lp_info().await?;
+        let base_k = Sq128::from_raw(params.k);
+        let pool_backing = Sq128::from_raw(lp_info.total_backing_deposited);
+        let initial_backing = Sq128::from_raw(params.backing);
+        let effective_k = live_effective_k(base_k, pool_backing, initial_backing).to_f64();
+        Ok(normal_sigma_floor(effective_k, pool_backing.to_f64()))
     }
 
     /// Bind an [`Account`] to this market, returning a write-capable handle.
@@ -1086,7 +1191,10 @@ mod tests {
         let l = coll_lambda(8.0, 50.0);
         // l2_norm = 1/√(2σ√π) = 1/√(16√π) ≈ 0.18804
         // λ = 50 / 0.18804 ≈ 265.92
-        assert!((l - 265.92).abs() < 0.5, "λ at k=50, σ=8 expected ≈ 265.92, got {l}");
+        assert!(
+            (l - 265.92).abs() < 0.5,
+            "λ at k=50, σ=8 expected ≈ 265.92, got {l}"
+        );
     }
 
     // ─── effective_k override (Follow-up #6) ───────────────────────────
@@ -1163,10 +1271,10 @@ mod tests {
     #[test]
     fn offline_inner_collateral_responds_to_effective_k() {
         let current = make_market_dist(42.0, 8.0);
-        let q_k50 = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 50.0)
-            .expect("k=50 inner Ok");
-        let q_k200 = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 200.0)
-            .expect("k=200 inner Ok");
+        let q_k50 =
+            optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 50.0).expect("k=50 inner Ok");
+        let q_k200 =
+            optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 200.0).expect("k=200 inner Ok");
         let coll_k50 = Sq128::from_raw(q_k50.required_collateral).to_f64();
         let coll_k200 = Sq128::from_raw(q_k200.required_collateral).to_f64();
         // Higher k → larger λ → larger collateral. We don't need a
@@ -1188,10 +1296,8 @@ mod tests {
     #[test]
     fn offline_inner_is_deterministic_in_effective_k() {
         let current = make_market_dist(42.0, 8.0);
-        let a = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 75.07)
-            .expect("call 1");
-        let b = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 75.07)
-            .expect("call 2");
+        let a = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 75.07).expect("call 1");
+        let b = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 75.07).expect("call 2");
         assert_eq!(a.candidate, b.candidate, "candidate distribution diverged");
         assert_eq!(a.candidate_hints, b.candidate_hints, "hints diverged");
         assert_eq!(a.x_star, b.x_star, "x_star diverged");
@@ -1261,14 +1367,9 @@ mod tests {
         let budget = 20.0_f64;
         let effective_k = 50.0_f64;
 
-        let quote = optimize_quote_offline_inner(
-            &current,
-            belief_mean,
-            belief_sigma,
-            budget,
-            effective_k,
-        )
-        .expect("offline inner returns Ok");
+        let quote =
+            optimize_quote_offline_inner(&current, belief_mean, belief_sigma, budget, effective_k)
+                .expect("offline inner returns Ok");
 
         // Sanity: a positive-EV trade was found (otherwise the fallback
         // `(cand_mean, 0.0)` path fires and the pin below is vacuous).
@@ -1303,8 +1404,7 @@ mod tests {
         // would still pass the equality above if the solver happened to
         // also return `cand_mean` (it doesn't for σ-arb, but pin it).
         assert_ne!(
-            quote.x_star,
-            quote.candidate.mean,
+            quote.x_star, quote.candidate.mean,
             "σ-arb scenario must have x* ≠ μ_g — otherwise this test \
              cannot distinguish the P4 fix from the pre-fix behaviour"
         );
@@ -1344,8 +1444,7 @@ mod tests {
         // same fallback the chain-runtime inner uses; matching here
         // pins the parity.
         assert_eq!(
-            quote.x_star,
-            quote.candidate.mean,
+            quote.x_star, quote.candidate.mean,
             "no-trade fallback must report x_star == cand_mean"
         );
     }

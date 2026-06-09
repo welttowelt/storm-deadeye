@@ -56,18 +56,37 @@ pub(crate) const fn family_label(family: Family) -> &'static str {
 ///
 /// Priority: `--runtime` flag → `DEADEYE_<FAMILY>_RUNTIME_ADDR` env var.
 pub(crate) fn resolve_runtime(cli_runtime: Option<&str>, family: Family) -> Result<Felt> {
+    let env_var = runtime_env_var(family);
+    resolve_runtime_opt(cli_runtime, family)?.with_context(|| {
+        format!(
+            "math runtime address required: pass `--runtime 0x...` or set `{env_var}` \
+             (normal-family quotes resolve this automatically — no runtime needed)"
+        )
+    })
+}
+
+/// Resolution precedence for a math runtime: `--runtime` flag, then
+/// `DEADEYE_<FAMILY>_RUNTIME_ADDR`. Returns `None` (rather than erroring) when
+/// neither is set, so callers with a client-side path can fall back to offline.
+pub(crate) fn resolve_runtime_opt(
+    cli_runtime: Option<&str>,
+    family: Family,
+) -> Result<Option<Felt>> {
     if let Some(raw) = cli_runtime {
-        return parse_felt("runtime address", raw);
+        return Ok(Some(parse_felt("runtime address", raw)?));
     }
-    let env_var = match family {
+    match std::env::var(runtime_env_var(family)) {
+        Ok(s) if !s.trim().is_empty() => Ok(Some(parse_felt("runtime address", s.trim())?)),
+        _ => Ok(None),
+    }
+}
+
+const fn runtime_env_var(family: Family) -> &'static str {
+    match family {
         Family::Normal => "DEADEYE_NORMAL_RUNTIME_ADDR",
         Family::Lognormal => "DEADEYE_LOGNORMAL_RUNTIME_ADDR",
         Family::Multinoulli => "DEADEYE_MULTINOULLI_RUNTIME_ADDR",
         Family::Bivariate => "DEADEYE_BIVARIATE_RUNTIME_ADDR",
-    };
-    match std::env::var(env_var) {
-        Ok(s) => parse_felt("runtime address", &s),
-        Err(_) => bail!("math runtime address required: pass `--runtime 0x...` or set `{env_var}`"),
     }
 }
 

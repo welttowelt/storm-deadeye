@@ -203,7 +203,6 @@ pub(crate) struct MarketParamsView {
     pub(crate) backing: f64,
     pub(crate) tolerance: f64,
     pub(crate) min_trade_collateral: f64,
-    pub(crate) payout_amplifier: f64,
 }
 
 #[derive(Debug, Clone, Serialize)]
@@ -266,10 +265,6 @@ impl Render for MarketShowView {
             &format!("{:.6}", self.params.min_trade_collateral),
         );
         r.kv(
-            "params.payout_amplifier",
-            &format!("{:.6}", self.params.payout_amplifier),
-        );
-        r.kv(
             "lp.total_shares",
             &format!("{:.6}", self.lp_info.total_shares),
         );
@@ -310,11 +305,6 @@ impl Render for MarketShowView {
             w,
             "params.min_trade_collateral: {:.6}",
             self.params.min_trade_collateral
-        )?;
-        writeln!(
-            w,
-            "params.payout_amplifier: {:.6}",
-            self.params.payout_amplifier
         )?;
         writeln!(w, "lp.total_shares: {:.6}", self.lp_info.total_shares)?;
         writeln!(

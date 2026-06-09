@@ -15,7 +15,7 @@ use deadeye_sdk::{
 };
 use deadeye_starknet::{
     Account, Felt, LognormalMarketReader, LognormalMarketWriter, NormalMarketReader,
-    NormalMarketWriter,
+    NormalMarketWriter, TradeRejectionReason,
 };
 use serde_json::json;
 
@@ -28,7 +28,7 @@ use crate::{
         },
         runtime_resolver::{
             build_owned_account, build_provider, family_label, parse_felt, resolve_family,
-            resolve_runtime,
+            resolve_runtime, resolve_runtime_opt,
         },
     },
     context::AppContext,
@@ -70,83 +70,109 @@ async fn quote_normal(
     family: Family,
     args: &TradeQuoteArgs,
 ) -> Result<QuoteResult> {
-    let runtime = resolve_runtime(args.runtime.as_deref(), family)?;
+    use deadeye_core::Distribution as _;
     let market_handle = client.normal_market(market);
+    // Offline by default: a runtime address is an *optional* chain-faithful
+    // override, never required for a read-only quote (issue #4).
+    let runtime = resolve_runtime_opt(args.runtime.as_deref(), family)?;
 
-    let quote = if let (Some(belief), Some(budget)) = (args.belief, args.budget) {
-        use deadeye_core::Distribution as _;
-        let belief_sigma = match args.belief_sigma {
-            Some(s) => s,
-            None => market_handle
-                .distribution()
-                .await
-                .context("reading current market distribution for belief_sigma default")?
-                .sigma()
-                .to_f64(),
+    // Read the live curve once — for surfacing and the belief_sigma default.
+    let current = market_handle
+        .distribution()
+        .await
+        .context("reading current market distribution")?;
+    let market_mean = current.mean().to_f64();
+    let market_sigma = current.sigma().to_f64();
+    // Backing-derived σ-floor (issue: surface σ-min). Best-effort.
+    let sigma_floor = market_handle.sigma_floor().await.ok();
+
+    let (quote, belief, budget) =
+        if let (Some(belief_mean), Some(budget)) = (args.belief, args.budget) {
+            let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
+            let q = if let Some(rt) = runtime {
+                market_handle
+                    .optimize_quote(rt, belief_mean, belief_sigma, budget)
+                    .await
+                    .context("optimize_quote (chain runtime)")?
+            } else {
+                market_handle
+                    .optimize_quote_offline(belief_mean, belief_sigma, budget)
+                    .await
+                    .context("optimize_quote_offline")?
+            };
+            (q, Some((belief_mean, belief_sigma)), Some(budget))
+        } else {
+            let mean = args
+                .mean
+                .context("`--mean` is required (or pair --belief / --budget)")?;
+            let variance = args
+                .variance
+                .context("`--variance` is required (or pair --belief / --budget)")?;
+            let q = if let Some(rt) = runtime {
+                // Optional chain-faithful path for a fixed candidate.
+                let candidate = deadeye_core::distribution::NormalDistributionRaw {
+                    mean: Sq128::from_f64(mean)?.to_raw(),
+                    variance: Sq128::from_f64(variance)?.to_raw(),
+                    sigma: Sq128::from_f64(variance.sqrt())?.to_raw(),
+                };
+                let cand_dist = deadeye_core::NormalDistribution::from_variance(
+                    Sq128::from_f64(mean)?,
+                    Sq128::from_f64(variance)?,
+                )?;
+                let x_star = match deadeye_sdk::collateral::normal_collateral(
+                    &current,
+                    &cand_dist,
+                    deadeye_sdk::collateral::MinimizationPolicy::standard(),
+                ) {
+                    Ok(s) => Sq128::from_f64(s.x_min)?.to_raw(),
+                    Err(_) => candidate.mean,
+                };
+                let supplied = Sq128::from_f64(args.pad.max(0.0))?.to_raw();
+                market_handle
+                    .reader()
+                    .quote_trade(rt, candidate, x_star, supplied, supplied)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("quote_trade: {e}"))?
+            } else {
+                // Default: fully client-side quote (no runtime, no tx, no gas).
+                market_handle
+                    .quote_candidate_offline(mean, variance)
+                    .await
+                    .context("quote_candidate_offline")?
+            };
+            (q, None, None)
         };
-        market_handle
-            .optimize_quote(runtime, belief, belief_sigma, budget)
-            .await
-            .context("optimize_quote")?
-    } else {
-        let mean = args
-            .mean
-            .context("`--mean` is required (or pair --belief / --budget)")?;
-        let variance = args
-            .variance
-            .context("`--variance` is required (or pair --belief / --budget)")?;
-        let sigma = variance.sqrt();
-        let candidate = deadeye_core::distribution::NormalDistributionRaw {
-            mean: Sq128::from_f64(mean)?.to_raw(),
-            variance: Sq128::from_f64(variance)?.to_raw(),
-            sigma: Sq128::from_f64(sigma)?.to_raw(),
-        };
-        // Use the off-chain collateral solver to compute the true
-        // stationary x_star (not the candidate mean).
-        let cand_dist = deadeye_core::NormalDistribution::from_variance(
-            Sq128::from_f64(mean)?,
-            Sq128::from_f64(variance)?,
-        )?;
-        use deadeye_core::Distribution as _;
-        let current = market_handle.distribution().await?;
-        let x_star = match deadeye_sdk::collateral::normal_collateral(
-            &current,
-            &cand_dist,
-            deadeye_sdk::collateral::MinimizationPolicy::standard(),
-        ) {
-            Ok(s) => Sq128::from_f64(s.x_min)?.to_raw(),
-            Err(_) => candidate.mean, // fall back to the candidate mean
-        };
-        let _ = current.mean(); // touch to satisfy the trait import
-        let supplied = Sq128::from_f64(args.pad.max(0.0))?.to_raw();
-        market_handle
-            .reader()
-            .quote_trade(runtime, candidate, x_star, supplied, supplied)
-            .await
-            .map_err(|e| anyhow::anyhow!("quote_trade: {e}"))?
-    };
 
     let cand_mean = Sq128::from_raw(quote.candidate.mean).to_f64();
     let cand_sigma = Sq128::from_raw(quote.candidate.sigma).to_f64();
+    let cand_variance = Sq128::from_raw(quote.candidate.variance).to_f64();
     let req_collat = Sq128::from_raw(quote.required_collateral).to_f64();
+
+    // σ-floor gate at the CLI level too — covers the optimizer/belief path,
+    // whose grid can otherwise propose a σ below the backing floor.
+    let sub_floor = sigma_floor.is_some_and(|sf| cand_sigma + 1e-12 < sf);
+    let accept = quote.on_chain_will_accept && !sub_floor;
+    let rejection = if accept {
+        None
+    } else if sub_floor {
+        Some(pretty_rejection(&TradeRejectionReason::SigmaTooLow))
+    } else {
+        quote.rejection.as_ref().map(pretty_rejection)
+    };
+
     let execute_hint = format!(
         "deadeye trade execute {:#x} --family normal --mean {:.6} --variance {:.6} --max-collateral {:.6}",
         market,
         cand_mean,
-        cand_sigma * cand_sigma,
+        cand_variance,
         req_collat * 1.10
     );
-    let rejection = if quote.on_chain_will_accept {
-        None
-    } else {
-        quote.rejection.as_ref().map(pretty_rejection)
-    };
 
     Ok(QuoteResult {
         family: family_label(family),
         market: format!("{market:#x}"),
         candidate_mean: Some(cand_mean),
-        candidate_variance: Some(Sq128::from_raw(quote.candidate.variance).to_f64()),
+        candidate_variance: Some(cand_variance),
         candidate_sigma: Some(cand_sigma),
         candidate_mu1: None,
         candidate_mu2: None,
@@ -154,7 +180,14 @@ async fn quote_normal(
         x_star: Some(Sq128::from_raw(quote.x_star).to_f64()),
         required_collateral: Some(req_collat),
         padded_collateral: Some(Sq128::from_raw(quote.padded_collateral).to_f64()),
-        on_chain_will_accept: quote.on_chain_will_accept,
+        sigma_floor,
+        market_mean: Some(market_mean),
+        market_sigma: Some(market_sigma),
+        belief_mean: belief.map(|(m, _)| m),
+        belief_sigma: belief.map(|(_, s)| s),
+        expected_value: None,
+        budget,
+        on_chain_will_accept: accept,
         rejection,
         execute_hint,
     })
@@ -215,6 +248,13 @@ async fn quote_lognormal(
         x_star: Some(Sq128::from_raw(quote.x_star).to_f64()),
         required_collateral: Some(req_collat),
         padded_collateral: Some(Sq128::from_raw(quote.padded_collateral).to_f64()),
+        sigma_floor: None,
+        market_mean: None,
+        market_sigma: None,
+        belief_mean: None,
+        belief_sigma: None,
+        expected_value: None,
+        budget: None,
         on_chain_will_accept: quote.on_chain_will_accept,
         rejection,
         execute_hint,
@@ -249,39 +289,47 @@ async fn execute_normal(
     confirm: bool,
     label: &'static str,
 ) -> Result<()> {
-    let runtime = resolve_runtime(args.runtime.as_deref(), Family::Normal)?;
+    // Offline preflight by default (no runtime / no gas); `--runtime` opts
+    // into the chain-faithful path. The offline quote also enforces the
+    // σ-floor, so a sub-σ-min candidate is rejected before submission.
+    let runtime = resolve_runtime_opt(args.runtime.as_deref(), Family::Normal)?;
     let market_handle = client.normal_market(market);
 
     let mean = args.mean.context("--mean required for normal execute")?;
     let variance = args
         .variance
         .context("--variance required for normal execute")?;
-    let sigma = variance.sqrt();
-    let candidate = deadeye_core::distribution::NormalDistributionRaw {
-        mean: Sq128::from_f64(mean)?.to_raw(),
-        variance: Sq128::from_f64(variance)?.to_raw(),
-        sigma: Sq128::from_f64(sigma)?.to_raw(),
+
+    let quote = if let Some(rt) = runtime {
+        let candidate = deadeye_core::distribution::NormalDistributionRaw {
+            mean: Sq128::from_f64(mean)?.to_raw(),
+            variance: Sq128::from_f64(variance)?.to_raw(),
+            sigma: Sq128::from_f64(variance.sqrt())?.to_raw(),
+        };
+        let cand_dist = deadeye_core::NormalDistribution::from_variance(
+            Sq128::from_f64(mean)?,
+            Sq128::from_f64(variance)?,
+        )?;
+        let current = market_handle.distribution().await?;
+        let solver = deadeye_sdk::collateral::normal_collateral(
+            &current,
+            &cand_dist,
+            deadeye_sdk::collateral::MinimizationPolicy::standard(),
+        )
+        .map_err(|e| anyhow::anyhow!("off-chain collateral solver: {e}"))?;
+        let x_star = Sq128::from_f64(solver.x_min)?.to_raw();
+        let supplied = Sq128::from_f64(args.max_collateral)?.to_raw();
+        market_handle
+            .reader()
+            .quote_trade(rt, candidate, x_star, supplied, supplied)
+            .await
+            .map_err(|e| anyhow::anyhow!("preflight quote_trade: {e}"))?
+    } else {
+        market_handle
+            .quote_candidate_offline(mean, variance)
+            .await
+            .context("quote_candidate_offline preflight")?
     };
-    // Run the off-chain collateral solver so `x_star` is the true
-    // stationary point, not just the candidate mean.
-    let cand_dist = deadeye_core::NormalDistribution::from_variance(
-        Sq128::from_f64(mean)?,
-        Sq128::from_f64(variance)?,
-    )?;
-    let current = market_handle.distribution().await?;
-    let solver = deadeye_sdk::collateral::normal_collateral(
-        &current,
-        &cand_dist,
-        deadeye_sdk::collateral::MinimizationPolicy::standard(),
-    )
-    .map_err(|e| anyhow::anyhow!("off-chain collateral solver: {e}"))?;
-    let x_star = Sq128::from_f64(solver.x_min)?.to_raw();
-    let supplied = Sq128::from_f64(args.max_collateral)?.to_raw();
-    let quote = market_handle
-        .reader()
-        .quote_trade(runtime, candidate, x_star, supplied, supplied)
-        .await
-        .map_err(|e| anyhow::anyhow!("preflight quote_trade: {e}"))?;
 
     if !quote.on_chain_will_accept {
         let rejection = quote.rejection.as_ref().map(pretty_rejection);
@@ -305,8 +353,8 @@ async fn execute_normal(
         eprintln!("  market:    {market:#x}");
         eprintln!(
             "  candidate: μ={:.4}, σ²={:.4}",
-            Sq128::from_raw(candidate.mean).to_f64(),
-            Sq128::from_raw(candidate.variance).to_f64()
+            Sq128::from_raw(quote.candidate.mean).to_f64(),
+            Sq128::from_raw(quote.candidate.variance).to_f64()
         );
         eprintln!(
             "  required collateral: ~{:.4} STRK",

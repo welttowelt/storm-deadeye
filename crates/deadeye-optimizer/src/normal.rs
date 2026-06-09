@@ -34,6 +34,33 @@ const N_MEAN_SAMPLES: u32 = 50;
 const DEFAULT_MAX_SIGMA_RATIO: f64 = 4.0_f64;
 const DEFAULT_MAX_MEAN_SEP_SIGMAS: f64 = 4.0_f64;
 
+/// Backing-derived **σ-floor**: the narrowest σ a normal market can back.
+///
+/// From the on-chain backing constraint `max_x f(x) = k / √(σ·√π) ≤ b`
+/// (where `f` is the λ-scaled position PDF with `‖f‖₂ = k`, and `b` is the
+/// pool backing), which rearranges to the closed form
+///
+/// ```text
+/// σ ≥ k² / (b² · √π)
+/// ```
+///
+/// A candidate σ below this floor pushes the scaled-PDF peak above the pool
+/// backing and the AMM rejects the trade with `SIGMA_TOO_LOW`. `k` is the
+/// execution-time **effective** invariant and `b` the pool backing — the same
+/// values the contract checks. Validated against the Cairo
+/// `check_scaled_backing` constraint (see the webapp `solvencyConcentration`).
+///
+/// Returns `0.0` (no enforceable floor) when `effective_k` or `backing` is
+/// non-positive.
+#[must_use]
+pub fn normal_sigma_floor(effective_k: f64, backing: f64) -> f64 {
+    if effective_k <= 0.0 || backing <= 0.0 || !effective_k.is_finite() || !backing.is_finite() {
+        return 0.0;
+    }
+    let sqrt_pi = core::f64::consts::PI.sqrt();
+    (effective_k * effective_k) / (backing * backing * sqrt_pi)
+}
+
 /// Tunable bounds on the optimizer's policy region.
 #[derive(Debug, Clone, Copy, PartialEq)]
 pub struct OptimizerConstraints {
@@ -67,14 +94,12 @@ pub struct NormalOptimizationInput {
     pub market_sigma: f64,
     /// AMM `effective_k` (post LP scaling).
     pub effective_k: f64,
-    /// Payout amplifier (default 1.0).
-    pub payout_amplifier: f64,
     /// Policy bounds.
     pub constraints: OptimizerConstraints,
 }
 
 impl NormalOptimizationInput {
-    /// Convenience constructor with sane defaults (amplifier=1, default constraints).
+    /// Convenience constructor with sane defaults (default constraints).
     #[must_use]
     pub fn new(
         budget: f64,
@@ -91,7 +116,6 @@ impl NormalOptimizationInput {
             market_mean,
             market_sigma,
             effective_k,
-            payout_amplifier: 1.0,
             constraints: OptimizerConstraints::default(),
         }
     }
@@ -191,13 +215,13 @@ fn collateral_number(mu_f: f64, sigma_f: f64, mu_g: f64, sigma_g: f64, k: f64) -
     let f_at = f.pdf(x_q).map(Sq128::to_f64).unwrap_or(0.0);
     let g_at = g.pdf(x_q).map(Sq128::to_f64).unwrap_or(0.0);
     let scaled = lam_f.mul_add(f_at, -(lam_g * g_at)).max(0.0);
-    if scaled.is_finite() { scaled } else { f64::INFINITY }
+    if scaled.is_finite() {
+        scaled
+    } else {
+        f64::INFINITY
+    }
 }
 
-#[expect(
-    clippy::too_many_arguments,
-    reason = "EV depends on 8 distinct numeric inputs; bundling them adds churn without value"
-)]
 fn expected_value(
     mu_f: f64,
     sigma_f: f64,
@@ -206,15 +230,13 @@ fn expected_value(
     k: f64,
     belief_mu: f64,
     belief_sigma: f64,
-    amplifier: f64,
 ) -> f64 {
     let lam_g = lambda(sigma_g, k);
     let lam_f = lambda(sigma_f, k);
-    let raw_ev = lam_g.mul_add(
+    lam_g.mul_add(
         gaussian_product_integral(mu_g, sigma_g, belief_mu, belief_sigma),
         -(lam_f * gaussian_product_integral(mu_f, sigma_f, belief_mu, belief_sigma)),
-    );
-    amplifier * raw_ev
+    )
 }
 
 /// Picks the highest-net-EV trade in the policy region.
@@ -276,7 +298,6 @@ pub fn optimize_normal_trade(input: NormalOptimizationInput) -> NormalOptimizati
                 input.effective_k,
                 input.belief_mean,
                 input.belief_sigma,
-                input.payout_amplifier,
             );
             let net = ev - coll;
             if net > best_net {
@@ -362,12 +383,12 @@ mod tests {
     #[test]
     fn sigma_arb_with_equal_mu_returns_no_trade_under_chain_pricing() {
         let input = NormalOptimizationInput::new(
-            50.0,    // budget (chain XP units)
-            4.3274,  // belief μ
-            0.2143,  // belief σ
-            4.2900,  // market μ
-            0.3500,  // market σ
-            75.07,   // effective k
+            50.0,   // budget (chain XP units)
+            4.3274, // belief μ
+            0.2143, // belief σ
+            4.2900, // market μ
+            0.3500, // market σ
+            75.07,  // effective k
         );
         let r = optimize_normal_trade(input);
         // Pre-fix: returned coll ≈ 0.4 (unscaled), claiming a profitable
@@ -421,7 +442,8 @@ mod tests {
         assert!(
             r.expected_value > r.collateral_required,
             "expected positive net (ev={} > coll={})",
-            r.expected_value, r.collateral_required,
+            r.expected_value,
+            r.collateral_required,
         );
         assert!(r.optimized_sigma < input.market_sigma * 0.9);
         assert!(r.collateral_required <= input.budget + 1e-9);
@@ -453,12 +475,12 @@ mod tests {
         // CPI-like params, budget below the λ-scaled cost of the σ-arb
         // optimum but above the unscaled cost.
         let input = NormalOptimizationInput::new(
-            5.0,     // budget — well below λ-scaled cost (~16)
-            4.29,    // belief μ
-            0.10,    // belief σ — very tight, big σ-arb on paper
-            4.29,    // market μ
-            0.35,    // market σ
-            75.07,   // k
+            5.0,   // budget — well below λ-scaled cost (~16)
+            4.29,  // belief μ
+            0.10,  // belief σ — very tight, big σ-arb on paper
+            4.29,  // market μ
+            0.35,  // market σ
+            75.07, // k
         );
         let r = optimize_normal_trade(input);
         // The chain charge for the σ-arb optimum (~16 STRK) exceeds
@@ -515,15 +537,15 @@ mod tests {
         // (within float tolerance). Pre-v0.1.3 the optimizer's reported
         // `collateral_required` was unscaled — this assertion would
         // have failed by ~200× back then.
-        let recomputed = collateral_number(
-            mu_m, sigma_m, r.optimized_mean, r.optimized_sigma, k,
-        );
+        let recomputed = collateral_number(mu_m, sigma_m, r.optimized_mean, r.optimized_sigma, k);
         let diff = (recomputed - r.collateral_required).abs();
         let tol = 1e-6_f64.max(r.collateral_required.abs() * 1e-9);
         assert!(
             diff < tol,
             "reported λ-scaled coll {} disagrees with re-derivation {} (diff {})",
-            r.collateral_required, recomputed, diff,
+            r.collateral_required,
+            recomputed,
+            diff,
         );
         // And: the budget filter held in chain frame.
         assert!(r.collateral_required <= budget + 1e-9);
