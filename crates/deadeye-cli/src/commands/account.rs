@@ -1,21 +1,142 @@
-//! `deadeye account …` — read account / profile state.
+//! `deadeye account …` — read account / profile state, deploy the account.
 
-use anyhow::{Context as _, Result};
+use anyhow::{Context as _, Result, bail};
 use deadeye_starknet::Provider as _;
 use starknet_core::{
-    types::{BlockId, BlockTag, Felt, FunctionCall},
+    types::{BlockId, BlockTag, Felt, FunctionCall, StarknetError},
     utils::get_selector_from_name,
 };
+use starknet_providers::{JsonRpcClient, Provider as _, ProviderError, jsonrpc::HttpTransport};
+use url::Url;
 
 use crate::{
-    cli::AccountCmd, config, context::AppContext, output::OutputMode, render::AccountView,
+    cli::AccountCmd,
+    commands::{confirm_or_bail, onboard},
+    config,
+    context::AppContext,
+    output::OutputMode,
+    render::AccountView,
+    wallet,
 };
 
-pub(crate) async fn run(action: AccountCmd, ctx: &AppContext) -> Result<()> {
+pub(crate) async fn run(action: AccountCmd, ctx: &AppContext, confirm: bool) -> Result<()> {
     match action {
         AccountCmd::Show => show(ctx).await,
         AccountCmd::List => list(ctx),
+        AccountCmd::Deploy => deploy(ctx, confirm).await,
     }
+}
+
+/// Deploy the active profile's account contract so it can send transactions.
+async fn deploy(ctx: &AppContext, confirm: bool) -> Result<()> {
+    let cfg = &ctx.config;
+    let pk_hex = cfg.private_key.as_deref().context(
+        "no wallet key on the active profile — run `deadeye onboard` (or pass --profile)",
+    )?;
+    let private_key = Felt::from_hex(pk_hex.trim()).context("stored private key is not a felt")?;
+
+    // Class hash: the profile's recorded class, else the default OZ class.
+    let file = config::load()?;
+    let class_hash_hex = file
+        .profiles
+        .get(&cfg.profile_name)
+        .and_then(|p| p.account_class_hash.clone())
+        .unwrap_or_else(|| wallet::DEFAULT_OZ_ACCOUNT_CLASS_HASH.to_owned());
+    let class_hash =
+        Felt::from_hex(&class_hash_hex).context("stored account class hash is not a felt")?;
+
+    let w = wallet::from_private_key(private_key, class_hash);
+
+    let url =
+        Url::parse(&cfg.rpc_url).with_context(|| format!("invalid rpc_url: {}", cfg.rpc_url))?;
+    let provider = JsonRpcClient::new(HttpTransport::new(url));
+    onboard::verify_rpc_reachable(&provider, &cfg.rpc_url).await?;
+
+    println!("Account : {:#066x}", w.address);
+    if is_deployed(&provider, w.address).await? {
+        println!("Already deployed — nothing to do.");
+        mark_deployed(&cfg.profile_name)?;
+        return Ok(());
+    }
+
+    onboard::verify_class_declared(&provider, class_hash).await?;
+
+    // Must have gas to pay for the deploy.
+    let bal = strk_balance(&provider, &cfg.strk_token, w.address)
+        .await
+        .unwrap_or(0);
+    if bal == 0 {
+        bail!(
+            "account {:#x} has 0 STRK — fund it with a little STRK for gas, then re-run \
+             `deadeye account deploy`",
+            w.address
+        );
+    }
+    println!("Balance : {:.6} STRK", (bal as f64) / 1e18_f64);
+
+    if !confirm {
+        confirm_or_bail(&format!(
+            "Deploy the account contract for {:#066x}? Gas is paid from this address.",
+            w.address
+        ))?;
+    }
+    let tx = onboard::deploy_account(&provider, &cfg.chain_id, &w).await?;
+    println!("\nAccount deployed. deploy_account tx: {tx:#066x}");
+    mark_deployed(&cfg.profile_name)?;
+    println!("\nNow you can: deadeye collateral claim-grant --execute");
+    Ok(())
+}
+
+/// Whether an account contract exists at `address` (deployed) on-chain.
+async fn is_deployed(provider: &JsonRpcClient<HttpTransport>, address: Felt) -> Result<bool> {
+    match provider
+        .get_class_hash_at(BlockId::Tag(BlockTag::PreConfirmed), address)
+        .await
+    {
+        Ok(_) => Ok(true),
+        Err(ProviderError::StarknetError(StarknetError::ContractNotFound)) => Ok(false),
+        Err(e) => Err(anyhow::anyhow!("could not check deployment status: {e}")),
+    }
+}
+
+/// Read the STRK balance (low u128 limb) for `holder`.
+async fn strk_balance(
+    provider: &JsonRpcClient<HttpTransport>,
+    token_hex: &str,
+    holder: Felt,
+) -> Result<u128> {
+    let token = Felt::from_hex(token_hex).context("invalid STRK token address")?;
+    let result = provider
+        .call(
+            FunctionCall {
+                contract_address: token,
+                entry_point_selector: get_selector_from_name("balance_of")
+                    .context("balance_of selector")?,
+                calldata: vec![holder],
+            },
+            BlockId::Tag(BlockTag::PreConfirmed),
+        )
+        .await
+        .map_err(|e| anyhow::anyhow!("balance_of call failed: {e}"))?;
+    let low = result.first().context("balance_of returned no felts")?;
+    let bytes = low.to_bytes_be();
+    let (high, low_bytes) = bytes.split_at(16);
+    if high.iter().any(|b| *b != 0) {
+        bail!("balance overflows u128");
+    }
+    let mut buf = [0_u8; 16];
+    buf.copy_from_slice(low_bytes);
+    Ok(u128::from_be_bytes(buf))
+}
+
+/// Flip `account_deployed = true` for `profile`.
+fn mark_deployed(profile: &str) -> Result<()> {
+    let mut cfg = config::load()?;
+    if let Some(p) = cfg.profiles.get_mut(profile) {
+        p.account_deployed = true;
+    }
+    config::save(&cfg)?;
+    Ok(())
 }
 
 /// List every saved wallet profile so an agent can choose one to trade from.

@@ -70,11 +70,17 @@ impl Render for ClaimGrantPlan {
         r.kv("account", &self.account);
         r.kv("token", &self.token);
         if self.grant_xp.is_finite() {
-            r.kv("grant", &format!("{:.4} XP  (raw {})", self.grant_xp, self.grant_raw_hex));
+            r.kv(
+                "grant",
+                &format!("{:.4} XP  (raw {})", self.grant_xp, self.grant_raw_hex),
+            );
         } else {
             r.kv("grant", &self.grant_raw_hex);
         }
-        r.kv("balance_before", &format!("{:.4} XP", self.balance_before_xp));
+        r.kv(
+            "balance_before",
+            &format!("{:.4} XP", self.balance_before_xp),
+        );
         r.kv("mode", &self.mode);
         if let Some(tx) = &self.tx_hash {
             r.kv("tx_hash", tx);
@@ -170,16 +176,24 @@ async fn claim_grant(args: CollateralClaimGrantArgs, ctx: &AppContext) -> Result
         Ok(receipt) => {
             plan.tx_hash = Some(format!("{:#x}", receipt.transaction_hash));
             ctx.renderer.print(&plan)?;
-            let submission =
-                submission_from_receipt("claim_initial_grant", market_hex, receipt);
+            let submission = submission_from_receipt("claim_initial_grant", market_hex, receipt);
             ctx.renderer.print(&submission)
         },
         Err(e) => {
             ctx.renderer.print(&plan)?;
+            let detail = format!("{e:?}");
             let trade_err = deadeye_starknet::TradeError::from_contract(e);
             let submission =
                 submission_from_trade_error("claim_initial_grant", market_hex, &trade_err);
             ctx.renderer.print(&submission)?;
+            // The #1 cause for a fresh wallet: the account contract isn't
+            // deployed yet, so it can't send any transaction.
+            if detail.contains("ContractNotFound") {
+                ctx.renderer.warning(
+                    "this account isn't deployed yet — fund it with a little STRK for gas, \
+                     run `deadeye account deploy`, then retry the claim",
+                );
+            }
             bail!("claim_initial_grant submission failed")
         },
     }

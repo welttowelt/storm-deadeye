@@ -245,7 +245,7 @@ fn resolve_rpc(explicit: Option<&str>, default_rpc: &str) -> Result<String> {
 }
 
 /// Confirm the RPC answers before we ask the user to fund anything.
-async fn verify_rpc_reachable(
+pub(crate) async fn verify_rpc_reachable(
     provider: &JsonRpcClient<HttpTransport>,
     rpc_url: &str,
 ) -> Result<()> {
@@ -260,7 +260,7 @@ async fn verify_rpc_reachable(
 }
 
 /// Error out early if the account class isn't declared on this network.
-async fn verify_class_declared(
+pub(crate) async fn verify_class_declared(
     provider: &JsonRpcClient<HttpTransport>,
     class_hash: Felt,
 ) -> Result<()> {
@@ -310,7 +310,7 @@ async fn wait_for_funding(
 }
 
 /// Deploy the OpenZeppelin account for `w`; returns the deploy tx hash.
-async fn deploy_account(
+pub(crate) async fn deploy_account(
     provider: &JsonRpcClient<HttpTransport>,
     chain_id_hex: &str,
     w: &wallet::Wallet,

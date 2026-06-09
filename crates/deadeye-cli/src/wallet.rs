@@ -59,9 +59,23 @@ pub(crate) fn import(phrase: &str, class_hash: Felt) -> Result<Wallet> {
     if !matches!(word_count, 12 | 15 | 18 | 21 | 24) {
         bail!("expected a 12/15/18/21/24-word phrase, got {word_count} words");
     }
-    let mnemonic =
-        Mnemonic::parse_normalized(&phrase).context("invalid BIP-39 recovery phrase")?;
+    let mnemonic = Mnemonic::parse_normalized(&phrase).context("invalid BIP-39 recovery phrase")?;
     Ok(from_mnemonic(mnemonic, class_hash))
+}
+
+/// Rebuild a wallet from a stored private key (no mnemonic). Used to deploy or
+/// operate an already-onboarded account whose key is saved in the profile.
+pub(crate) fn from_private_key(private_key: Felt, class_hash: Felt) -> Wallet {
+    let signing_key = SigningKey::from_secret_scalar(private_key);
+    let public_key = signing_key.verifying_key().scalar();
+    let address = oz_account_address(public_key, class_hash);
+    Wallet {
+        mnemonic: String::new(),
+        private_key,
+        public_key,
+        address,
+        class_hash,
+    }
 }
 
 /// Derive every wallet field from a parsed mnemonic.
@@ -113,8 +127,7 @@ mod tests {
     #[test]
     fn known_phrase_round_trips_to_stable_address() {
         // A fixed phrase must always derive the same address (recovery).
-        let phrase =
-            "legal winner thank year wave sausage worth useful legal winner thank yellow";
+        let phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
         let a = import(phrase, class_hash()).unwrap();
         let b = import(phrase, class_hash()).unwrap();
         assert_eq!(a.address, b.address);

@@ -645,6 +645,20 @@ pub(crate) enum AccountCmd {
     /// deadeye account list --output json
     /// ```
     List,
+    /// Deploy the active profile's account contract on-chain.
+    ///
+    /// A freshly-created wallet must be **funded with STRK and deployed**
+    /// before it can send any transaction (claim-grant, trade, …). Run this
+    /// after funding if onboarding's deploy step was skipped or failed. It is
+    /// idempotent — a no-op if the account is already deployed.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye account deploy            # deploy the default wallet
+    /// deadeye account deploy --profile alice
+    /// ```
+    Deploy,
 }
 
 #[derive(Debug, Subcommand)]

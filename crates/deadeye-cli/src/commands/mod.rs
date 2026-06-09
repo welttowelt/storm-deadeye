@@ -64,7 +64,7 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
         Command::Forecast { action } => forecast::run(action, &ctx).await,
         Command::Feedback(args) => feedback::run(args, confirm).await,
         Command::Update(args) => update::run(args, confirm).await,
-        Command::Account { action } => account::run(action, &ctx).await,
+        Command::Account { action } => account::run(action, &ctx, confirm).await,
         Command::Markets { action } => markets::run(action, &ctx).await,
         Command::Position { action } => position::run(action, &ctx, confirm).await,
         Command::Config { action } => config_cmd::run(action, &ctx).await,
