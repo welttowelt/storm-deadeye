@@ -127,6 +127,16 @@ pub(crate) enum Command {
         #[command(subcommand)]
         action: ForecastCmd,
     },
+    /// Readiness preflight: check account, gas, XP, RPC, indexer, and (with
+    /// `--market`) market state — so you learn up front whether you can trade.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye doctor
+    /// deadeye doctor --market 0xba9a4b3… --output json
+    /// ```
+    Doctor(DoctorArgs),
     /// Submit a feature request / bug report as a structured GitHub issue.
     ///
     /// Builds a well-tagged issue (type, component, environment) and posts it
@@ -444,6 +454,9 @@ pub(crate) enum CollateralCmd {
     /// ```
     ClaimGrant(CollateralClaimGrantArgs),
     /// Show the wallet's XP balance + grant-claim status.
+    ///
+    /// `show` is an alias for noun-consistency with `account show` etc.
+    #[command(visible_alias = "show")]
     Balance(CollateralBalanceArgs),
 }
 
@@ -809,6 +822,17 @@ pub(crate) struct UpdateArgs {
     /// Installer URL to run when updating. Defaults to the branded endpoint.
     #[arg(long, value_name = "URL")]
     pub(crate) url: Option<String>,
+}
+
+// ─── Doctor (readiness preflight) ────────────────────────────────────────
+
+/// `deadeye doctor …`
+#[derive(Debug, clap::Args)]
+pub(crate) struct DoctorArgs {
+    /// Also check a specific market is tradeable (active, initialized,
+    /// not settled) and its family is on-chain readable.
+    #[arg(long, value_name = "0x...")]
+    pub(crate) market: Option<String>,
 }
 
 // ─── Feedback (GitHub issue submission) ──────────────────────────────────

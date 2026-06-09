@@ -88,7 +88,10 @@ async fn deploy(ctx: &AppContext, confirm: bool) -> Result<()> {
 }
 
 /// Whether an account contract exists at `address` (deployed) on-chain.
-async fn is_deployed(provider: &JsonRpcClient<HttpTransport>, address: Felt) -> Result<bool> {
+pub(crate) async fn is_deployed(
+    provider: &JsonRpcClient<HttpTransport>,
+    address: Felt,
+) -> Result<bool> {
     match provider
         .get_class_hash_at(BlockId::Tag(BlockTag::PreConfirmed), address)
         .await
@@ -100,7 +103,7 @@ async fn is_deployed(provider: &JsonRpcClient<HttpTransport>, address: Felt) -> 
 }
 
 /// Read the STRK balance (low u128 limb) for `holder`.
-async fn strk_balance(
+pub(crate) async fn strk_balance(
     provider: &JsonRpcClient<HttpTransport>,
     token_hex: &str,
     holder: Felt,

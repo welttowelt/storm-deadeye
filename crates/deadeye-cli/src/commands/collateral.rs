@@ -275,7 +275,7 @@ async fn balance(args: CollateralBalanceArgs, ctx: &AppContext) -> Result<()> {
 
 /// Raw 18-decimal `u256` → human f64 (for display only — gates should
 /// compare in raw u256 space). Saturates on overflow.
-fn u256_to_human_18(raw: U256) -> f64 {
+pub(crate) fn u256_to_human_18(raw: U256) -> f64 {
     const WAD: f64 = 1.0e18;
     // 2^128 in f64 — exact since 2^128 is a power of two well within
     // f64's exponent range. The literal goes through f64::from_bits

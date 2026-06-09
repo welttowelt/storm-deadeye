@@ -260,6 +260,13 @@ where
     where
         T: CairoSerde,
     {
+        tracing::debug!(
+            target: "deadeye::rpc",
+            contract = %self.address,
+            entrypoint = call_name,
+            calldata_len = calldata.len(),
+            "starknet_call",
+        );
         let response = self
             .provider
             .call(
@@ -271,6 +278,12 @@ where
                 self.provider.default_block(),
             )
             .await?;
+        tracing::debug!(
+            target: "deadeye::rpc",
+            entrypoint = call_name,
+            felts_returned = response.len(),
+            "starknet_call returned",
+        );
         let (value, rest) = T::decode(&response)?;
         if !rest.is_empty() {
             return Err(ContractError::UnexpectedReturnSize {

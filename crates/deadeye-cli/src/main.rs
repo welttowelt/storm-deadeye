@@ -56,18 +56,22 @@ use crate::cli::Cli;
 fn main() -> ExitCode {
     let cli = Cli::parse();
 
-    // Initialise tracing only when the user asks for verbose output.
-    // We deliberately route to stderr so it can't poison `--output json`
-    // pipelines that consume stdout.
-    if cli.verbose {
-        let _ = tracing_subscriber::fmt()
-            .with_writer(std::io::stderr)
-            .with_env_filter(
-                tracing_subscriber::EnvFilter::try_from_default_env()
-                    .unwrap_or_else(|_| tracing_subscriber::EnvFilter::new("info,deadeye=debug")),
-            )
-            .try_init();
-    }
+    // Install the tracing subscriber **unconditionally** so `RUST_LOG` is
+    // honored even without `-v` (previously it only installed under `-v`, so
+    // `RUST_LOG=debug deadeye …` produced nothing). Routed to stderr so it
+    // never contaminates `--output json` on stdout. `-v` raises the default to
+    // `debug` for the deadeye crates; without it (and without RUST_LOG) we stay
+    // quiet at `warn`. Span close-events surface each instrumented RPC/read
+    // (contract address, timing) so a failing call is visible from the trace.
+    let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
+        let default = if cli.verbose { "info,deadeye=debug" } else { "warn" };
+        tracing_subscriber::EnvFilter::new(default)
+    });
+    let _ = tracing_subscriber::fmt()
+        .with_writer(std::io::stderr)
+        .with_env_filter(filter)
+        .with_span_events(tracing_subscriber::fmt::format::FmtSpan::CLOSE)
+        .try_init();
 
     let runtime = match tokio::runtime::Builder::new_multi_thread()
         .enable_all()
