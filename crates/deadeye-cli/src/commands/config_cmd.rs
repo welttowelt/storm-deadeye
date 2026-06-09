@@ -61,12 +61,9 @@ fn init(
 
     let path = config::save(&cfg)?;
     ctx.renderer.success(&format!(
-        "wrote profile `{profile_name}` to {}",
+        "updated profile `{profile_name}` in {} (existing wallet key, if any, preserved)",
         path.display()
     ));
-    ctx.renderer.warning(
-        "private keys are NEVER stored in the config — set DEADEYE_PRIVATE_KEY in your environment",
-    );
     Ok(())
 }
 
