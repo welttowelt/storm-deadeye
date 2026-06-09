@@ -21,6 +21,7 @@ pub(crate) mod admin;
 pub(crate) mod claim;
 pub(crate) mod collateral;
 pub(crate) mod config_cmd;
+pub(crate) mod feedback;
 pub(crate) mod forecast;
 pub(crate) mod lp;
 pub(crate) mod markets;
@@ -60,6 +61,7 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
         // creates that profile — so it takes the raw args, not `ctx`.
         Command::Onboard(args) => onboard::run(args, &ctx, confirm).await,
         Command::Forecast { action } => forecast::run(action, &ctx).await,
+        Command::Feedback(args) => feedback::run(args, confirm).await,
         Command::Account { action } => account::run(action, &ctx).await,
         Command::Markets { action } => markets::run(action, &ctx).await,
         Command::Position { action } => position::run(action, &ctx, confirm).await,

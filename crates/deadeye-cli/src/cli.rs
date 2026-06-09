@@ -127,6 +127,19 @@ pub(crate) enum Command {
         #[command(subcommand)]
         action: ForecastCmd,
     },
+    /// Submit a feature request / bug report as a structured GitHub issue.
+    ///
+    /// Builds a well-tagged issue (type, component, environment) and posts it
+    /// to the repo via the `gh` CLI. Run with `--dry-run` to preview first.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye feedback --title "forecast: add CRPS scoring" \
+    ///   --kind feature --component forecast \
+    ///   --body "After a market resolves I want `deadeye forecast score` to ..."
+    /// ```
+    Feedback(FeedbackArgs),
     /// Inspect the active account / profile.
     Account {
         #[command(subcommand)]
@@ -747,6 +760,47 @@ pub(crate) enum ConfigCmd {
         #[arg(value_name = "NAME")]
         name: String,
     },
+}
+
+// ─── Feedback (GitHub issue submission) ──────────────────────────────────
+
+/// Kind of feedback — drives the title prefix and the standard label.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum FeedbackKind {
+    /// A feature request / enhancement.
+    Feature,
+    /// A bug report.
+    Bug,
+    /// An idea / open-ended suggestion.
+    Idea,
+}
+
+/// `deadeye feedback …`
+#[derive(Debug, clap::Args)]
+pub(crate) struct FeedbackArgs {
+    /// Short issue title (a `[Feature]` / `[Bug]` prefix is added).
+    #[arg(long)]
+    pub(crate) title: String,
+    /// The body: what you want and why. For a feature, describe the problem
+    /// and a proposed solution; for a bug, steps + expected vs actual.
+    #[arg(long)]
+    pub(crate) body: String,
+    /// Kind of feedback.
+    #[arg(long, value_name = "KIND", default_value = "feature")]
+    pub(crate) kind: FeedbackKind,
+    /// Component this concerns (e.g. cli, forecast, wallet, trade, indexer).
+    #[arg(long)]
+    pub(crate) component: Option<String>,
+    /// Extra GitHub label to apply (repeatable). Must already exist on the repo.
+    #[arg(long = "label")]
+    pub(crate) labels: Vec<String>,
+    /// Target repository (`owner/name`). Defaults to the deadeye-rs repo or
+    /// `DEADEYE_FEEDBACK_REPO`.
+    #[arg(long, value_name = "OWNER/NAME", env = "DEADEYE_FEEDBACK_REPO")]
+    pub(crate) repo: Option<String>,
+    /// Print the issue title/labels/body that would be posted, without posting.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
 }
 
 // ─── Forecast (superforecasting workspace) ───────────────────────────────

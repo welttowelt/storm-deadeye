@@ -81,7 +81,7 @@ cargo_bin() { printf '%s' "${CARGO_HOME:-$HOME/.cargo}/bin"; }
 
 # ── 2. Install the agent skills ──────────────────────────────────────────
 # The forecasting suite + the CLI usage skill.
-SKILLS="deadeye-cli deadeye-superforecaster bayes-forecast-scratchpad evidence-ledger"
+SKILLS="deadeye-cli deadeye-superforecaster bayes-forecast-scratchpad evidence-ledger deadeye-feedback"
 
 install_skill() {
   # Install for every supported agent whose home skills dir exists (always
