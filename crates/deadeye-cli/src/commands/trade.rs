@@ -86,21 +86,25 @@ async fn quote_normal(
     // Backing-derived σ-floor (issue: surface σ-min). Best-effort.
     let sigma_floor = market_handle.sigma_floor().await.ok();
 
-    let (quote, belief, budget) =
+    let (quote, belief, budget, expected_value) =
         if let (Some(belief_mean), Some(budget)) = (args.belief, args.budget) {
             let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
-            let q = if let Some(rt) = runtime {
-                market_handle
+            let (q, ev) = if let Some(rt) = runtime {
+                // Chain-runtime path doesn't surface the optimizer EV.
+                let q = market_handle
                     .optimize_quote(rt, belief_mean, belief_sigma, budget)
                     .await
-                    .context("optimize_quote (chain runtime)")?
+                    .context("optimize_quote (chain runtime)")?;
+                (q, None)
             } else {
-                market_handle
-                    .optimize_quote_offline(belief_mean, belief_sigma, budget)
+                // Offline path returns the optimizer's expected value (XP).
+                let (q, ev) = market_handle
+                    .optimize_quote_offline_ev(belief_mean, belief_sigma, budget)
                     .await
-                    .context("optimize_quote_offline")?
+                    .context("optimize_quote_offline")?;
+                (q, Some(ev))
             };
-            (q, Some((belief_mean, belief_sigma)), Some(budget))
+            (q, Some((belief_mean, belief_sigma)), Some(budget), ev)
         } else {
             let mean = args
                 .mean
@@ -140,7 +144,8 @@ async fn quote_normal(
                     .await
                     .context("quote_candidate_offline")?
             };
-            (q, None, None)
+            // Fixed-candidate quote has no belief → no expected value.
+            (q, None, None, None)
         };
 
     let cand_mean = Sq128::from_raw(quote.candidate.mean).to_f64();
@@ -185,7 +190,7 @@ async fn quote_normal(
         market_sigma: Some(market_sigma),
         belief_mean: belief.map(|(m, _)| m),
         belief_sigma: belief.map(|(_, s)| s),
-        expected_value: None,
+        expected_value,
         budget,
         on_chain_will_accept: accept,
         rejection,

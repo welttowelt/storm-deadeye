@@ -8,31 +8,45 @@
 //! ## Worked example — quote, execute, sell
 //!
 //! ```no_run
-//! use deadeye_sdk::normal::NormalMarket;
-//! use deadeye_sdk::starknet::{
-//!     Felt, JsonRpcProvider, NormalMarketReader, NormalMarketWriter, OwnedAccount,
+//! use deadeye_sdk::{
+//!     core::{distribution::NormalDistributionRaw, sq128::Sq128Raw},
+//!     normal::NormalMarket,
+//!     starknet::{Felt, JsonRpcProvider, NormalMarketReader, NormalMarketWriter, OwnedAccount},
 //! };
-//! use deadeye_sdk::core::{distribution::NormalDistributionRaw, sq128::Sq128Raw};
 //! use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let rpc = JsonRpcClient::new(HttpTransport::new("http://localhost:5050".parse::<url::Url>()?));
+//! let rpc = JsonRpcClient::new(HttpTransport::new(
+//!     "http://localhost:5050".parse::<url::Url>()?,
+//! ));
 //! let provider = JsonRpcProvider::new(rpc);
 //! let (market, runtime): (Felt, Felt) = (Felt::ZERO, Felt::ZERO);
 //!
 //! let reader = NormalMarketReader::new(&provider, market);
 //! let signer = OwnedAccount::from_signing_key(
-//!     JsonRpcClient::new(HttpTransport::new("http://localhost:5050".parse::<url::Url>()?)),
-//!     Felt::ZERO, Felt::ZERO, Felt::ZERO,
+//!     JsonRpcClient::new(HttpTransport::new(
+//!         "http://localhost:5050".parse::<url::Url>()?,
+//!     )),
+//!     Felt::ZERO,
+//!     Felt::ZERO,
+//!     Felt::ZERO,
 //! );
 //! let writer = NormalMarketWriter::new(reader, signer);
 //!
 //! let candidate = NormalDistributionRaw {
-//!     mean: Sq128Raw::ZERO, variance: Sq128Raw::ZERO, sigma: Sq128Raw::ZERO,
+//!     mean: Sq128Raw::ZERO,
+//!     variance: Sq128Raw::ZERO,
+//!     sigma: Sq128Raw::ZERO,
 //! };
 //! let quote = writer
 //!     .reader()
-//!     .quote_trade(runtime, candidate, Sq128Raw::ZERO, Sq128Raw::ZERO, Sq128Raw::ZERO)
+//!     .quote_trade(
+//!         runtime,
+//!         candidate,
+//!         Sq128Raw::ZERO,
+//!         Sq128Raw::ZERO,
+//!         Sq128Raw::ZERO,
+//!     )
 //!     .await?;
 //! if quote.on_chain_will_accept {
 //!     writer.execute_quote(quote).await?;
@@ -42,11 +56,11 @@
 //! ```
 
 use deadeye_collateral::{MinimizationPolicy, lambda as collateral_lambda, normal_collateral};
-use deadeye_core::{NormalDistribution, Sq128, distribution::NormalSqrtHintsRaw, sq128::Sq128Raw};
 // Bring `Distribution::pdf` into scope for `λ_f f(x*) − λ_g g(x*)`
 // computation below. Aliased to `_` to avoid name conflicts with the
 // pub-use at the bottom of this module.
 use deadeye_core::Distribution as _CollateralPdf;
+use deadeye_core::{NormalDistribution, Sq128, distribution::NormalSqrtHintsRaw, sq128::Sq128Raw};
 use deadeye_optimizer::{NormalOptimizationInput, normal_sigma_floor, optimize_normal_trade};
 use deadeye_starknet::{
     Account, ExecutionReceipt, Felt, NormalMarketReader, NormalMarketWriter, NormalTradeQuote,
@@ -56,7 +70,8 @@ use tracing::instrument;
 
 use crate::{error::SdkResult, quote::PreparedQuote};
 
-/// Cairo `SQRT_PI_RAW` from `the-situation/contracts/src/market/normal/constants.cairo`.
+/// Cairo `SQRT_PI_RAW` from
+/// `the-situation/contracts/src/market/normal/constants.cairo`.
 ///
 /// `sqrt(π) ≈ 1.7724538509055160272981674833...` floor-encoded into Q128.128.
 /// This is the **exact same limb representation** the on-chain math runtime
@@ -131,7 +146,8 @@ fn validate_effective_k_override(value: f64) -> SdkResult<()> {
 
 /// Live-state-derived `effective_k` mirroring the on-chain
 /// `compute_effective_trade_k_view`:
-/// `effective_k = max(base_k, mul_down(base_k, pool_backing) / initial_backing)`.
+/// `effective_k = max(base_k, mul_down(base_k, pool_backing) /
+/// initial_backing)`.
 ///
 /// **Convention (canonicalised by `REVIEW_ITEM5`; Cairo storage + on-chain
 /// math runtime + TS indexer all agree). An earlier version of this
@@ -140,11 +156,11 @@ fn validate_effective_k_override(value: f64) -> SdkResult<()> {
 ///
 /// * `base_k` := `params.k` (the AMM-stored invariant constant).
 /// * `pool_backing` := `lp_info.total_backing_deposited` — the **live**
-///   backing, growing as LPs deposit; this is the formula's numerator and
-///   the only thing that can push `effective_k` above `base_k`.
-/// * `initial_backing` := `params.backing` — the **immutable** backing the
-///   AMM was deployed with. The on-chain `params` ABI field name is a
-///   leftover misnomer: `params.backing` is *not* live pool backing.
+///   backing, growing as LPs deposit; this is the formula's numerator and the
+///   only thing that can push `effective_k` above `base_k`.
+/// * `initial_backing` := `params.backing` — the **immutable** backing the AMM
+///   was deployed with. The on-chain `params` ABI field name is a leftover
+///   misnomer: `params.backing` is *not* live pool backing.
 ///
 /// In other words: `params.backing` is the historical reference (denominator),
 /// `lp_info.total_backing_deposited` is the current pool size (numerator).
@@ -185,7 +201,7 @@ fn optimize_quote_offline_inner(
     belief_sigma: f64,
     budget_xp: f64,
     effective_k: f64,
-) -> SdkResult<NormalTradeQuote> {
+) -> SdkResult<(NormalTradeQuote, f64)> {
     let market_mean = current.mean().to_f64();
     let market_sigma = current.sigma().to_f64();
 
@@ -215,24 +231,19 @@ fn optimize_quote_offline_inner(
     // collateral via the audited `normal_collateral` λ-scaled
     // Newton solver. Two fixes vs. the previous heuristics:
     //
-    // 1. **x_star is the actual stationary point**, not `cand_mean`.
-    //    The chain's `check_trade_view` does **not** re-derive `x*`,
-    //    it *verifies* that the supplied `x*` is at the stationary
-    //    point of `d(x) = λ_g g(x) − λ_f f(x)` (`d'(x*) ≈ 0`,
-    //    `d''(x*) > 0`). Using `cand_mean` blew the
-    //    curvature/stationarity gates and surfaced as silent
-    //    `is_valid=false` with `rejection=None` (see
-    //    `docs/CHAIN_ACCEPTANCE_PARITY.md`).
-    // 2. **Collateral is λ-scaled to match the chain.**
-    //    `normal_collateral` returns the *unscaled* `−d_min`
-    //    (max(0, f(x*) − g(x*))), but the chain's
-    //    `computed_collateral` is the *λ-scaled* difference
-    //    `max(0, λ_f f(x*) − λ_g g(x*))` with `λ = k / ‖p‖₂`. The
-    //    unscaled value is ~200× too small at `k=50, σ≈10`, so the
-    //    chain rejected with `coll_ok=false above_min=false` (the
-    //    supplied was below `min_trade_collateral=1.0`).
-    //    Cairo source: `helpers.cairo:190-230` /
-    //    `scaled_verify_minimum_with_lambda`.
+    // 1. **x_star is the actual stationary point**, not `cand_mean`. The chain's
+    //    `check_trade_view` does **not** re-derive `x*`, it *verifies* that the
+    //    supplied `x*` is at the stationary point of `d(x) = λ_g g(x) − λ_f f(x)`
+    //    (`d'(x*) ≈ 0`, `d''(x*) > 0`). Using `cand_mean` blew the
+    //    curvature/stationarity gates and surfaced as silent `is_valid=false` with
+    //    `rejection=None` (see `docs/CHAIN_ACCEPTANCE_PARITY.md`).
+    // 2. **Collateral is λ-scaled to match the chain.** `normal_collateral` returns
+    //    the *unscaled* `−d_min` (max(0, f(x*) − g(x*))), but the chain's
+    //    `computed_collateral` is the *λ-scaled* difference `max(0, λ_f f(x*) − λ_g
+    //    g(x*))` with `λ = k / ‖p‖₂`. The unscaled value is ~200× too small at
+    //    `k=50, σ≈10`, so the chain rejected with `coll_ok=false above_min=false`
+    //    (the supplied was below `min_trade_collateral=1.0`). Cairo source:
+    //    `helpers.cairo:190-230` / `scaled_verify_minimum_with_lambda`.
     //
     // When the audited solver fails (`Err`, non-finite, or zero
     // collateral), we *cannot* honestly report a chain-valid quote
@@ -260,12 +271,11 @@ fn optimize_quote_offline_inner(
                 (x_q, scaled)
             },
             // Two no-trade sentinel paths sharing the same response:
-            //   * `Ok(_)` — solver succeeded but produced zero / non-
-            //     finite collateral (identical distributions).
-            //   * `Err(_)` — solver failed outright (Newton non-convergence,
-            //     verification failed). We refuse to claim; returning the
-            //     unscaled optimizer value here would silently re-create
-            //     the bug the λ-scaling fix closes.
+            //   * `Ok(_)` — solver succeeded but produced zero / non- finite collateral (identical
+            //     distributions).
+            //   * `Err(_)` — solver failed outright (Newton non-convergence, verification failed).
+            //     We refuse to claim; returning the unscaled optimizer value here would silently
+            //     re-create the bug the λ-scaling fix closes.
             Ok(_) | Err(_) => (cand_mean, 0.0_f64),
         };
 
@@ -283,15 +293,18 @@ fn optimize_quote_offline_inner(
     let has_positive_trade = collateral_f64 > 0.0 && opt.expected_value > collateral_f64;
     let rejection = None;
 
-    Ok(NormalTradeQuote {
-        candidate: candidate.to_raw(),
-        candidate_hints,
-        x_star: x_star.to_raw(),
-        required_collateral: collateral_required.to_raw(),
-        padded_collateral: padded_collateral.to_raw(),
-        on_chain_will_accept: has_positive_trade,
-        rejection,
-    })
+    Ok((
+        NormalTradeQuote {
+            candidate: candidate.to_raw(),
+            candidate_hints,
+            x_star: x_star.to_raw(),
+            required_collateral: collateral_required.to_raw(),
+            padded_collateral: padded_collateral.to_raw(),
+            on_chain_will_accept: has_positive_trade,
+            rejection,
+        },
+        opt.expected_value,
+    ))
 }
 
 /// Pure offline quote for a **fixed** candidate `(μ, variance)` — no optimizer
@@ -430,8 +443,8 @@ where
     /// # Inputs
     ///
     /// * `runtime` — math runtime contract address (used by `quote_trade`).
-    /// * `belief_mean` / `belief_sigma` — the trader's belief about the
-    ///   true outcome distribution.
+    /// * `belief_mean` / `belief_sigma` — the trader's belief about the true
+    ///   outcome distribution.
     /// * `budget` — maximum collateral the trader is willing to risk.
     ///
     /// # Returns
@@ -489,15 +502,15 @@ where
     /// and wants to avoid an extra view round-trip. Concrete use cases:
     ///
     /// * **Backtest** — replay an old position with the historical
-    ///   `effective_k` captured at the time the trade was submitted
-    ///   (e.g. from a journal snapshot or analytics warehouse).
-    /// * **Simulation** — explore "what if `k` were `75`?" scenarios
-    ///   without nudging LP balances on chain.
-    /// * **Offline mode** — the cpi-bot reads `effective_k` once per
-    ///   quote cycle for its observability banner; passing the same
-    ///   value through here eliminates the SDK's redundant chain read.
-    /// * **Testing** — unit tests fix `effective_k` to a known value
-    ///   without standing up a chain reader.
+    ///   `effective_k` captured at the time the trade was submitted (e.g. from
+    ///   a journal snapshot or analytics warehouse).
+    /// * **Simulation** — explore "what if `k` were `75`?" scenarios without
+    ///   nudging LP balances on chain.
+    /// * **Offline mode** — the cpi-bot reads `effective_k` once per quote
+    ///   cycle for its observability banner; passing the same value through
+    ///   here eliminates the SDK's redundant chain read.
+    /// * **Testing** — unit tests fix `effective_k` to a known value without
+    ///   standing up a chain reader.
     ///
     /// The on-chain verifier still re-validates the candidate against
     /// its own live `effective_k` at submit time, so a stale or
@@ -638,21 +651,19 @@ where
     /// 1. Reads live market state from chain — `distribution`, `params`,
     ///    `lp_info`.
     /// 2. Derives `effective_k` from `(params.k, params.backing,
-    ///    lp_info.total_backing_deposited)` using the exact chain
-    ///    formula (`max(base_k, mul_down(base_k, pool_backing) /
-    ///    initial_backing)`).
+    ///    lp_info.total_backing_deposited)` using the exact chain formula
+    ///    (`max(base_k, mul_down(base_k, pool_backing) / initial_backing)`).
     /// 3. Hands the live `(μ_market, σ_market, effective_k, budget)` to
-    ///    [`deadeye_optimizer::optimize_normal_trade`] to pick the
-    ///    EV-optimal `(μ_g, σ_g²)`.
-    /// 4. **Replaces the optimizer's f64-derived σ** with the
-    ///    chain-bit-exact σ obtained via
-    ///    [`NormalDistribution::from_variance`] (internally
+    ///    [`deadeye_optimizer::optimize_normal_trade`] to pick the EV-optimal
+    ///    `(μ_g, σ_g²)`.
+    /// 4. **Replaces the optimizer's f64-derived σ** with the chain-bit-exact σ
+    ///    obtained via [`NormalDistribution::from_variance`] (internally
     ///    `Sq128::sqrt`). This is the critical fix that prevents
-    ///    `INVALID_DISTRIBUTION` rejections on submit — f64 sqrt rounds
-    ///    in the last bit for any non-perfect Sq128 square, but
-    ///    `Sq128::sqrt` is bit-exact with Cairo `u512_sqrt`.
-    /// 5. Computes `(l2_norm_denom, backing_denom)` offline via the
-    ///    same `sqrt(mul_down(...))` chain the on-chain runtime uses.
+    ///    `INVALID_DISTRIBUTION` rejections on submit — f64 sqrt rounds in the
+    ///    last bit for any non-perfect Sq128 square, but `Sq128::sqrt` is
+    ///    bit-exact with Cairo `u512_sqrt`.
+    /// 5. Computes `(l2_norm_denom, backing_denom)` offline via the same
+    ///    `sqrt(mul_down(...))` chain the on-chain runtime uses.
     ///
     /// # Returns
     ///
@@ -663,11 +674,10 @@ where
     ///   re-derives the true stationary point at execute time)
     /// * `required_collateral` / `padded_collateral` — both set to the
     ///   off-chain collateral solver's output
-    /// * `on_chain_will_accept` — `true` iff the optimizer found a
-    ///   positive-EV trade (i.e. cost > 0 and EV > cost). Mind the
-    ///   caveat below.
-    /// * `rejection` — `Some("off-chain optimizer found no positive-EV
-    ///   trade")` when `!on_chain_will_accept`, else `None`.
+    /// * `on_chain_will_accept` — `true` iff the optimizer found a positive-EV
+    ///   trade (i.e. cost > 0 and EV > cost). Mind the caveat below.
+    /// * `rejection` — `Some("off-chain optimizer found no positive-EV trade")`
+    ///   when `!on_chain_will_accept`, else `None`.
     ///
     /// # Bit-exactness vs. chain acceptance
     ///
@@ -679,9 +689,9 @@ where
     /// What's still re-checked at execute time:
     /// * trader collateral balance + allowance
     /// * fresh-state nonce (no front-run between quote and execute)
-    /// * the AMM's `check_trade_view` admissibility envelope (`min
-    ///   trade collateral`, `tolerance`, policy region — these are
-    ///   conservative side-constraints, not σ/hint correctness)
+    /// * the AMM's `check_trade_view` admissibility envelope (`min trade
+    ///   collateral`, `tolerance`, policy region — these are conservative
+    ///   side-constraints, not σ/hint correctness)
     ///
     /// In other words: this method removes the σ-precision footgun
     /// that the f64-fallback used to introduce. The chain still
@@ -693,6 +703,22 @@ where
         belief_sigma: f64,
         budget_xp: f64,
     ) -> SdkResult<NormalTradeQuote> {
+        self.optimize_quote_offline_ev(belief_mean, belief_sigma, budget_xp)
+            .await
+            .map(|(quote, _ev)| quote)
+    }
+
+    /// Like [`Self::optimize_quote_offline`], but also returns the optimizer's
+    /// **expected value** (in XP) of the chosen candidate under the belief —
+    /// the quantity the CLI surfaces as `expected_value` in `trade quote`.
+    /// Same single optimizer pass; the EV is otherwise discarded.
+    #[instrument(skip(self), fields(market = %self.reader.address()))]
+    pub async fn optimize_quote_offline_ev(
+        &self,
+        belief_mean: f64,
+        belief_sigma: f64,
+        budget_xp: f64,
+    ) -> SdkResult<(NormalTradeQuote, f64)> {
         let current = self.distribution().await?;
         let params = self.reader.params().await?;
         let lp_info = self.reader.lp_info().await?;
@@ -700,12 +726,12 @@ where
         let base_k = Sq128::from_raw(params.k);
         // Convention pin (matches the `live_effective_k` doc-comment and
         // `cpi-bot::effective_k::chain_read_effective_k`):
-        //   * `pool_backing`   := `lp_info.total_backing_deposited`
-        //     (the *live* pool — the formula's numerator).
-        //   * `initial_backing` := `params.backing`
-        //     (the *immutable* reference deposited at deploy — the
-        //     formula's denominator; ABI-named `backing` but storage-named
-        //     `self.initial_backing` per `onchain-normal-amm/contract.cairo:178`).
+        //   * `pool_backing`   := `lp_info.total_backing_deposited` (the *live* pool —
+        //     the formula's numerator).
+        //   * `initial_backing` := `params.backing` (the *immutable* reference
+        //     deposited at deploy — the formula's denominator; ABI-named `backing` but
+        //     storage-named `self.initial_backing` per
+        //     `onchain-normal-amm/contract.cairo:178`).
         // Swapping these silently floors `effective_k` to `base_k` whenever
         // LPs have grown the pool (see `REVIEW_ITEM5` §1 + the
         // `live_effective_k_convention_*` test).
@@ -724,13 +750,13 @@ where
     /// Eliminates the `params` + `lp_info` chain reads — only the
     /// market distribution is fetched. Useful for:
     ///
-    /// * **Backtest** — replay an old quote with the historical
-    ///   `effective_k` from a journal snapshot.
+    /// * **Backtest** — replay an old quote with the historical `effective_k`
+    ///   from a journal snapshot.
     /// * **Simulation** — sweep `k` parameter space without LP movement.
-    /// * **Offline mode** — cpi-bot already reads `effective_k` for its
-    ///   QUOTE banner; passing it through avoids the redundant
-    ///   `params`+`lp_info` read inside the SDK (~150ms saved per call
-    ///   when the indexer cache misses).
+    /// * **Offline mode** — cpi-bot already reads `effective_k` for its QUOTE
+    ///   banner; passing it through avoids the redundant `params`+`lp_info`
+    ///   read inside the SDK (~150ms saved per call when the indexer cache
+    ///   misses).
     /// * **Testing** — fix `effective_k` without mocking the chain.
     ///
     /// All other chain-bit-exact behavior (Sq128-derived σ, hint
@@ -759,6 +785,7 @@ where
             budget_xp,
             effective_k_override,
         )
+        .map(|(quote, _ev)| quote)
     }
 
     /// Offline quote for a **fixed candidate** `(mean, variance)` — no
@@ -1250,7 +1277,7 @@ mod tests {
     #[test]
     fn offline_inner_with_override_produces_positive_collateral() {
         let current = make_market_dist(42.0, 8.0);
-        let q = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 50.0)
+        let (q, _ev) = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 50.0)
             .expect("inner returns Ok");
         let coll = Sq128::from_raw(q.required_collateral).to_f64();
         assert!(coll >= 0.0, "collateral must be non-negative, got {coll}");
@@ -1271,9 +1298,9 @@ mod tests {
     #[test]
     fn offline_inner_collateral_responds_to_effective_k() {
         let current = make_market_dist(42.0, 8.0);
-        let q_k50 =
+        let (q_k50, _) =
             optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 50.0).expect("k=50 inner Ok");
-        let q_k200 =
+        let (q_k200, _) =
             optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 200.0).expect("k=200 inner Ok");
         let coll_k50 = Sq128::from_raw(q_k50.required_collateral).to_f64();
         let coll_k200 = Sq128::from_raw(q_k200.required_collateral).to_f64();
@@ -1296,8 +1323,10 @@ mod tests {
     #[test]
     fn offline_inner_is_deterministic_in_effective_k() {
         let current = make_market_dist(42.0, 8.0);
-        let a = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 75.07).expect("call 1");
-        let b = optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 75.07).expect("call 2");
+        let (a, _) =
+            optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 75.07).expect("call 1");
+        let (b, _) =
+            optimize_quote_offline_inner(&current, 50.0, 2.0, 20.0, 75.07).expect("call 2");
         assert_eq!(a.candidate, b.candidate, "candidate distribution diverged");
         assert_eq!(a.candidate_hints, b.candidate_hints, "hints diverged");
         assert_eq!(a.x_star, b.x_star, "x_star diverged");
@@ -1367,7 +1396,7 @@ mod tests {
         let budget = 20.0_f64;
         let effective_k = 50.0_f64;
 
-        let quote =
+        let (quote, _ev) =
             optimize_quote_offline_inner(&current, belief_mean, belief_sigma, budget, effective_k)
                 .expect("offline inner returns Ok");
 
@@ -1425,7 +1454,7 @@ mod tests {
         // `Ok(v)` with `v.collateral == 0`, which trips the `Ok(_)`
         // fallback arm.
         let current = make_market_dist(42.0, 8.0);
-        let quote = optimize_quote_offline_inner(&current, 42.0, 8.0, 60.0, 50.0)
+        let (quote, _ev) = optimize_quote_offline_inner(&current, 42.0, 8.0, 60.0, 50.0)
             .expect("offline inner returns Ok on belief == market");
 
         // `on_chain_will_accept` is `false` (no positive-EV trade), and
