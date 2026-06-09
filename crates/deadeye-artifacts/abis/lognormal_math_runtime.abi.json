@@ -15,7 +15,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::types::sq128::types::SQ128x128Raw",
+    "name": "sq128::types::SQ128x128Raw",
     "members": [
       {
         "name": "limb0",
@@ -41,29 +41,29 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw",
+    "name": "dist_lognormal::LognormalDistributionRaw",
     "members": [
       {
         "name": "mu",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "variance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "sigma",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::ScaledBackingCheckRaw",
+    "name": "onchain_core::common::ScaledBackingCheckRaw",
     "members": [
       {
         "name": "max_value_upper",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "is_valid",
@@ -81,41 +81,41 @@
     "inputs": [
       {
         "name": "dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::ScaledBackingCheckRaw"
+        "type": "onchain_core::common::ScaledBackingCheckRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::LognormalSqrtHintsRaw",
+    "name": "onchain_core::common::LognormalSqrtHintsRaw",
     "members": [
       {
         "name": "l2_norm_denom",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing_denom",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::FeeConfigRaw",
+    "name": "onchain_core::common::FeeConfigRaw",
     "members": [
       {
         "name": "lp_fee_bps",
@@ -137,27 +137,27 @@
     "inputs": [
       {
         "name": "dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "initial_backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "live_backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "stored_hints",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
+        "type": "onchain_core::common::LognormalSqrtHintsRaw"
       },
       {
         "name": "fee_config",
-        "type": "the_situation::onchain::common::FeeConfigRaw"
+        "type": "onchain_core::common::FeeConfigRaw"
       },
       {
         "name": "internal_decimals",
@@ -169,7 +169,7 @@
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
@@ -181,25 +181,25 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::LognormalDistributionCoreRaw",
+    "name": "onchain_core::common::LognormalDistributionCoreRaw",
     "members": [
       {
         "name": "mu",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "variance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "enum",
-    "name": "core::option::Option::<the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw>",
+    "name": "core::option::Option::<dist_lognormal::LognormalDistributionRaw>",
     "variants": [
       {
         "name": "Some",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "None",
@@ -213,23 +213,23 @@
     "inputs": [
       {
         "name": "dist",
-        "type": "the_situation::onchain::common::LognormalDistributionCoreRaw"
+        "type": "onchain_core::common::LognormalDistributionCoreRaw"
       }
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw>"
+        "type": "core::option::Option::<dist_lognormal::LognormalDistributionRaw>"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "enum",
-    "name": "core::option::Option::<the_situation::types::sq128::types::SQ128x128Raw>",
+    "name": "core::option::Option::<sq128::types::SQ128x128Raw>",
     "variants": [
       {
         "name": "Some",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "None",
@@ -243,16 +243,16 @@
     "inputs": [
       {
         "name": "dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::types::sq128::types::SQ128x128Raw>"
+        "type": "core::option::Option::<sq128::types::SQ128x128Raw>"
       }
     ],
     "state_mutability": "view"
@@ -263,20 +263,20 @@
     "inputs": [
       {
         "name": "base_k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "initial_backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "pool_backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::types::sq128::types::SQ128x128Raw>"
+        "type": "core::option::Option::<sq128::types::SQ128x128Raw>"
       }
     ],
     "state_mutability": "view"
@@ -297,7 +297,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::DepositFeeComputationRaw",
+    "name": "onchain_core::common::DepositFeeComputationRaw",
     "members": [
       {
         "name": "token_amount",
@@ -313,17 +313,17 @@
       },
       {
         "name": "net_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "enum",
-    "name": "core::option::Option::<the_situation::onchain::common::DepositFeeComputationRaw>",
+    "name": "core::option::Option::<onchain_core::common::DepositFeeComputationRaw>",
     "variants": [
       {
         "name": "Some",
-        "type": "the_situation::onchain::common::DepositFeeComputationRaw"
+        "type": "onchain_core::common::DepositFeeComputationRaw"
       },
       {
         "name": "None",
@@ -337,7 +337,7 @@
     "inputs": [
       {
         "name": "amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "internal_decimals",
@@ -349,23 +349,23 @@
       },
       {
         "name": "fee_config",
-        "type": "the_situation::onchain::common::FeeConfigRaw"
+        "type": "onchain_core::common::FeeConfigRaw"
       }
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::onchain::common::DepositFeeComputationRaw>"
+        "type": "core::option::Option::<onchain_core::common::DepositFeeComputationRaw>"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::AddLiquidityComputationRaw",
+    "name": "onchain_core::common::AddLiquidityComputationRaw",
     "members": [
       {
         "name": "deposit_amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "token_amount",
@@ -373,17 +373,17 @@
       },
       {
         "name": "lp_component_lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "enum",
-    "name": "core::option::Option::<the_situation::onchain::common::AddLiquidityComputationRaw>",
+    "name": "core::option::Option::<onchain_core::common::AddLiquidityComputationRaw>",
     "variants": [
       {
         "name": "Some",
-        "type": "the_situation::onchain::common::AddLiquidityComputationRaw"
+        "type": "onchain_core::common::AddLiquidityComputationRaw"
       },
       {
         "name": "None",
@@ -397,23 +397,23 @@
     "inputs": [
       {
         "name": "share_amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "total_shares",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "total_backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "current_dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "base_k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "internal_decimals",
@@ -426,18 +426,18 @@
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::onchain::common::AddLiquidityComputationRaw>"
+        "type": "core::option::Option::<onchain_core::common::AddLiquidityComputationRaw>"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::RemoveLiquidityComputationRaw",
+    "name": "onchain_core::common::RemoveLiquidityComputationRaw",
     "members": [
       {
         "name": "withdrawal_amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "token_amount",
@@ -445,17 +445,17 @@
       },
       {
         "name": "remaining_fraction",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "enum",
-    "name": "core::option::Option::<the_situation::onchain::common::RemoveLiquidityComputationRaw>",
+    "name": "core::option::Option::<onchain_core::common::RemoveLiquidityComputationRaw>",
     "variants": [
       {
         "name": "Some",
-        "type": "the_situation::onchain::common::RemoveLiquidityComputationRaw"
+        "type": "onchain_core::common::RemoveLiquidityComputationRaw"
       },
       {
         "name": "None",
@@ -469,19 +469,19 @@
     "inputs": [
       {
         "name": "share_amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "total_shares",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "total_backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "current_lp_shares",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "internal_decimals",
@@ -494,7 +494,7 @@
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::onchain::common::RemoveLiquidityComputationRaw>"
+        "type": "core::option::Option::<onchain_core::common::RemoveLiquidityComputationRaw>"
       }
     ],
     "state_mutability": "view"
@@ -505,7 +505,7 @@
     "inputs": [
       {
         "name": "amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "internal_decimals",
@@ -538,50 +538,50 @@
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::types::sq128::types::SQ128x128Raw>"
+        "type": "core::option::Option::<sq128::types::SQ128x128Raw>"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::LognormalPositionCompactRaw",
+    "name": "onchain_core::common::LognormalPositionCompactRaw",
     "members": [
       {
         "name": "original_mu",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "original_variance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "original_sigma",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "original_lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "effective_mu",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "effective_variance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "effective_sigma",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "effective_lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "total_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "flags",
@@ -595,16 +595,16 @@
     "inputs": [
       {
         "name": "position",
-        "type": "the_situation::onchain::common::LognormalPositionCompactRaw"
+        "type": "onchain_core::common::LognormalPositionCompactRaw"
       },
       {
         "name": "settlement",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::types::sq128::types::SQ128x128Raw>"
+        "type": "core::option::Option::<sq128::types::SQ128x128Raw>"
       }
     ],
     "state_mutability": "view"
@@ -615,20 +615,20 @@
     "inputs": [
       {
         "name": "dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "settlement",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::types::sq128::types::SQ128x128Raw>"
+        "type": "core::option::Option::<sq128::types::SQ128x128Raw>"
       }
     ],
     "state_mutability": "view"
@@ -639,35 +639,35 @@
     "inputs": [
       {
         "name": "dist",
-        "type": "the_situation::onchain::common::LognormalDistributionCoreRaw"
+        "type": "onchain_core::common::LognormalDistributionCoreRaw"
       },
       {
         "name": "lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "settlement",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::types::sq128::types::SQ128x128Raw>"
+        "type": "core::option::Option::<sq128::types::SQ128x128Raw>"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::ClaimResultRaw",
+    "name": "onchain_core::common::ClaimResultRaw",
     "members": [
       {
         "name": "position_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "collateral_returned",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "token_payout",
@@ -685,11 +685,73 @@
     "inputs": [
       {
         "name": "position_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "total_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "internal_decimals",
+        "type": "core::integer::u8"
+      },
+      {
+        "name": "decimal_shift",
+        "type": "core::integer::u8"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "onchain_core::common::ClaimResultRaw"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "struct",
+    "name": "onchain_core::common::SettlementClaimRaw",
+    "members": [
+      {
+        "name": "gross",
+        "type": "onchain_core::common::ClaimResultRaw"
+      },
+      {
+        "name": "pnl_token",
+        "type": "core::integer::u256"
+      },
+      {
+        "name": "pnl_success",
+        "type": "core::bool"
+      },
+      {
+        "name": "backing_adjustment",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "net_payout",
+        "type": "core::integer::u256"
+      },
+      {
+        "name": "settlement_fee",
+        "type": "core::integer::u256"
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "compute_settlement_claim_view",
+    "inputs": [
+      {
+        "name": "trader_position_value",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "trader_collateral",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "lp_position_value",
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "internal_decimals",
@@ -700,24 +762,24 @@
         "type": "core::integer::u8"
       },
       {
-        "name": "payout_amplifier",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "name": "settlement_fee_bps",
+        "type": "core::integer::u16"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::ClaimResultRaw"
+        "type": "onchain_core::common::SettlementClaimRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "enum",
-    "name": "core::option::Option::<the_situation::onchain::common::LognormalSqrtHintsRaw>",
+    "name": "core::option::Option::<onchain_core::common::LognormalSqrtHintsRaw>",
     "variants": [
       {
         "name": "Some",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
+        "type": "onchain_core::common::LognormalSqrtHintsRaw"
       },
       {
         "name": "None",
@@ -731,19 +793,19 @@
     "inputs": [
       {
         "name": "dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       }
     ],
     "outputs": [
       {
-        "type": "core::option::Option::<the_situation::onchain::common::LognormalSqrtHintsRaw>"
+        "type": "core::option::Option::<onchain_core::common::LognormalSqrtHintsRaw>"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::CollateralVerificationRaw",
+    "name": "onchain_core::common::CollateralVerificationRaw",
     "members": [
       {
         "name": "side_valid",
@@ -759,7 +821,7 @@
       },
       {
         "name": "computed_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "collateral_sufficient",
@@ -768,12 +830,16 @@
       {
         "name": "computation_valid",
         "type": "core::bool"
+      },
+      {
+        "name": "argmin_value_valid",
+        "type": "core::bool"
       }
     ]
   },
   {
     "type": "enum",
-    "name": "the_situation::onchain::common::TradeRejection",
+    "name": "onchain_core::common::TradeRejection",
     "variants": [
       {
         "name": "None",
@@ -807,19 +873,19 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::TradeCheckRaw",
+    "name": "onchain_core::common::TradeCheckRaw",
     "members": [
       {
         "name": "backing_check",
-        "type": "the_situation::onchain::common::ScaledBackingCheckRaw"
+        "type": "onchain_core::common::ScaledBackingCheckRaw"
       },
       {
         "name": "verification",
-        "type": "the_situation::onchain::common::CollateralVerificationRaw"
+        "type": "onchain_core::common::CollateralVerificationRaw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "collateral_above_min",
@@ -831,7 +897,7 @@
       },
       {
         "name": "rejection_reason",
-        "type": "the_situation::onchain::common::TradeRejection"
+        "type": "onchain_core::common::TradeRejection"
       }
     ]
   },
@@ -841,67 +907,67 @@
     "inputs": [
       {
         "name": "current_dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "candidate",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "x_star",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "supplied_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "current_hints",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
+        "type": "onchain_core::common::LognormalSqrtHintsRaw"
       },
       {
         "name": "candidate_hints",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
+        "type": "onchain_core::common::LognormalSqrtHintsRaw"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::TradeCheckRaw"
+        "type": "onchain_core::common::TradeCheckRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::TradeCheckWithLambdasRaw",
+    "name": "onchain_core::common::TradeCheckWithLambdasRaw",
     "members": [
       {
         "name": "check",
-        "type": "the_situation::onchain::common::TradeCheckRaw"
+        "type": "onchain_core::common::TradeCheckRaw"
       },
       {
         "name": "current_lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "candidate_lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "lambdas_valid",
@@ -915,221 +981,55 @@
     "inputs": [
       {
         "name": "current_dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "candidate",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "x_star",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "supplied_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "current_hints",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
+        "type": "onchain_core::common::LognormalSqrtHintsRaw"
       },
       {
         "name": "candidate_hints",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
+        "type": "onchain_core::common::LognormalSqrtHintsRaw"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::TradeCheckWithLambdasRaw"
-      }
-    ],
-    "state_mutability": "view"
-  },
-  {
-    "type": "struct",
-    "name": "the_situation::onchain::common::TradeExecutionRaw",
-    "members": [
-      {
-        "name": "check",
-        "type": "the_situation::onchain::common::TradeCheckRaw"
-      },
-      {
-        "name": "token_amount",
-        "type": "core::integer::u256"
-      }
-    ]
-  },
-  {
-    "type": "enum",
-    "name": "the_situation::onchain::common::PositionSellRejection",
-    "variants": [
-      {
-        "name": "None",
-        "type": "()"
-      },
-      {
-        "name": "NoPosition",
-        "type": "()"
-      },
-      {
-        "name": "MarketSettled",
-        "type": "()"
-      },
-      {
-        "name": "MarketPaused",
-        "type": "()"
-      },
-      {
-        "name": "AlreadyClaimed",
-        "type": "()"
-      },
-      {
-        "name": "InvalidPositionState",
-        "type": "()"
-      },
-      {
-        "name": "RequiresAdditionalCollateral",
-        "type": "()"
-      },
-      {
-        "name": "NoCollateralOut",
-        "type": "()"
-      },
-      {
-        "name": "InvalidHints",
-        "type": "()"
-      },
-      {
-        "name": "BackingFail",
-        "type": "()"
-      },
-      {
-        "name": "SigmaTooLow",
-        "type": "()"
-      },
-      {
-        "name": "VerificationFailed",
-        "type": "()"
-      },
-      {
-        "name": "ConversionFailed",
-        "type": "()"
-      }
-    ]
-  },
-  {
-    "type": "struct",
-    "name": "the_situation::onchain::common::PositionSellResultRaw",
-    "members": [
-      {
-        "name": "sell_executed",
-        "type": "core::bool"
-      },
-      {
-        "name": "trade_result",
-        "type": "the_situation::onchain::common::TradeExecutionRaw"
-      },
-      {
-        "name": "is_flat",
-        "type": "core::bool"
-      },
-      {
-        "name": "collateral_before",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "collateral_after",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "collateral_out",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "token_out",
-        "type": "core::integer::u256"
-      },
-      {
-        "name": "rejection_reason",
-        "type": "the_situation::onchain::common::PositionSellRejection"
-      }
-    ]
-  },
-  {
-    "type": "function",
-    "name": "check_sell_position_compact_view",
-    "inputs": [
-      {
-        "name": "position",
-        "type": "the_situation::onchain::common::LognormalPositionCompactRaw"
-      },
-      {
-        "name": "market_dist",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
-      },
-      {
-        "name": "candidate",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
-      },
-      {
-        "name": "x_star",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "current_hints",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
-      },
-      {
-        "name": "candidate_hints",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
-      },
-      {
-        "name": "internal_decimals",
-        "type": "core::integer::u8"
-      },
-      {
-        "name": "decimal_shift",
-        "type": "core::integer::u8"
-      }
-    ],
-    "outputs": [
-      {
-        "type": "the_situation::onchain::common::PositionSellResultRaw"
+        "type": "onchain_core::common::TradeCheckWithLambdasRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::lognormal::math::contract::lognormal_math_runtime::Event",
+    "name": "onchain_lognormal_math::contract::lognormal_math_runtime::Event",
     "kind": "enum",
     "variants": []
   }

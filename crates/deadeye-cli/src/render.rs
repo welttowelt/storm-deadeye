@@ -452,48 +452,6 @@ impl Render for PositionRow {
     }
 }
 
-/// Compact decoded position for a single market.
-#[derive(Debug, Clone, Serialize)]
-pub(crate) struct PositionShowView {
-    pub(crate) market_address: String,
-    pub(crate) trader: String,
-    pub(crate) family: String,
-    pub(crate) total_collateral: f64,
-    pub(crate) flags: u32,
-    pub(crate) extra: serde_json::Value,
-}
-
-impl Render for PositionShowView {
-    fn render_pretty(&self, r: &Renderer) {
-        r.header(&format!(
-            "Position {} on {}",
-            self.trader, self.market_address
-        ));
-        r.kv("family", &r.highlight(&self.family));
-        r.kv("total_collateral", &format!("{:.6}", self.total_collateral));
-        r.kv("flags", &format!("{:#x}", self.flags));
-        if let serde_json::Value::Object(map) = &self.extra {
-            for (key, val) in map {
-                r.kv(&format!("entry.{key}"), &fmt_json_scalar(val));
-            }
-        }
-    }
-
-    fn render_plain(&self, w: &mut dyn Write) -> io::Result<()> {
-        writeln!(w, "market_address: {}", self.market_address)?;
-        writeln!(w, "trader: {}", self.trader)?;
-        writeln!(w, "family: {}", self.family)?;
-        writeln!(w, "total_collateral: {:.6}", self.total_collateral)?;
-        writeln!(w, "flags: {:#x}", self.flags)?;
-        if let serde_json::Value::Object(map) = &self.extra {
-            for (key, val) in map {
-                writeln!(w, "entry.{key}: {}", fmt_json_scalar(val))?;
-            }
-        }
-        Ok(())
-    }
-}
-
 /// `deadeye config show` output.
 #[derive(Debug, Clone, Serialize)]
 pub(crate) struct ConfigShowView {

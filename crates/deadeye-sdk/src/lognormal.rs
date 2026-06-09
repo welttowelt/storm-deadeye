@@ -9,28 +9,45 @@
 //! ## Worked example — quote + `execute_quote` + sell
 //!
 //! ```no_run
-//! use deadeye_sdk::starknet::{
-//!     Felt, JsonRpcProvider, LognormalMarketReader, LognormalMarketWriter, OwnedAccount,
+//! use deadeye_sdk::{
+//!     core::{distribution::LognormalDistributionRaw, sq128::Sq128Raw},
+//!     starknet::{
+//!         Felt, JsonRpcProvider, LognormalMarketReader, LognormalMarketWriter, OwnedAccount,
+//!     },
 //! };
-//! use deadeye_sdk::core::{distribution::LognormalDistributionRaw, sq128::Sq128Raw};
 //! use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let rpc = JsonRpcClient::new(HttpTransport::new("http://localhost:5050".parse::<url::Url>()?));
+//! let rpc = JsonRpcClient::new(HttpTransport::new(
+//!     "http://localhost:5050".parse::<url::Url>()?,
+//! ));
 //! let provider = JsonRpcProvider::new(rpc);
 //! let (market, runtime): (Felt, Felt) = (Felt::ZERO, Felt::ZERO);
 //! let reader = LognormalMarketReader::new(&provider, market);
 //! let signer = OwnedAccount::from_signing_key(
-//!     JsonRpcClient::new(HttpTransport::new("http://localhost:5050".parse::<url::Url>()?)),
-//!     Felt::ZERO, Felt::ZERO, Felt::ZERO,
+//!     JsonRpcClient::new(HttpTransport::new(
+//!         "http://localhost:5050".parse::<url::Url>()?,
+//!     )),
+//!     Felt::ZERO,
+//!     Felt::ZERO,
+//!     Felt::ZERO,
 //! );
 //! let writer = LognormalMarketWriter::new(reader, signer);
 //!
 //! let candidate = LognormalDistributionRaw {
-//!     mu: Sq128Raw::ZERO, variance: Sq128Raw::ZERO, sigma: Sq128Raw::ZERO,
+//!     mu: Sq128Raw::ZERO,
+//!     variance: Sq128Raw::ZERO,
+//!     sigma: Sq128Raw::ZERO,
 //! };
-//! let quote = writer.reader()
-//!     .quote_trade(runtime, candidate, Sq128Raw::ZERO, Sq128Raw::ZERO, Sq128Raw::ZERO)
+//! let quote = writer
+//!     .reader()
+//!     .quote_trade(
+//!         runtime,
+//!         candidate,
+//!         Sq128Raw::ZERO,
+//!         Sq128Raw::ZERO,
+//!         Sq128Raw::ZERO,
+//!     )
 //!     .await?;
 //! writer.execute_quote(quote).await?;
 //! writer.sell_position(runtime, 0).await?;
@@ -39,7 +56,7 @@
 
 use deadeye_collateral::{LognormalOptions, LognormalVerifiedMinimum, lognormal_collateral};
 use deadeye_core::{
-    LognormalDistribution, distribution::LognormalDistributionRaw, sq128::Sq128Raw,
+    LognormalDistribution, Sq128, distribution::LognormalDistributionRaw, sq128::Sq128Raw,
 };
 use deadeye_starknet::{
     Account, ExecutionReceipt, Felt, LognormalMarketReader, LognormalMarketWriter, Provider,
@@ -47,9 +64,13 @@ use deadeye_starknet::{
         LognormalSellExecutionGuardsRaw, LognormalSqrtHintsRaw, LognormalTradeInput,
     },
 };
+use futures::future::join_all;
 use tracing::instrument;
 
-use crate::error::SdkResult;
+use crate::{
+    error::{SdkError, SdkResult},
+    legs::{LegInfo, LegValuation, PositionLegs, PositionValuation, SettlementPoint, belief_grid},
+};
 
 /// Handle to a deployed lognormal AMM market.
 #[derive(Debug)]
@@ -96,6 +117,153 @@ where
     ) -> SdkResult<LognormalVerifiedMinimum> {
         let current = self.distribution().await?;
         Ok(lognormal_collateral(&current, candidate, opts)?)
+    }
+
+    // ── Multi-leg (trade-lot) position tracking + valuation ─────────────
+
+    /// Enumerate a trader's legs (lot ids + lifecycle flags) and read the
+    /// position summary. Lifecycle flags are fetched concurrently.
+    #[instrument(skip(self), fields(market = %self.reader.address(), %trader))]
+    pub async fn legs(&self, trader: Felt) -> SdkResult<PositionLegs> {
+        let summary = self.reader.position_summary(trader).await?;
+        let ids = self.reader.trade_lot_ids(trader).await?;
+        let legs = join_all(ids.iter().map(|&lot_id| async move {
+            let settled = self.reader.trade_lot_settled(lot_id).await?;
+            let cancelled = self.reader.trade_lot_cancelled(lot_id).await?;
+            Ok::<LegInfo, SdkError>(LegInfo {
+                lot_id,
+                settled,
+                cancelled,
+            })
+        }))
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(PositionLegs {
+            trader: format!("{trader:#x}"),
+            legs,
+            total_collateral: Sq128::from_raw(summary.total_collateral_locked).to_f64(),
+            exists: summary.exists,
+            claimed: summary.claimed,
+            tracks_settlement_claim: summary.tracks_settlement_claim,
+        })
+    }
+
+    /// Value a trader's whole position at a settlement outcome `x*`,
+    /// authoritatively (each active leg via the on-chain `value_at` view).
+    /// `total_position_value` is the position's P&L if the market settles at
+    /// `x*`; `gross_return` adds back the locked collateral.
+    ///
+    /// `settlement` is the lognormal scalar outcome `x*` in **log-space**
+    /// (`μ_log` coordinates) — the same space the lognormal AMM stores its
+    /// distribution in and the on-chain `value_at` view expects.
+    #[instrument(skip(self), fields(market = %self.reader.address(), %trader, settlement))]
+    pub async fn position_value_at(
+        &self,
+        trader: Felt,
+        settlement: f64,
+    ) -> SdkResult<PositionValuation> {
+        let summary = self.reader.position_summary(trader).await?;
+        let ids = self.reader.trade_lot_ids(trader).await?;
+        let x_raw = Sq128::from_f64(settlement)?.to_raw();
+        let legs = join_all(ids.iter().map(|&lot_id| async move {
+            let settled = self.reader.trade_lot_settled(lot_id).await?;
+            let cancelled = self.reader.trade_lot_cancelled(lot_id).await?;
+            // Settled/cancelled legs have no future payout.
+            let value_at = if settled || cancelled {
+                0.0
+            } else {
+                Sq128::from_raw(self.reader.trade_lot_value_at(lot_id, x_raw).await?).to_f64()
+            };
+            Ok::<LegValuation, SdkError>(LegValuation {
+                lot_id,
+                settled,
+                cancelled,
+                value_at,
+            })
+        }))
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+        let total_position_value: f64 = legs.iter().map(|l| l.value_at).sum();
+        let total_collateral = Sq128::from_raw(summary.total_collateral_locked).to_f64();
+        Ok(PositionValuation {
+            trader: format!("{trader:#x}"),
+            settlement: SettlementPoint::Scalar(settlement),
+            legs,
+            total_collateral,
+            total_position_value,
+            gross_return: total_collateral + total_position_value,
+            exists: summary.exists,
+            claimed: summary.claimed,
+        })
+    }
+
+    /// Expected position value (P&L) under a **log-space** belief
+    /// `N(`μ_log`, `σ_log`)`, integrating the on-chain leg value over the
+    /// belief via a normal-pdf-weighted grid. Returns the expected P&L in
+    /// XP.
+    ///
+    /// `belief_mean` / `belief_sigma` are the belief's parameters in
+    /// **log-space** (`μ_log`, `σ_log`) — the same space the lognormal AMM
+    /// stores its distribution in. The quadrature grid is built directly on
+    /// those log-space coordinates and the on-chain `value_at` view is
+    /// sampled at each node. A wide `σ_log` can push the outer grid nodes
+    /// outside the on-chain feasible domain (the small log-domain that the
+    /// side law can resolve); such a node's `value_at` read errors, and its
+    /// contribution is treated as `0.0` (skipped) rather than failing the
+    /// whole call. Costs `nodes × active legs` `value_at` reads (fanned out
+    /// concurrently) — call when an agent wants its forward EV, not on
+    /// every tick.
+    #[instrument(skip(self), fields(market = %self.reader.address(), %trader, belief_mean, belief_sigma))]
+    pub async fn expected_value_under_belief(
+        &self,
+        trader: Felt,
+        belief_mean: f64,
+        belief_sigma: f64,
+    ) -> SdkResult<f64> {
+        let ids = self.reader.trade_lot_ids(trader).await?;
+        // Keep only claimable legs.
+        let flags = join_all(ids.iter().map(|&lot_id| async move {
+            let settled = self.reader.trade_lot_settled(lot_id).await?;
+            let cancelled = self.reader.trade_lot_cancelled(lot_id).await?;
+            Ok::<(u64, bool), SdkError>((lot_id, !settled && !cancelled))
+        }))
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+        let active: Vec<u64> = flags
+            .into_iter()
+            .filter_map(|(id, ok)| ok.then_some(id))
+            .collect();
+        if active.is_empty() {
+            return Ok(0.0);
+        }
+        // E[value] = Σ_i w_i · Σ_legs value_at(lot, x_i), weights summing to 1.
+        let grid = belief_grid(belief_mean, belief_sigma, 4.0, 21);
+        let mut futs = Vec::with_capacity(grid.len() * active.len());
+        for (x, w) in &grid {
+            let x_raw = Sq128::from_f64(*x)?.to_raw();
+            for &lot_id in &active {
+                let weight = *w;
+                futs.push(async move {
+                    // A grid node outside the on-chain feasible domain makes
+                    // `value_at` error (the small log-domain can't resolve the
+                    // far node). Treat that node's contribution as 0 rather
+                    // than failing the whole quadrature.
+                    let v = match self.reader.trade_lot_value_at(lot_id, x_raw).await {
+                        Ok(raw) => Sq128::from_raw(raw).to_f64(),
+                        Err(_) => 0.0,
+                    };
+                    Ok::<f64, SdkError>(weight * v)
+                });
+            }
+        }
+        let parts = join_all(futs)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(parts.into_iter().sum())
     }
 
     /// Bind an account for writes.

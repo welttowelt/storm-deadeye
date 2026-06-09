@@ -123,16 +123,14 @@ impl Family {
 /// before `--confirm` is the `getClassHashAt` idempotency check.
 pub mod mainnet_class_hashes {
     /// Normal math runtime class hash on mainnet.
-    pub const NORMAL: &str = "0x046d492bbef6f8034b1647a95a96580555742fd4655e766dee04e442a778a753";
+    pub const NORMAL: &str = "0x112f893233ffdfcd3ed8e41af8e3d08c901362a8deef80983fe4d36e3cd824f";
     /// Lognormal math runtime class hash on mainnet.
-    pub const LOGNORMAL: &str =
-        "0x031239619293d85ba74eb616a6b63db6e1409a8f444f2b1c79129a6d8a65e8e6";
+    pub const LOGNORMAL: &str = "0x7dcbf032695bf2cc60fa124d9271111e178f295c5e92c7a42530902d0fcb1c6";
     /// Bivariate math runtime class hash on mainnet.
-    pub const BIVARIATE: &str =
-        "0x0569dad379af349c3d677483ad38fb02ba90f2206082cc3e8d24d82add2924b4";
+    pub const BIVARIATE: &str = "0x53a2cb551ac57ff3d6324992f412c465d4008839b5382957514f815a877c260";
     /// Multinoulli math runtime class hash on mainnet.
     pub const MULTINOULLI: &str =
-        "0x055a9154ab0c75739e769d69b6d350fa94b2bbbc4a03b9dcaeef1a1f820f7ba1";
+        "0xbe11cb5bc1973f905dacc533bcc07646f45b572dc97dd42bf265e6013700b9";
 }
 
 /// A short, opinionated chain identifier used as the top-level key in

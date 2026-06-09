@@ -15,7 +15,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::types::sq128::types::SQ128x128Raw",
+    "name": "sq128::types::SQ128x128Raw",
     "members": [
       {
         "name": "limb0",
@@ -41,27 +41,27 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::types::categorical::types::CategoricalDistributionRaw",
+    "name": "categorical_types::types::CategoricalDistributionRaw",
     "members": [
       {
         "name": "probs",
-        "type": "core::array::Array::<the_situation::types::sq128::types::SQ128x128Raw>"
+        "type": "core::array::Array::<sq128::types::SQ128x128Raw>"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::CategoricalL2HintRaw",
+    "name": "onchain_core::common::CategoricalL2HintRaw",
     "members": [
       {
         "name": "l2_norm_hint",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::FeeConfigRaw",
+    "name": "onchain_core::common::FeeConfigRaw",
     "members": [
       {
         "name": "lp_fee_bps",
@@ -79,7 +79,7 @@
   },
   {
     "type": "enum",
-    "name": "the_situation::onchain::common::MultinoulliMatrixConstraintMode",
+    "name": "onchain_core::common::MultinoulliMatrixConstraintMode",
     "variants": [
       {
         "name": "Disabled",
@@ -101,11 +101,11 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliMatrixConstraintsRaw",
+    "name": "onchain_core::common::MultinoulliMatrixConstraintsRaw",
     "members": [
       {
         "name": "mode",
-        "type": "the_situation::onchain::common::MultinoulliMatrixConstraintMode"
+        "type": "onchain_core::common::MultinoulliMatrixConstraintMode"
       },
       {
         "name": "row_count",
@@ -143,31 +143,31 @@
       },
       {
         "name": "initial_distribution",
-        "type": "the_situation::types::categorical::types::CategoricalDistributionRaw"
+        "type": "categorical_types::types::CategoricalDistributionRaw"
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing_amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "initial_hint",
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
+        "type": "onchain_core::common::CategoricalL2HintRaw"
       },
       {
         "name": "fee_config",
-        "type": "the_situation::onchain::common::FeeConfigRaw"
+        "type": "onchain_core::common::FeeConfigRaw"
       },
       {
         "name": "factory",
@@ -179,41 +179,33 @@
       },
       {
         "name": "matrix_constraints",
-        "type": "the_situation::onchain::common::MultinoulliMatrixConstraintsRaw"
+        "type": "onchain_core::common::MultinoulliMatrixConstraintsRaw"
       },
       {
         "name": "metadata_hash",
         "type": "core::felt252"
-      },
-      {
-        "name": "payout_amplifier",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::AmmParamsRaw",
+    "name": "onchain_core::common::AmmParamsRaw",
     "members": [
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "payout_amplifier",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -223,14 +215,14 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::AmmParamsRaw"
+        "type": "onchain_core::common::AmmParamsRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::AmmConfigRaw",
+    "name": "onchain_core::common::AmmConfigRaw",
     "members": [
       {
         "name": "collateral_token",
@@ -250,7 +242,7 @@
       },
       {
         "name": "params",
-        "type": "the_situation::onchain::common::AmmParamsRaw"
+        "type": "onchain_core::common::AmmParamsRaw"
       }
     ]
   },
@@ -260,7 +252,7 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::AmmConfigRaw"
+        "type": "onchain_core::common::AmmConfigRaw"
       }
     ],
     "state_mutability": "view"
@@ -271,7 +263,7 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::types::categorical::types::CategoricalDistributionRaw"
+        "type": "categorical_types::types::CategoricalDistributionRaw"
       }
     ],
     "state_mutability": "view"
@@ -282,14 +274,14 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
+        "type": "onchain_core::common::CategoricalL2HintRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliMarketStatusRaw",
+    "name": "onchain_core::common::MultinoulliMarketStatusRaw",
     "members": [
       {
         "name": "is_initialized",
@@ -315,7 +307,7 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MultinoulliMarketStatusRaw"
+        "type": "onchain_core::common::MultinoulliMarketStatusRaw"
       }
     ],
     "state_mutability": "view"
@@ -366,11 +358,11 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliPositionSummaryRaw",
+    "name": "onchain_core::common::MultinoulliPositionSummaryRaw",
     "members": [
       {
         "name": "total_collateral_locked",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "flags",
@@ -405,68 +397,22 @@
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MultinoulliPositionSummaryRaw"
+        "type": "onchain_core::common::MultinoulliPositionSummaryRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliPositionCompactRaw",
-    "members": [
-      {
-        "name": "original_distribution",
-        "type": "the_situation::types::categorical::types::CategoricalDistributionRaw"
-      },
-      {
-        "name": "original_lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "effective_distribution",
-        "type": "the_situation::types::categorical::types::CategoricalDistributionRaw"
-      },
-      {
-        "name": "effective_lambda",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "total_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "flags",
-        "type": "core::integer::u8"
-      }
-    ]
-  },
-  {
-    "type": "function",
-    "name": "get_position_compact",
-    "inputs": [
-      {
-        "name": "trader",
-        "type": "core::starknet::contract_address::ContractAddress"
-      }
-    ],
-    "outputs": [
-      {
-        "type": "the_situation::onchain::common::MultinoulliPositionCompactRaw"
-      }
-    ],
-    "state_mutability": "view"
-  },
-  {
-    "type": "struct",
-    "name": "the_situation::onchain::common::LPInfoRaw",
+    "name": "onchain_core::common::LPInfoRaw",
     "members": [
       {
         "name": "total_shares",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "total_backing_deposited",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -476,7 +422,7 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::LPInfoRaw"
+        "type": "onchain_core::common::LPInfoRaw"
       }
     ],
     "state_mutability": "view"
@@ -492,7 +438,7 @@
     ],
     "outputs": [
       {
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "state_mutability": "view"
@@ -510,11 +456,121 @@
   },
   {
     "type": "function",
-    "name": "get_payout_amplifier",
+    "name": "get_pending_trader_lot_count",
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "core::integer::u64"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_total_trader_lot_collateral_locked",
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "sq128::types::SQ128x128Raw"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_settlement_claim_pool_remaining",
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "sq128::types::SQ128x128Raw"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_trader_trade_lot_count",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "core::starknet::contract_address::ContractAddress"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "core::integer::u64"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_trader_trade_lot_id",
+    "inputs": [
+      {
+        "name": "trader",
+        "type": "core::starknet::contract_address::ContractAddress"
+      },
+      {
+        "name": "index",
+        "type": "core::integer::u64"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "core::integer::u64"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_trade_lot_settled",
+    "inputs": [
+      {
+        "name": "lot_id",
+        "type": "core::integer::u64"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "core::bool"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_trade_lot_cancelled",
+    "inputs": [
+      {
+        "name": "lot_id",
+        "type": "core::integer::u64"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "core::bool"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "function",
+    "name": "get_trade_lot_value_at",
+    "inputs": [
+      {
+        "name": "lot_id",
+        "type": "core::integer::u64"
+      },
+      {
+        "name": "settlement_outcome_index",
+        "type": "core::integer::u32"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "state_mutability": "view"
@@ -547,18 +603,18 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MultinoulliMatrixConstraintsRaw"
+        "type": "onchain_core::common::MultinoulliMatrixConstraintsRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::ScaledBackingCheckRaw",
+    "name": "onchain_core::common::ScaledBackingCheckRaw",
     "members": [
       {
         "name": "max_value_upper",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "is_valid",
@@ -572,7 +628,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliCollateralVerificationRaw",
+    "name": "onchain_core::common::MultinoulliCollateralVerificationRaw",
     "members": [
       {
         "name": "minimum_valid",
@@ -580,7 +636,7 @@
       },
       {
         "name": "computed_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "collateral_sufficient",
@@ -594,7 +650,7 @@
   },
   {
     "type": "enum",
-    "name": "the_situation::onchain::common::MultinoulliTradeRejection",
+    "name": "onchain_core::common::MultinoulliTradeRejection",
     "variants": [
       {
         "name": "None",
@@ -628,19 +684,19 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliTradeCheckRaw",
+    "name": "onchain_core::common::MultinoulliTradeCheckRaw",
     "members": [
       {
         "name": "backing_check",
-        "type": "the_situation::onchain::common::ScaledBackingCheckRaw"
+        "type": "onchain_core::common::ScaledBackingCheckRaw"
       },
       {
         "name": "verification",
-        "type": "the_situation::onchain::common::MultinoulliCollateralVerificationRaw"
+        "type": "onchain_core::common::MultinoulliCollateralVerificationRaw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "collateral_above_min",
@@ -652,7 +708,7 @@
       },
       {
         "name": "rejection_reason",
-        "type": "the_situation::onchain::common::MultinoulliTradeRejection"
+        "type": "onchain_core::common::MultinoulliTradeRejection"
       }
     ]
   },
@@ -672,11 +728,11 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliTradeExecutionRaw",
+    "name": "onchain_core::common::MultinoulliTradeExecutionRaw",
     "members": [
       {
         "name": "check",
-        "type": "the_situation::onchain::common::MultinoulliTradeCheckRaw"
+        "type": "onchain_core::common::MultinoulliTradeCheckRaw"
       },
       {
         "name": "token_amount",
@@ -690,7 +746,7 @@
     "inputs": [
       {
         "name": "candidate",
-        "type": "the_situation::types::categorical::types::CategoricalDistributionRaw"
+        "type": "categorical_types::types::CategoricalDistributionRaw"
       },
       {
         "name": "min_outcome_index",
@@ -698,23 +754,23 @@
       },
       {
         "name": "supplied_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "candidate_hint",
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
+        "type": "onchain_core::common::CategoricalL2HintRaw"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MultinoulliTradeExecutionRaw"
+        "type": "onchain_core::common::MultinoulliTradeExecutionRaw"
       }
     ],
     "state_mutability": "external"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::CategoricalProbUpdateRaw",
+    "name": "onchain_core::common::CategoricalProbUpdateRaw",
     "members": [
       {
         "name": "outcome_index",
@@ -722,7 +778,7 @@
       },
       {
         "name": "prob",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -732,7 +788,7 @@
     "inputs": [
       {
         "name": "candidate_updates",
-        "type": "core::array::Array::<the_situation::onchain::common::CategoricalProbUpdateRaw>"
+        "type": "core::array::Array::<onchain_core::common::CategoricalProbUpdateRaw>"
       },
       {
         "name": "min_outcome_index",
@@ -740,23 +796,23 @@
       },
       {
         "name": "supplied_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "candidate_hint",
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
+        "type": "onchain_core::common::CategoricalL2HintRaw"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MultinoulliTradeExecutionRaw"
+        "type": "onchain_core::common::MultinoulliTradeExecutionRaw"
       }
     ],
     "state_mutability": "external"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::CategoricalProbTransferRaw",
+    "name": "onchain_core::common::CategoricalProbTransferRaw",
     "members": [
       {
         "name": "from_outcome_index",
@@ -768,7 +824,7 @@
       },
       {
         "name": "delta",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -778,7 +834,7 @@
     "inputs": [
       {
         "name": "transfers",
-        "type": "core::array::Array::<the_situation::onchain::common::CategoricalProbTransferRaw>"
+        "type": "core::array::Array::<onchain_core::common::CategoricalProbTransferRaw>"
       },
       {
         "name": "min_outcome_index",
@@ -786,31 +842,31 @@
       },
       {
         "name": "supplied_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "candidate_hint",
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
+        "type": "onchain_core::common::CategoricalL2HintRaw"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MultinoulliTradeExecutionRaw"
+        "type": "onchain_core::common::MultinoulliTradeExecutionRaw"
       }
     ],
     "state_mutability": "external"
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::ClaimResultRaw",
+    "name": "onchain_core::common::ClaimResultRaw",
     "members": [
       {
         "name": "position_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "collateral_returned",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "token_payout",
@@ -828,7 +884,7 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::ClaimResultRaw"
+        "type": "onchain_core::common::ClaimResultRaw"
       }
     ],
     "state_mutability": "external"
@@ -844,7 +900,7 @@
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::ClaimResultRaw"
+        "type": "onchain_core::common::ClaimResultRaw"
       }
     ],
     "state_mutability": "external"
@@ -866,207 +922,33 @@
     "state_mutability": "external"
   },
   {
-    "type": "enum",
-    "name": "the_situation::onchain::common::MultinoulliPositionSellRejection",
-    "variants": [
-      {
-        "name": "None",
-        "type": "()"
-      },
-      {
-        "name": "NoPosition",
-        "type": "()"
-      },
-      {
-        "name": "MarketSettled",
-        "type": "()"
-      },
-      {
-        "name": "MarketPaused",
-        "type": "()"
-      },
-      {
-        "name": "AlreadyClaimed",
-        "type": "()"
-      },
-      {
-        "name": "InvalidPositionState",
-        "type": "()"
-      },
-      {
-        "name": "InvalidMinOutcome",
-        "type": "()"
-      },
-      {
-        "name": "RequiresAdditionalCollateral",
-        "type": "()"
-      },
-      {
-        "name": "NoCollateralOut",
-        "type": "()"
-      },
-      {
-        "name": "InvalidHints",
-        "type": "()"
-      },
-      {
-        "name": "BackingFail",
-        "type": "()"
-      },
-      {
-        "name": "VerificationFailed",
-        "type": "()"
-      },
-      {
-        "name": "ConversionFailed",
-        "type": "()"
-      }
-    ]
-  },
-  {
-    "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliPositionSellResultRaw",
-    "members": [
-      {
-        "name": "sell_executed",
-        "type": "core::bool"
-      },
-      {
-        "name": "trade_result",
-        "type": "the_situation::onchain::common::MultinoulliTradeExecutionRaw"
-      },
-      {
-        "name": "is_flat",
-        "type": "core::bool"
-      },
-      {
-        "name": "collateral_before",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "collateral_after",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "collateral_out",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "token_out",
-        "type": "core::integer::u256"
-      },
-      {
-        "name": "rejection_reason",
-        "type": "the_situation::onchain::common::MultinoulliPositionSellRejection"
-      }
-    ]
-  },
-  {
     "type": "function",
-    "name": "check_sell_position",
+    "name": "settle_trade_lot",
     "inputs": [
       {
-        "name": "trader",
-        "type": "core::starknet::contract_address::ContractAddress"
-      },
-      {
-        "name": "candidate",
-        "type": "the_situation::types::categorical::types::CategoricalDistributionRaw"
-      },
-      {
-        "name": "min_outcome_index",
-        "type": "core::integer::u32"
-      },
-      {
-        "name": "candidate_hint",
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
-      }
-    ],
-    "outputs": [
-      {
-        "type": "the_situation::onchain::common::MultinoulliPositionSellResultRaw"
-      }
-    ],
-    "state_mutability": "view"
-  },
-  {
-    "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliSellExecutionGuardsRaw",
-    "members": [
-      {
-        "name": "expected_distribution_snapshot_id",
+        "name": "lot_id",
         "type": "core::integer::u64"
-      },
-      {
-        "name": "expected_backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "expected_tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "expected_min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
-      },
-      {
-        "name": "min_token_out",
-        "type": "core::integer::u256"
-      }
-    ]
-  },
-  {
-    "type": "function",
-    "name": "sell_position_guarded",
-    "inputs": [
-      {
-        "name": "candidate",
-        "type": "the_situation::types::categorical::types::CategoricalDistributionRaw"
-      },
-      {
-        "name": "min_outcome_index",
-        "type": "core::integer::u32"
-      },
-      {
-        "name": "candidate_hint",
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
-      },
-      {
-        "name": "guards",
-        "type": "the_situation::onchain::common::MultinoulliSellExecutionGuardsRaw"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MultinoulliPositionSellResultRaw"
+        "type": "onchain_core::common::ClaimResultRaw"
       }
     ],
     "state_mutability": "external"
   },
   {
     "type": "function",
-    "name": "sell_position_guarded_sparse",
+    "name": "settle_trade_lots",
     "inputs": [
       {
-        "name": "candidate_updates",
-        "type": "core::array::Array::<the_situation::onchain::common::CategoricalProbUpdateRaw>"
-      },
-      {
-        "name": "min_outcome_index",
-        "type": "core::integer::u32"
-      },
-      {
-        "name": "candidate_hint",
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
-      },
-      {
-        "name": "guards",
-        "type": "the_situation::onchain::common::MultinoulliSellExecutionGuardsRaw"
+        "name": "lot_ids",
+        "type": "core::array::Array::<core::integer::u64>"
       }
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MultinoulliPositionSellResultRaw"
+        "type": "core::integer::u32"
       }
     ],
     "state_mutability": "external"
@@ -1077,7 +959,7 @@
     "inputs": [
       {
         "name": "share_amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
@@ -1093,7 +975,7 @@
     "inputs": [
       {
         "name": "share_amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
@@ -1141,12 +1023,22 @@
     "state_mutability": "external"
   },
   {
+    "type": "struct",
+    "name": "core::array::Span::<core::integer::u32>",
+    "members": [
+      {
+        "name": "snapshot",
+        "type": "@core::array::Array::<core::integer::u32>"
+      }
+    ]
+  },
+  {
     "type": "function",
     "name": "settle_multi",
     "inputs": [
       {
         "name": "outcome_indices",
-        "type": "core::array::Array::<core::integer::u32>"
+        "type": "core::array::Span::<core::integer::u32>"
       }
     ],
     "outputs": [],
@@ -1158,11 +1050,11 @@
     "inputs": [
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [],
@@ -1254,7 +1146,7 @@
     "inputs": [],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::FeeConfigRaw"
+        "type": "onchain_core::common::FeeConfigRaw"
       }
     ],
     "state_mutability": "view"
@@ -1283,7 +1175,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::MarketInitialized",
+    "name": "onchain_multinoulli_amm::events::MarketInitialized",
     "kind": "struct",
     "members": [
       {
@@ -1293,7 +1185,7 @@
       },
       {
         "name": "backing_amount",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
@@ -1305,13 +1197,18 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::TradeExecuted",
+    "name": "onchain_multinoulli_amm::events::TradeExecuted",
     "kind": "struct",
     "members": [
       {
         "name": "trader",
         "type": "core::starknet::contract_address::ContractAddress",
         "kind": "key"
+      },
+      {
+        "name": "lot_id",
+        "type": "core::integer::u64",
+        "kind": "data"
       },
       {
         "name": "outcome_count",
@@ -1327,17 +1224,12 @@
         "name": "token_amount",
         "type": "core::integer::u256",
         "kind": "data"
-      },
-      {
-        "name": "is_position_sell",
-        "type": "core::bool",
-        "kind": "data"
       }
     ]
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::PositionClaimed",
+    "name": "onchain_multinoulli_amm::events::LotCancelled",
     "kind": "struct",
     "members": [
       {
@@ -1346,13 +1238,35 @@
         "kind": "key"
       },
       {
+        "name": "lot_id",
+        "type": "core::integer::u64",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "onchain_multinoulli_amm::events::PositionClaimed",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "trader",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "key"
+      },
+      {
+        "name": "lot_id",
+        "type": "core::integer::u64",
+        "kind": "data"
+      },
+      {
         "name": "position_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
         "name": "collateral_returned",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
@@ -1364,44 +1278,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::PositionSold",
-    "kind": "struct",
-    "members": [
-      {
-        "name": "trader",
-        "type": "core::starknet::contract_address::ContractAddress",
-        "kind": "key"
-      },
-      {
-        "name": "is_flat",
-        "type": "core::bool",
-        "kind": "data"
-      },
-      {
-        "name": "collateral_out",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
-        "kind": "data"
-      },
-      {
-        "name": "collateral_before",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
-        "kind": "data"
-      },
-      {
-        "name": "collateral_after",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
-        "kind": "data"
-      },
-      {
-        "name": "token_out",
-        "type": "core::integer::u256",
-        "kind": "data"
-      }
-    ]
-  },
-  {
-    "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::LiquidityAdded",
+    "name": "onchain_multinoulli_amm::events::LiquidityAdded",
     "kind": "struct",
     "members": [
       {
@@ -1411,7 +1288,7 @@
       },
       {
         "name": "shares",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
@@ -1423,7 +1300,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::LiquidityRemoved",
+    "name": "onchain_multinoulli_amm::events::LiquidityRemoved",
     "kind": "struct",
     "members": [
       {
@@ -1433,7 +1310,7 @@
       },
       {
         "name": "shares",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
@@ -1445,7 +1322,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::MarketPaused",
+    "name": "onchain_multinoulli_amm::events::MarketPaused",
     "kind": "struct",
     "members": [
       {
@@ -1457,7 +1334,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::MarketUnpaused",
+    "name": "onchain_multinoulli_amm::events::MarketUnpaused",
     "kind": "struct",
     "members": [
       {
@@ -1469,7 +1346,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::MarketSettled",
+    "name": "onchain_multinoulli_amm::events::MarketSettled",
     "kind": "struct",
     "members": [
       {
@@ -1481,12 +1358,17 @@
         "name": "by",
         "type": "core::starknet::contract_address::ContractAddress",
         "kind": "data"
+      },
+      {
+        "name": "trader_claim_deadline",
+        "type": "core::integer::u64",
+        "kind": "data"
       }
     ]
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::MarketSettledMulti",
+    "name": "onchain_multinoulli_amm::events::MarketSettledMulti",
     "kind": "struct",
     "members": [
       {
@@ -1498,12 +1380,17 @@
         "name": "outcomes",
         "type": "core::array::Array::<core::integer::u32>",
         "kind": "data"
+      },
+      {
+        "name": "trader_claim_deadline",
+        "type": "core::integer::u64",
+        "kind": "data"
       }
     ]
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::OwnerTransferred",
+    "name": "onchain_multinoulli_amm::events::OwnerTransferred",
     "kind": "struct",
     "members": [
       {
@@ -1520,7 +1407,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::AdminUpdated",
+    "name": "onchain_multinoulli_amm::events::AdminUpdated",
     "kind": "struct",
     "members": [
       {
@@ -1537,24 +1424,24 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::ParametersUpdated",
+    "name": "onchain_multinoulli_amm::events::ParametersUpdated",
     "kind": "struct",
     "members": [
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       }
     ]
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::EmergencyWithdraw",
+    "name": "onchain_multinoulli_amm::events::EmergencyWithdraw",
     "kind": "struct",
     "members": [
       {
@@ -1576,7 +1463,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::FeesCollected",
+    "name": "onchain_multinoulli_amm::events::FeesCollected",
     "kind": "struct",
     "members": [
       {
@@ -1598,13 +1485,18 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::SettlementFeeCollected",
+    "name": "onchain_multinoulli_amm::events::SettlementFeeCollected",
     "kind": "struct",
     "members": [
       {
         "name": "trader",
         "type": "core::starknet::contract_address::ContractAddress",
         "kind": "key"
+      },
+      {
+        "name": "lot_id",
+        "type": "core::integer::u64",
+        "kind": "data"
       },
       {
         "name": "fee_amount",
@@ -1615,7 +1507,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::events::ProtocolFeesWithdrawn",
+    "name": "onchain_multinoulli_amm::events::ProtocolFeesWithdrawn",
     "kind": "struct",
     "members": [
       {
@@ -1632,92 +1524,92 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::markets::multinoulli::amm::contract::multinoulli_amm::Event",
+    "name": "onchain_multinoulli_amm::contract::multinoulli_amm::Event",
     "kind": "enum",
     "variants": [
       {
         "name": "MarketInitialized",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::MarketInitialized",
+        "type": "onchain_multinoulli_amm::events::MarketInitialized",
         "kind": "nested"
       },
       {
         "name": "TradeExecuted",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::TradeExecuted",
+        "type": "onchain_multinoulli_amm::events::TradeExecuted",
+        "kind": "nested"
+      },
+      {
+        "name": "LotCancelled",
+        "type": "onchain_multinoulli_amm::events::LotCancelled",
         "kind": "nested"
       },
       {
         "name": "PositionClaimed",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::PositionClaimed",
-        "kind": "nested"
-      },
-      {
-        "name": "PositionSold",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::PositionSold",
+        "type": "onchain_multinoulli_amm::events::PositionClaimed",
         "kind": "nested"
       },
       {
         "name": "LiquidityAdded",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::LiquidityAdded",
+        "type": "onchain_multinoulli_amm::events::LiquidityAdded",
         "kind": "nested"
       },
       {
         "name": "LiquidityRemoved",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::LiquidityRemoved",
+        "type": "onchain_multinoulli_amm::events::LiquidityRemoved",
         "kind": "nested"
       },
       {
         "name": "MarketPaused",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::MarketPaused",
+        "type": "onchain_multinoulli_amm::events::MarketPaused",
         "kind": "nested"
       },
       {
         "name": "MarketUnpaused",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::MarketUnpaused",
+        "type": "onchain_multinoulli_amm::events::MarketUnpaused",
         "kind": "nested"
       },
       {
         "name": "MarketSettled",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::MarketSettled",
+        "type": "onchain_multinoulli_amm::events::MarketSettled",
         "kind": "nested"
       },
       {
         "name": "MarketSettledMulti",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::MarketSettledMulti",
+        "type": "onchain_multinoulli_amm::events::MarketSettledMulti",
         "kind": "nested"
       },
       {
         "name": "OwnerTransferred",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::OwnerTransferred",
+        "type": "onchain_multinoulli_amm::events::OwnerTransferred",
         "kind": "nested"
       },
       {
         "name": "AdminUpdated",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::AdminUpdated",
+        "type": "onchain_multinoulli_amm::events::AdminUpdated",
         "kind": "nested"
       },
       {
         "name": "ParametersUpdated",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::ParametersUpdated",
+        "type": "onchain_multinoulli_amm::events::ParametersUpdated",
         "kind": "nested"
       },
       {
         "name": "EmergencyWithdraw",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::EmergencyWithdraw",
+        "type": "onchain_multinoulli_amm::events::EmergencyWithdraw",
         "kind": "nested"
       },
       {
         "name": "FeesCollected",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::FeesCollected",
+        "type": "onchain_multinoulli_amm::events::FeesCollected",
         "kind": "nested"
       },
       {
         "name": "SettlementFeeCollected",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::SettlementFeeCollected",
+        "type": "onchain_multinoulli_amm::events::SettlementFeeCollected",
         "kind": "nested"
       },
       {
         "name": "ProtocolFeesWithdrawn",
-        "type": "the_situation::onchain::markets::multinoulli::amm::events::ProtocolFeesWithdrawn",
+        "type": "onchain_multinoulli_amm::events::ProtocolFeesWithdrawn",
         "kind": "nested"
       }
     ]

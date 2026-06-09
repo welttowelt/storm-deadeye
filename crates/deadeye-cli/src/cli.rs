@@ -762,38 +762,83 @@ pub(crate) enum PositionCmd {
         family: Option<FamilyArg>,
     },
     /// Value a trader's multi-leg position: per-leg + total payout at a
-    /// settlement outcome, the P&L if it settles there, and (with `--belief`)
-    /// the expected P&L under a forecast. Normal-family markets.
+    /// settlement outcome, the P&L if it settles there, and (with a belief)
+    /// the expected P&L under a forecast. All families.
+    ///
+    /// The settlement/belief flags depend on the family: scalar `--at` /
+    /// `--belief` for normal + lognormal; `--at-x1 --at-x2` /
+    /// `--belief-mu1 --belief-mu2 --belief-sigma1 --belief-sigma2
+    /// [--belief-rho]` for bivariate; `--outcome` / `--belief-probs` for
+    /// multinoulli.
     ///
     /// # Examples
     ///
     /// ```text
-    /// deadeye position value 0x53e5…0fcf4 --at 4.2     # gross return + P&L if x*=4.2
-    /// deadeye position value 0x53e5…0fcf4 --belief 4.3 --belief-sigma 0.2   # expected P&L
+    /// deadeye position value 0x53e5… --at 4.2                       # normal/lognormal
+    /// deadeye position value 0x53e5… --belief 4.3 --belief-sigma 0.2
+    /// deadeye position value 0xBIV   --at-x1 1.0 --at-x2 2.0        # bivariate
+    /// deadeye position value 0xMULTI --outcome 3                    # multinoulli
+    /// deadeye position value 0xMULTI --belief-probs 0.1,0.2,0.7
     /// ```
-    Value {
-        /// Market contract address.
-        #[arg(value_name = "ADDRESS")]
-        market: String,
-        /// Trader address; defaults to the active profile's address.
-        #[arg(long, value_name = "0x...")]
-        trader: Option<String>,
-        /// Settlement outcome x* to value the position at (per-leg + total).
-        #[arg(long, value_name = "X")]
-        at: Option<f64>,
-        /// Forecast mean μ — compute expected P&L under N(μ, σ) instead of a
-        /// single x* (integrates the on-chain leg value over the belief).
-        #[arg(long, value_name = "MU")]
-        belief: Option<f64>,
-        /// Forecast σ for `--belief` (defaults to the current market σ).
-        #[arg(long, value_name = "SIGMA")]
-        belief_sigma: Option<f64>,
-        /// Force a specific family (only `normal` is supported today).
-        #[arg(long, value_name = "FAMILY")]
-        family: Option<FamilyArg>,
-    },
+    Value(PositionValueArgs),
     /// Close a position via `sell_position` (Driver B write path).
     Sell(PositionSellArgs),
+}
+
+/// `deadeye position value …` — value a multi-leg position across families.
+#[derive(Debug, clap::Args)]
+pub(crate) struct PositionValueArgs {
+    /// Market contract address.
+    #[arg(value_name = "ADDRESS")]
+    pub(crate) market: String,
+    /// Trader address; defaults to the active profile's address.
+    #[arg(long, value_name = "0x...")]
+    pub(crate) trader: Option<String>,
+    /// Force a specific family (otherwise auto-detected).
+    #[arg(long, value_name = "FAMILY")]
+    pub(crate) family: Option<FamilyArg>,
+
+    // ── normal / lognormal ──
+    /// Scalar settlement x* (normal, lognormal). Defaults to the market mean.
+    #[arg(long, value_name = "X")]
+    pub(crate) at: Option<f64>,
+    /// Forecast mean μ — expected P&L under N(μ, σ) (normal, lognormal).
+    #[arg(long, value_name = "MU")]
+    pub(crate) belief: Option<f64>,
+    /// Forecast σ for `--belief` (defaults to the current market σ).
+    #[arg(long, value_name = "SIGMA")]
+    pub(crate) belief_sigma: Option<f64>,
+
+    // ── bivariate ──
+    /// First-axis settlement x1 (bivariate; pair with `--at-x2`).
+    #[arg(long, value_name = "X1")]
+    pub(crate) at_x1: Option<f64>,
+    /// Second-axis settlement x2 (bivariate; pair with `--at-x1`).
+    #[arg(long, value_name = "X2")]
+    pub(crate) at_x2: Option<f64>,
+    /// Bivariate belief μ₁.
+    #[arg(long, value_name = "MU1")]
+    pub(crate) belief_mu1: Option<f64>,
+    /// Bivariate belief μ₂.
+    #[arg(long, value_name = "MU2")]
+    pub(crate) belief_mu2: Option<f64>,
+    /// Bivariate belief σ₁.
+    #[arg(long, value_name = "SIGMA1")]
+    pub(crate) belief_sigma1: Option<f64>,
+    /// Bivariate belief σ₂.
+    #[arg(long, value_name = "SIGMA2")]
+    pub(crate) belief_sigma2: Option<f64>,
+    /// Bivariate belief correlation ρ (default 0).
+    #[arg(long, value_name = "RHO", default_value_t = 0.0)]
+    pub(crate) belief_rho: f64,
+
+    // ── multinoulli ──
+    /// Categorical settlement outcome index (multinoulli).
+    #[arg(long, value_name = "I")]
+    pub(crate) outcome: Option<u32>,
+    /// Categorical belief probabilities (comma list; length == outcomes).
+    #[arg(long, value_name = "P0,P1,…", value_delimiter = ',')]
+    pub(crate) belief_probs: Vec<f64>,
 }
 
 #[derive(Debug, Subcommand)]

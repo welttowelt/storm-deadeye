@@ -110,6 +110,89 @@ where
         .await
     }
 
+    // ── Trade-lot (multi-leg) read surface ──────────────────────────────
+    //
+    // Each market-moving trade stores an explicit *trade lot* (leg). A
+    // trader accumulates one lot per admitted delta; legs are valued and
+    // settled independently. These low-level views mirror the on-chain lot
+    // entrypoints; the SDK aggregates them into a `MultiLegPosition`.
+
+    /// Number of trade lots (legs) this trader holds in the market.
+    #[instrument(skip(self), fields(market = %self.address, %trader))]
+    pub async fn trade_lot_count(&self, trader: Felt) -> ContractResult<u64> {
+        self.call_view::<u64>(
+            "get_trader_trade_lot_count",
+            amm::get_trader_trade_lot_count(),
+            &[trader],
+        )
+        .await
+    }
+
+    /// The `lot_id` at `index` in this trader's lot list (`index < count`).
+    #[instrument(skip(self), fields(market = %self.address, %trader, index))]
+    pub async fn trade_lot_id(&self, trader: Felt, index: u64) -> ContractResult<u64> {
+        self.call_view::<u64>(
+            "get_trader_trade_lot_id",
+            amm::get_trader_trade_lot_id(),
+            &[trader, Felt::from(index)],
+        )
+        .await
+    }
+
+    /// Whether a lot has already been settled (paid out).
+    #[instrument(skip(self), fields(market = %self.address, lot_id))]
+    pub async fn trade_lot_settled(&self, lot_id: u64) -> ContractResult<bool> {
+        self.call_view::<bool>("get_trade_lot_settled", amm::get_trade_lot_settled(), &[
+            Felt::from(lot_id),
+        ])
+        .await
+    }
+
+    /// Whether a lot was cancelled (terminalised without payout — collateral
+    /// forfeit to the LP because it could not be valued at settlement).
+    #[instrument(skip(self), fields(market = %self.address, lot_id))]
+    pub async fn trade_lot_cancelled(&self, lot_id: u64) -> ContractResult<bool> {
+        self.call_view::<bool>(
+            "get_trade_lot_cancelled",
+            amm::get_trade_lot_cancelled(),
+            &[Felt::from(lot_id)],
+        )
+        .await
+    }
+
+    /// The lot's **signed** scoring-rule value at a settlement outcome `x*`
+    /// (`to_λ·pdf(x*; to) − from_λ·pdf(x*; from)`), read authoritatively from
+    /// the chain. This is the per-leg position value; gross payout for the leg
+    /// is `collateral_locked + value_at(x*)`.
+    #[instrument(skip(self, settlement), fields(market = %self.address, lot_id))]
+    pub async fn trade_lot_value_at(
+        &self,
+        lot_id: u64,
+        settlement: Sq128Raw,
+    ) -> ContractResult<Sq128Raw> {
+        let mut calldata = vec![Felt::from(lot_id)];
+        settlement.encode(&mut calldata);
+        self.call_view::<Sq128Raw>(
+            "get_trade_lot_value_at",
+            amm::get_trade_lot_value_at(),
+            &calldata,
+        )
+        .await
+    }
+
+    /// Enumerate **all** of a trader's `lot_id`s (count → id-by-index). One
+    /// RPC for the count plus one per lot; the SDK wraps this with concurrent
+    /// fan-out for bulk valuation.
+    #[instrument(skip(self), fields(market = %self.address, %trader))]
+    pub async fn trade_lot_ids(&self, trader: Felt) -> ContractResult<Vec<u64>> {
+        let count = self.trade_lot_count(trader).await?;
+        let mut ids = Vec::with_capacity(usize::try_from(count).unwrap_or(0));
+        for index in 0..count {
+            ids.push(self.trade_lot_id(trader, index).await?);
+        }
+        Ok(ids)
+    }
+
     /// Preflight a lognormal trade against the current market — see
     /// [`crate::NormalMarketReader::quote_trade`] for the full contract.
     #[instrument(skip(self), fields(market = %self.address, runtime = %runtime))]

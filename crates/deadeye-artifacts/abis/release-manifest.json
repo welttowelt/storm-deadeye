@@ -1,8 +1,8 @@
 {
   "name": "the-situation-contracts",
-  "version": "0.12.0",
-  "timestamp": "2026-05-05T10:15:44Z",
-  "commit": "0ea2d4ae30062bfaf3c88e05dd2b430fcc57e45b",
+  "version": "0.13.0",
+  "timestamp": "2026-06-04T11:56:34Z",
+  "commit": "27654d1d5c03dad792631c8d85b12ce390092d41",
   "source": {
     "kind": "packages",
     "artifact_dir": "/Users/theodorepender/Coding/the-situation-stack/the-situation/target/dev",

@@ -5,15 +5,14 @@
 //! and `--help` still documents the command.
 
 use anyhow::{Context as _, Result};
-use deadeye_core::{Distribution as _, Sq128};
+use deadeye_core::Distribution as _;
 use deadeye_sdk::bulk::Family;
 use deadeye_starknet::{
     BivariateMarketReader, LognormalMarketReader, MultinoulliMarketReader, NormalMarketReader,
 };
-use serde_json::json;
 
 use crate::{
-    cli::{FamilyArg, PositionCmd, PositionSellArgs},
+    cli::{FamilyArg, PositionCmd, PositionSellArgs, PositionValueArgs},
     commands::{
         render_helpers::{
             LegRow, LegValueRow, PositionLegsView, PositionValueView, submission_from_receipt,
@@ -25,7 +24,7 @@ use crate::{
     },
     context::{AppContext, parse_address},
     output::OutputMode,
-    render::{PositionRow, PositionShowView},
+    render::PositionRow,
 };
 
 pub(crate) async fn run(action: PositionCmd, ctx: &AppContext, confirm: bool) -> Result<()> {
@@ -40,14 +39,7 @@ pub(crate) async fn run(action: PositionCmd, ctx: &AppContext, confirm: bool) ->
             trader,
             family,
         } => show(ctx, &market, trader, family).await,
-        PositionCmd::Value {
-            market,
-            trader,
-            at,
-            belief,
-            belief_sigma,
-            family,
-        } => value(ctx, &market, trader, at, belief, belief_sigma, family).await,
+        PositionCmd::Value(args) => value(ctx, args).await,
         PositionCmd::Sell(args) => sell(ctx, args, confirm).await,
     }
 }
@@ -210,123 +202,86 @@ async fn show(
         super::markets::detect_family(&client, market).await?
     };
 
-    // Normal-family markets use the trade-lot (multi-leg) model: enumerate
-    // the trader's legs + summary rather than the removed compact position.
-    if matches!(family, Family::Normal) {
-        let pos = client
-            .normal_market(market)
-            .legs(trader)
-            .await
-            .map_err(|e| anyhow::anyhow!("reading normal position legs: {e}"))?;
-        let view = PositionLegsView {
-            market: market_str.to_owned(),
-            trader: format!("{trader:#x}"),
-            family: "normal",
-            exists: pos.exists,
-            claimed: pos.claimed,
-            tracks_settlement_claim: pos.tracks_settlement_claim,
-            total_collateral: pos.total_collateral,
-            leg_count: pos.legs.len(),
-            active_legs: pos.active_legs(),
-            legs: pos
-                .legs
-                .iter()
-                .map(|l| LegRow {
-                    lot_id: l.lot_id,
-                    settled: l.settled,
-                    cancelled: l.cancelled,
-                })
-                .collect(),
-        };
-        return ctx.renderer.print(&view);
+    // Every family now uses the trade-lot (multi-leg) model: enumerate the
+    // trader's legs + summary (the compact `get_position_compact` is gone).
+    let pos = match family {
+        Family::Normal => client.normal_market(market).legs(trader).await,
+        Family::Lognormal => client.lognormal_market(market).legs(trader).await,
+        Family::Bivariate => client.bivariate_market(market).legs(trader).await,
+        Family::Multinoulli => client.multinoulli_market(market).legs(trader).await,
     }
+    .with_context(|| format!("reading {} position legs", family_label(family)))?;
 
-    let view = match family {
-        Family::Normal => unreachable!("normal handled above"),
-        Family::Lognormal => {
-            let reader = LognormalMarketReader::new(client.provider(), market);
-            let pos = reader
-                .position(trader)
-                .await
-                .map_err(|e| anyhow::anyhow!("reading lognormal position: {e}"))?;
-            PositionShowView {
-                market_address: market_str.to_owned(),
-                trader: format!("{trader:#x}"),
-                family: "lognormal".to_owned(),
-                total_collateral: Sq128::from_raw(pos.total_collateral).to_f64(),
-                flags: pos.flags,
-                extra: json!({
-                    "original_mu": Sq128::from_raw(pos.original_mu).to_f64(),
-                    "original_sigma": Sq128::from_raw(pos.original_sigma).to_f64(),
-                    "effective_mu": Sq128::from_raw(pos.effective_mu).to_f64(),
-                    "effective_sigma": Sq128::from_raw(pos.effective_sigma).to_f64(),
-                }),
-            }
-        },
-        Family::Multinoulli => {
-            let reader = MultinoulliMarketReader::new(client.provider(), market);
-            let pos = reader
-                .position(trader)
-                .await
-                .map_err(|e| anyhow::anyhow!("reading multinoulli position: {e}"))?;
-            PositionShowView {
-                market_address: market_str.to_owned(),
-                trader: format!("{trader:#x}"),
-                family: "multinoulli".to_owned(),
-                total_collateral: Sq128::from_raw(pos.total_collateral).to_f64(),
-                flags: pos.flags,
-                extra: serde_json::Value::Object(Default::default()),
-            }
-        },
-        Family::Bivariate => {
-            let reader = BivariateMarketReader::new(client.provider(), market);
-            let pos = reader
-                .position(trader)
-                .await
-                .map_err(|e| anyhow::anyhow!("reading bivariate position: {e}"))?;
-            PositionShowView {
-                market_address: market_str.to_owned(),
-                trader: format!("{trader:#x}"),
-                family: "bivariate".to_owned(),
-                total_collateral: Sq128::from_raw(pos.total_collateral).to_f64(),
-                flags: pos.flags,
-                extra: serde_json::Value::Object(Default::default()),
-            }
-        },
-    };
-    ctx.renderer.print(&view)
+    ctx.renderer
+        .print(&legs_view(market_str, trader, family_label(family), &pos))
+}
+
+/// Build the [`PositionLegsView`] for `position show` from an SDK
+/// [`deadeye_sdk::PositionLegs`] (family-agnostic).
+fn legs_view(
+    market_str: &str,
+    trader: deadeye_starknet::Felt,
+    family: &'static str,
+    pos: &deadeye_sdk::PositionLegs,
+) -> PositionLegsView {
+    PositionLegsView {
+        market: market_str.to_owned(),
+        trader: format!("{trader:#x}"),
+        family,
+        exists: pos.exists,
+        claimed: pos.claimed,
+        tracks_settlement_claim: pos.tracks_settlement_claim,
+        total_collateral: pos.total_collateral,
+        leg_count: pos.legs.len(),
+        active_legs: pos.active_legs(),
+        legs: pos
+            .legs
+            .iter()
+            .map(|l| LegRow {
+                lot_id: l.lot_id,
+                settled: l.settled,
+                cancelled: l.cancelled,
+            })
+            .collect(),
+    }
+}
+
+/// Copy an SDK [`deadeye_sdk::PositionValuation`] (settlement path) onto the
+/// view.
+fn apply_valuation(view: &mut PositionValueView, v: &deadeye_sdk::PositionValuation) {
+    view.exists = v.exists;
+    view.total_collateral = v.total_collateral;
+    view.settlement = Some(v.settlement);
+    view.total_position_value = Some(v.total_position_value);
+    view.gross_return = Some(v.gross_return);
+    view.legs = v
+        .legs
+        .iter()
+        .map(|l| LegValueRow {
+            lot_id: l.lot_id,
+            settled: l.settled,
+            cancelled: l.cancelled,
+            value_at: l.value_at,
+        })
+        .collect();
 }
 
 /// `position value` — value a trader's multi-leg position at a settlement
-/// outcome and/or compute its expected P&L under a forecast.
-async fn value(
-    ctx: &AppContext,
-    market_str: &str,
-    trader_opt: Option<String>,
-    at: Option<f64>,
-    belief: Option<f64>,
-    belief_sigma: Option<f64>,
-    family_override: Option<FamilyArg>,
-) -> Result<()> {
-    let market = parse_address(market_str)?;
-    let trader = resolve_trader(ctx, trader_opt)?;
+/// outcome and/or compute its expected P&L under a forecast. Dispatches per
+/// family (scalar / 2D point / categorical settlement).
+async fn value(ctx: &AppContext, args: PositionValueArgs) -> Result<()> {
+    let market = parse_address(&args.market)?;
+    let trader = resolve_trader(ctx, args.trader.clone())?;
     let client = ctx.deadeye_client()?;
-    let family = if let Some(f) = family_override {
-        f.as_sdk()
-    } else {
-        super::markets::detect_family(&client, market).await?
+    let family = match args.family {
+        Some(f) => f.as_sdk(),
+        None => super::markets::detect_family(&client, market).await?,
     };
-    if !matches!(family, Family::Normal) {
-        anyhow::bail!(
-            "`position value` currently supports normal-family markets; {family:?} not yet wired"
-        );
-    }
-    let mkt = client.normal_market(market);
 
     let mut view = PositionValueView {
-        market: market_str.to_owned(),
+        market: args.market.clone(),
         trader: format!("{trader:#x}"),
-        family: "normal",
+        family: family_label(family),
         exists: false,
         total_collateral: 0.0,
         settlement: None,
@@ -337,65 +292,166 @@ async fn value(
         expected_pnl: None,
     };
 
-    // With neither --at nor --belief, value at the current market mean.
-    let settlement = match (at, belief) {
-        (Some(x), _) => Some(x),
-        (None, None) => Some(
-            mkt.distribution()
-                .await
-                .map_err(|e| anyhow::anyhow!("reading market distribution: {e}"))?
-                .mean()
-                .to_f64(),
-        ),
-        (None, Some(_)) => None,
-    };
-
-    if let Some(x) = settlement {
-        let v = mkt
-            .position_value_at(trader, x)
-            .await
-            .map_err(|e| anyhow::anyhow!("valuing position at x*={x}: {e}"))?;
-        view.exists = v.exists;
-        view.total_collateral = v.total_collateral;
-        view.settlement = Some(v.settlement);
-        view.total_position_value = Some(v.total_position_value);
-        view.gross_return = Some(v.gross_return);
-        view.legs = v
-            .legs
-            .iter()
-            .map(|l| LegValueRow {
-                lot_id: l.lot_id,
-                settled: l.settled,
-                cancelled: l.cancelled,
-                value_at: l.value_at,
-            })
-            .collect();
-    }
-
-    if let Some(bm) = belief {
-        let bs = match belief_sigma {
-            Some(s) => s,
-            None => mkt
-                .distribution()
-                .await
-                .map_err(|e| anyhow::anyhow!("reading market distribution: {e}"))?
-                .sigma()
-                .to_f64(),
-        };
-        let ev = mkt
-            .expected_value_under_belief(trader, bm, bs)
-            .await
-            .map_err(|e| anyhow::anyhow!("computing expected value: {e}"))?;
-        view.belief = Some(format!("μ={bm:.6}, σ={bs:.6}"));
-        view.expected_pnl = Some(ev);
-        if view.settlement.is_none() {
-            let legs = mkt
-                .legs(trader)
-                .await
-                .map_err(|e| anyhow::anyhow!("reading position legs: {e}"))?;
-            view.exists = legs.exists;
-            view.total_collateral = legs.total_collateral;
-        }
+    match family {
+        Family::Normal => {
+            let mkt = client.normal_market(market);
+            // Default settlement = current market mean (unless a belief is asked).
+            let at = match (args.at, args.belief) {
+                (Some(x), _) => Some(x),
+                (None, None) => Some(
+                    mkt.distribution()
+                        .await
+                        .context("reading distribution")?
+                        .mean()
+                        .to_f64(),
+                ),
+                (None, Some(_)) => None,
+            };
+            if let Some(x) = at {
+                let v = mkt
+                    .position_value_at(trader, x)
+                    .await
+                    .context("valuing position")?;
+                apply_valuation(&mut view, &v);
+            }
+            if let Some(bm) = args.belief {
+                let bs = match args.belief_sigma {
+                    Some(s) => s,
+                    None => mkt
+                        .distribution()
+                        .await
+                        .context("reading distribution")?
+                        .sigma()
+                        .to_f64(),
+                };
+                let ev = mkt
+                    .expected_value_under_belief(trader, bm, bs)
+                    .await
+                    .context("computing expected value")?;
+                view.belief = Some(format!("μ={bm:.6}, σ={bs:.6}"));
+                view.expected_pnl = Some(ev);
+                if view.settlement.is_none() {
+                    let legs = mkt.legs(trader).await.context("reading legs")?;
+                    view.exists = legs.exists;
+                    view.total_collateral = legs.total_collateral;
+                }
+            }
+        },
+        Family::Lognormal => {
+            let mkt = client.lognormal_market(market);
+            let at = match (args.at, args.belief) {
+                (Some(x), _) => Some(x),
+                (None, None) => Some(
+                    mkt.distribution()
+                        .await
+                        .context("reading distribution")?
+                        .mean()
+                        .to_f64(),
+                ),
+                (None, Some(_)) => None,
+            };
+            if let Some(x) = at {
+                let v = mkt
+                    .position_value_at(trader, x)
+                    .await
+                    .context("valuing position")?;
+                apply_valuation(&mut view, &v);
+            }
+            if let Some(bm) = args.belief {
+                let bs = match args.belief_sigma {
+                    Some(s) => s,
+                    None => mkt
+                        .distribution()
+                        .await
+                        .context("reading distribution")?
+                        .sigma()
+                        .to_f64(),
+                };
+                let ev = mkt
+                    .expected_value_under_belief(trader, bm, bs)
+                    .await
+                    .context("computing expected value")?;
+                view.belief = Some(format!("μ_log={bm:.6}, σ_log={bs:.6}"));
+                view.expected_pnl = Some(ev);
+                if view.settlement.is_none() {
+                    let legs = mkt.legs(trader).await.context("reading legs")?;
+                    view.exists = legs.exists;
+                    view.total_collateral = legs.total_collateral;
+                }
+            }
+        },
+        Family::Bivariate => {
+            let mkt = client.bivariate_market(market);
+            if let (Some(x1), Some(x2)) = (args.at_x1, args.at_x2) {
+                let v = mkt
+                    .position_value_at(trader, x1, x2)
+                    .await
+                    .context("valuing position")?;
+                apply_valuation(&mut view, &v);
+            }
+            if let (Some(m1), Some(m2), Some(s1), Some(s2)) = (
+                args.belief_mu1,
+                args.belief_mu2,
+                args.belief_sigma1,
+                args.belief_sigma2,
+            ) {
+                let ev = mkt
+                    .expected_value_under_belief(trader, m1, m2, s1, s2, args.belief_rho)
+                    .await
+                    .context("computing expected value")?;
+                view.belief = Some(format!(
+                    "μ₁={m1:.4}, μ₂={m2:.4}, σ₁={s1:.4}, σ₂={s2:.4}, ρ={:.3}",
+                    args.belief_rho
+                ));
+                view.expected_pnl = Some(ev);
+                if view.settlement.is_none() {
+                    let legs = mkt.legs(trader).await.context("reading legs")?;
+                    view.exists = legs.exists;
+                    view.total_collateral = legs.total_collateral;
+                }
+            }
+            if view.settlement.is_none() && view.expected_pnl.is_none() {
+                anyhow::bail!(
+                    "bivariate: pass a settlement `--at-x1 <X1> --at-x2 <X2>` or a belief \
+                     `--belief-mu1 --belief-mu2 --belief-sigma1 --belief-sigma2 [--belief-rho]`"
+                );
+            }
+        },
+        Family::Multinoulli => {
+            let mkt = client.multinoulli_market(market);
+            if let Some(outcome) = args.outcome {
+                let v = mkt
+                    .position_value_at(trader, outcome)
+                    .await
+                    .context("valuing position")?;
+                apply_valuation(&mut view, &v);
+            }
+            if !args.belief_probs.is_empty() {
+                let ev = mkt
+                    .expected_value_under_belief(trader, &args.belief_probs)
+                    .await
+                    .context("computing expected value")?;
+                let probs = args
+                    .belief_probs
+                    .iter()
+                    .map(|p| format!("{p:.3}"))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                view.belief = Some(format!("probs=[{probs}]"));
+                view.expected_pnl = Some(ev);
+                if view.settlement.is_none() {
+                    let legs = mkt.legs(trader).await.context("reading legs")?;
+                    view.exists = legs.exists;
+                    view.total_collateral = legs.total_collateral;
+                }
+            }
+            if view.settlement.is_none() && view.expected_pnl.is_none() {
+                anyhow::bail!(
+                    "multinoulli: pass a settlement `--outcome <i>` or a belief \
+                     `--belief-probs p0,p1,…`"
+                );
+            }
+        },
     }
 
     ctx.renderer.print(&view)

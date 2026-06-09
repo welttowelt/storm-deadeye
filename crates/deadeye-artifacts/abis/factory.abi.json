@@ -26,6 +26,17 @@
   },
   {
     "type": "function",
+    "name": "get_factory_version",
+    "inputs": [],
+    "outputs": [
+      {
+        "type": "(core::felt252, core::integer::u32, core::integer::u32, core::integer::u32)"
+      }
+    ],
+    "state_mutability": "view"
+  },
+  {
+    "type": "function",
     "name": "get_treasury",
     "inputs": [],
     "outputs": [
@@ -78,7 +89,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MarketTypeConfigRaw",
+    "name": "onchain_core::common::MarketTypeConfigRaw",
     "members": [
       {
         "name": "amm_class_hash",
@@ -109,14 +120,14 @@
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MarketTypeConfigRaw"
+        "type": "onchain_core::common::MarketTypeConfigRaw"
       }
     ],
     "state_mutability": "view"
   },
   {
     "type": "struct",
-    "name": "the_situation::types::sq128::types::SQ128x128Raw",
+    "name": "sq128::types::SQ128x128Raw",
     "members": [
       {
         "name": "limb0",
@@ -142,7 +153,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::FeeConfigRaw",
+    "name": "onchain_core::common::FeeConfigRaw",
     "members": [
       {
         "name": "lp_fee_bps",
@@ -160,7 +171,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MarketDeployProfileRaw",
+    "name": "onchain_core::common::MarketDeployProfileRaw",
     "members": [
       {
         "name": "market_type",
@@ -180,23 +191,23 @@
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "fee_config",
-        "type": "the_situation::onchain::common::FeeConfigRaw"
+        "type": "onchain_core::common::FeeConfigRaw"
       },
       {
         "name": "extension",
@@ -205,10 +216,6 @@
       {
         "name": "extension_call_points",
         "type": "core::integer::u16"
-      },
-      {
-        "name": "payout_amplifier",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -223,7 +230,7 @@
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::MarketDeployProfileRaw"
+        "type": "onchain_core::common::MarketDeployProfileRaw"
       }
     ],
     "state_mutability": "view"
@@ -262,7 +269,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::DeployedMarketMetaRaw",
+    "name": "onchain_core::common::DeployedMarketMetaRaw",
     "members": [
       {
         "name": "market_type",
@@ -289,7 +296,7 @@
     ],
     "outputs": [
       {
-        "type": "the_situation::onchain::common::DeployedMarketMetaRaw"
+        "type": "onchain_core::common::DeployedMarketMetaRaw"
       }
     ],
     "state_mutability": "view"
@@ -403,39 +410,39 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::types::distributions::normal_distribution::NormalDistributionRaw",
+    "name": "dist_normal::NormalDistributionRaw",
     "members": [
       {
         "name": "mean",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "variance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "sigma",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::NormalSqrtHintsRaw",
+    "name": "onchain_core::common::NormalSqrtHintsRaw",
     "members": [
       {
         "name": "l2_norm_denom",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing_denom",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MarketDeployOverridesRaw",
+    "name": "onchain_core::common::MarketDeployOverridesRaw",
     "members": [
       {
         "name": "mask",
@@ -455,23 +462,23 @@
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "fee_config",
-        "type": "the_situation::onchain::common::FeeConfigRaw"
+        "type": "onchain_core::common::FeeConfigRaw"
       },
       {
         "name": "extension",
@@ -480,10 +487,6 @@
       {
         "name": "extension_call_points",
         "type": "core::integer::u16"
-      },
-      {
-        "name": "payout_amplifier",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -505,15 +508,15 @@
       },
       {
         "name": "initial_distribution",
-        "type": "the_situation::types::distributions::normal_distribution::NormalDistributionRaw"
+        "type": "dist_normal::NormalDistributionRaw"
       },
       {
         "name": "initial_hints",
-        "type": "the_situation::onchain::common::NormalSqrtHintsRaw"
+        "type": "onchain_core::common::NormalSqrtHintsRaw"
       },
       {
         "name": "overrides",
-        "type": "the_situation::onchain::common::MarketDeployOverridesRaw"
+        "type": "onchain_core::common::MarketDeployOverridesRaw"
       }
     ],
     "outputs": [
@@ -525,33 +528,33 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw",
+    "name": "dist_lognormal::LognormalDistributionRaw",
     "members": [
       {
         "name": "mu",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "variance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "sigma",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::LognormalSqrtHintsRaw",
+    "name": "onchain_core::common::LognormalSqrtHintsRaw",
     "members": [
       {
         "name": "l2_norm_denom",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing_denom",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -573,15 +576,15 @@
       },
       {
         "name": "initial_distribution",
-        "type": "the_situation::types::distributions::lognormal_distribution::LognormalDistributionRaw"
+        "type": "dist_lognormal::LognormalDistributionRaw"
       },
       {
         "name": "initial_hints",
-        "type": "the_situation::onchain::common::LognormalSqrtHintsRaw"
+        "type": "onchain_core::common::LognormalSqrtHintsRaw"
       },
       {
         "name": "overrides",
-        "type": "the_situation::onchain::common::MarketDeployOverridesRaw"
+        "type": "onchain_core::common::MarketDeployOverridesRaw"
       }
     ],
     "outputs": [
@@ -593,57 +596,57 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::types::distributions::bivariate_normal_distribution::BivariateNormalDistributionRaw",
+    "name": "dist_bivariate_normal::BivariateNormalDistributionRaw",
     "members": [
       {
         "name": "mu1",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "mu2",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "variance1",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "variance2",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "sigma1",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "sigma2",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "rho",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "inv_one_minus_rho_sq",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "normalization",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::BivariateNormalSqrtHintsRaw",
+    "name": "onchain_core::common::BivariateNormalSqrtHintsRaw",
     "members": [
       {
         "name": "l2_norm_denom",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "backing_denom",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -665,15 +668,15 @@
       },
       {
         "name": "initial_distribution",
-        "type": "the_situation::types::distributions::bivariate_normal_distribution::BivariateNormalDistributionRaw"
+        "type": "dist_bivariate_normal::BivariateNormalDistributionRaw"
       },
       {
         "name": "initial_hints",
-        "type": "the_situation::onchain::common::BivariateNormalSqrtHintsRaw"
+        "type": "onchain_core::common::BivariateNormalSqrtHintsRaw"
       },
       {
         "name": "overrides",
-        "type": "the_situation::onchain::common::MarketDeployOverridesRaw"
+        "type": "onchain_core::common::MarketDeployOverridesRaw"
       }
     ],
     "outputs": [
@@ -685,27 +688,27 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::types::categorical::types::CategoricalDistributionRaw",
+    "name": "categorical_types::types::CategoricalDistributionRaw",
     "members": [
       {
         "name": "probs",
-        "type": "core::array::Array::<the_situation::types::sq128::types::SQ128x128Raw>"
+        "type": "core::array::Array::<sq128::types::SQ128x128Raw>"
       }
     ]
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::CategoricalL2HintRaw",
+    "name": "onchain_core::common::CategoricalL2HintRaw",
     "members": [
       {
         "name": "l2_norm_hint",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
   {
     "type": "enum",
-    "name": "the_situation::onchain::common::MultinoulliMatrixConstraintMode",
+    "name": "onchain_core::common::MultinoulliMatrixConstraintMode",
     "variants": [
       {
         "name": "Disabled",
@@ -727,11 +730,11 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::MultinoulliMatrixConstraintsRaw",
+    "name": "onchain_core::common::MultinoulliMatrixConstraintsRaw",
     "members": [
       {
         "name": "mode",
-        "type": "the_situation::onchain::common::MultinoulliMatrixConstraintMode"
+        "type": "onchain_core::common::MultinoulliMatrixConstraintMode"
       },
       {
         "name": "row_count",
@@ -761,19 +764,19 @@
       },
       {
         "name": "initial_distribution",
-        "type": "the_situation::types::categorical::types::CategoricalDistributionRaw"
+        "type": "categorical_types::types::CategoricalDistributionRaw"
       },
       {
         "name": "initial_hint",
-        "type": "the_situation::onchain::common::CategoricalL2HintRaw"
+        "type": "onchain_core::common::CategoricalL2HintRaw"
       },
       {
         "name": "matrix_constraints",
-        "type": "the_situation::onchain::common::MultinoulliMatrixConstraintsRaw"
+        "type": "onchain_core::common::MultinoulliMatrixConstraintsRaw"
       },
       {
         "name": "overrides",
-        "type": "the_situation::onchain::common::MarketDeployOverridesRaw"
+        "type": "onchain_core::common::MarketDeployOverridesRaw"
       }
     ],
     "outputs": [
@@ -784,8 +787,48 @@
     "state_mutability": "external"
   },
   {
+    "type": "struct",
+    "name": "dist_skew_normal::SkewNormalDistributionRaw",
+    "members": [
+      {
+        "name": "xi",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "omega",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "alpha",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "omega_sq_hint",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "delta_hint",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "mode_hint",
+        "type": "sq128::types::SQ128x128Raw"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "onchain_core::common::SkewNormalSqrtHintsRaw",
+    "members": [
+      {
+        "name": "l2_norm_denom",
+        "type": "sq128::types::SQ128x128Raw"
+      }
+    ]
+  },
+  {
     "type": "function",
-    "name": "deploy_hurricane_market_from_profile",
+    "name": "deploy_skew_normal_market_from_profile",
     "inputs": [
       {
         "name": "profile_id",
@@ -800,8 +843,214 @@
         "type": "core::felt252"
       },
       {
+        "name": "initial_distribution",
+        "type": "dist_skew_normal::SkewNormalDistributionRaw"
+      },
+      {
+        "name": "initial_hints",
+        "type": "onchain_core::common::SkewNormalSqrtHintsRaw"
+      },
+      {
         "name": "overrides",
-        "type": "the_situation::onchain::common::MarketDeployOverridesRaw"
+        "type": "onchain_core::common::MarketDeployOverridesRaw"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "core::starknet::contract_address::ContractAddress"
+      }
+    ],
+    "state_mutability": "external"
+  },
+  {
+    "type": "struct",
+    "name": "onchain_bounded_loss_core::_v1_a_abi::BetaComponentRaw",
+    "members": [
+      {
+        "name": "alpha",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "beta",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "weight",
+        "type": "sq128::types::SQ128x128Raw"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "onchain_bounded_loss_core::_v1_a_abi::BoundedLossLawRaw",
+    "members": [
+      {
+        "name": "pi0",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "pi1",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "components",
+        "type": "core::array::Array::<onchain_bounded_loss_core::_v1_a_abi::BetaComponentRaw>"
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "deploy_bounded_loss_market_from_profile",
+    "inputs": [
+      {
+        "name": "profile_id",
+        "type": "core::integer::u32"
+      },
+      {
+        "name": "salt",
+        "type": "core::felt252"
+      },
+      {
+        "name": "metadata_hash",
+        "type": "core::felt252"
+      },
+      {
+        "name": "initial_law",
+        "type": "onchain_bounded_loss_core::_v1_a_abi::BoundedLossLawRaw"
+      },
+      {
+        "name": "overrides",
+        "type": "onchain_core::common::MarketDeployOverridesRaw"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "core::starknet::contract_address::ContractAddress"
+      }
+    ],
+    "state_mutability": "external"
+  },
+  {
+    "type": "struct",
+    "name": "onchain_policy_core::_v1_a_abi::CauseShapeRaw",
+    "members": [
+      {
+        "name": "cause_index",
+        "type": "core::integer::u8"
+      },
+      {
+        "name": "alpha",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "beta",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "mass",
+        "type": "sq128::types::SQ128x128Raw"
+      }
+    ]
+  },
+  {
+    "type": "struct",
+    "name": "onchain_policy_core::_v1_a_abi::PolicyLawRaw",
+    "members": [
+      {
+        "name": "pi0_no_event",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "causes",
+        "type": "core::array::Array::<onchain_policy_core::_v1_a_abi::CauseShapeRaw>"
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "deploy_policy_market_from_profile",
+    "inputs": [
+      {
+        "name": "profile_id",
+        "type": "core::integer::u32"
+      },
+      {
+        "name": "salt",
+        "type": "core::felt252"
+      },
+      {
+        "name": "metadata_hash",
+        "type": "core::felt252"
+      },
+      {
+        "name": "initial_law",
+        "type": "onchain_policy_core::_v1_a_abi::PolicyLawRaw"
+      },
+      {
+        "name": "overrides",
+        "type": "onchain_core::common::MarketDeployOverridesRaw"
+      }
+    ],
+    "outputs": [
+      {
+        "type": "core::starknet::contract_address::ContractAddress"
+      }
+    ],
+    "state_mutability": "external"
+  },
+  {
+    "type": "struct",
+    "name": "onchain_funding_core::abi::FundingLawRaw",
+    "members": [
+      {
+        "name": "pi0",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "gamma_k",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "gamma_theta",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "hurdle_u",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "gpd_sigma",
+        "type": "sq128::types::SQ128x128Raw"
+      },
+      {
+        "name": "gpd_xi",
+        "type": "sq128::types::SQ128x128Raw"
+      }
+    ]
+  },
+  {
+    "type": "function",
+    "name": "deploy_funding_market_from_profile",
+    "inputs": [
+      {
+        "name": "profile_id",
+        "type": "core::integer::u32"
+      },
+      {
+        "name": "salt",
+        "type": "core::felt252"
+      },
+      {
+        "name": "metadata_hash",
+        "type": "core::felt252"
+      },
+      {
+        "name": "initial_law",
+        "type": "onchain_funding_core::abi::FundingLawRaw"
+      },
+      {
+        "name": "overrides",
+        "type": "onchain_core::common::MarketDeployOverridesRaw"
       }
     ],
     "outputs": [
@@ -821,7 +1070,7 @@
       },
       {
         "name": "settlement_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [],
@@ -837,7 +1086,7 @@
       },
       {
         "name": "settlement_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [],
@@ -845,15 +1094,15 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::BivariatePointRaw",
+    "name": "onchain_core::common::BivariatePointRaw",
     "members": [
       {
         "name": "x1",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "x2",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ]
   },
@@ -867,7 +1116,7 @@
       },
       {
         "name": "settlement_point",
-        "type": "the_situation::onchain::common::BivariatePointRaw"
+        "type": "onchain_core::common::BivariatePointRaw"
       }
     ],
     "outputs": [],
@@ -907,106 +1156,6 @@
   },
   {
     "type": "function",
-    "name": "initialize_hurricane_market",
-    "inputs": [
-      {
-        "name": "market",
-        "type": "core::starknet::contract_address::ContractAddress"
-      },
-      {
-        "name": "initial_snapshot_id",
-        "type": "core::integer::u64"
-      }
-    ],
-    "outputs": [
-      {
-        "type": "core::bool"
-      }
-    ],
-    "state_mutability": "external"
-  },
-  {
-    "type": "struct",
-    "name": "the_situation::onchain::markets::hurricane::math::settlement_mapping_law::HurricaneSettlementFeedEntryRaw",
-    "members": [
-      {
-        "name": "snapshot_id",
-        "type": "core::integer::u64"
-      },
-      {
-        "name": "status",
-        "type": "core::integer::u8"
-      },
-      {
-        "name": "event_mask",
-        "type": "core::integer::u16"
-      },
-      {
-        "name": "path_factor_weight",
-        "type": "core::integer::u128"
-      },
-      {
-        "name": "category_mask",
-        "type": "core::integer::u16"
-      },
-      {
-        "name": "bivariate_primary_weight",
-        "type": "core::integer::u128"
-      },
-      {
-        "name": "bivariate_secondary_weight",
-        "type": "core::integer::u128"
-      }
-    ]
-  },
-  {
-    "type": "struct",
-    "name": "the_situation::onchain::markets::hurricane::math::settlement_mapping_law::HurricaneSettlementMappingPolicyRaw",
-    "members": [
-      {
-        "name": "start_snapshot_id",
-        "type": "core::integer::u64"
-      },
-      {
-        "name": "settlement_snapshot_id",
-        "type": "core::integer::u64"
-      },
-      {
-        "name": "allow_missing_snapshots",
-        "type": "core::bool"
-      },
-      {
-        "name": "max_feed_entries",
-        "type": "core::integer::u16"
-      }
-    ]
-  },
-  {
-    "type": "function",
-    "name": "settle_hurricane_market",
-    "inputs": [
-      {
-        "name": "market",
-        "type": "core::starknet::contract_address::ContractAddress"
-      },
-      {
-        "name": "settlement_snapshot_id",
-        "type": "core::integer::u64"
-      },
-      {
-        "name": "feed_entries",
-        "type": "core::array::Array::<the_situation::onchain::markets::hurricane::math::settlement_mapping_law::HurricaneSettlementFeedEntryRaw>"
-      },
-      {
-        "name": "policy",
-        "type": "the_situation::onchain::markets::hurricane::math::settlement_mapping_law::HurricaneSettlementMappingPolicyRaw"
-      }
-    ],
-    "outputs": [],
-    "state_mutability": "external"
-  },
-  {
-    "type": "function",
     "name": "pause_market",
     "inputs": [
       {
@@ -1039,11 +1188,11 @@
       },
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [],
@@ -1147,7 +1296,7 @@
   },
   {
     "type": "enum",
-    "name": "the_situation::onchain::common::FactoryOpStatus",
+    "name": "onchain_core::common::FactoryOpStatus",
     "variants": [
       {
         "name": "Success",
@@ -1173,7 +1322,7 @@
   },
   {
     "type": "struct",
-    "name": "the_situation::onchain::common::FactoryBatchOpResultRaw",
+    "name": "onchain_core::common::FactoryBatchOpResultRaw",
     "members": [
       {
         "name": "market",
@@ -1181,7 +1330,7 @@
       },
       {
         "name": "status",
-        "type": "the_situation::onchain::common::FactoryOpStatus"
+        "type": "onchain_core::common::FactoryOpStatus"
       }
     ]
   },
@@ -1195,12 +1344,12 @@
       },
       {
         "name": "settlement_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
       {
-        "type": "core::array::Array::<the_situation::onchain::common::FactoryBatchOpResultRaw>"
+        "type": "core::array::Array::<onchain_core::common::FactoryBatchOpResultRaw>"
       }
     ],
     "state_mutability": "external"
@@ -1215,7 +1364,7 @@
       },
       {
         "name": "settlement_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [],
@@ -1231,12 +1380,12 @@
       },
       {
         "name": "settlement_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [
       {
-        "type": "core::array::Array::<the_situation::onchain::common::FactoryBatchOpResultRaw>"
+        "type": "core::array::Array::<onchain_core::common::FactoryBatchOpResultRaw>"
       }
     ],
     "state_mutability": "external"
@@ -1251,7 +1400,7 @@
       },
       {
         "name": "settlement_value",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw"
+        "type": "sq128::types::SQ128x128Raw"
       }
     ],
     "outputs": [],
@@ -1267,12 +1416,12 @@
       },
       {
         "name": "settlement_point",
-        "type": "the_situation::onchain::common::BivariatePointRaw"
+        "type": "onchain_core::common::BivariatePointRaw"
       }
     ],
     "outputs": [
       {
-        "type": "core::array::Array::<the_situation::onchain::common::FactoryBatchOpResultRaw>"
+        "type": "core::array::Array::<onchain_core::common::FactoryBatchOpResultRaw>"
       }
     ],
     "state_mutability": "external"
@@ -1287,7 +1436,7 @@
       },
       {
         "name": "settlement_point",
-        "type": "the_situation::onchain::common::BivariatePointRaw"
+        "type": "onchain_core::common::BivariatePointRaw"
       }
     ],
     "outputs": [],
@@ -1308,7 +1457,7 @@
     ],
     "outputs": [
       {
-        "type": "core::array::Array::<the_situation::onchain::common::FactoryBatchOpResultRaw>"
+        "type": "core::array::Array::<onchain_core::common::FactoryBatchOpResultRaw>"
       }
     ],
     "state_mutability": "external"
@@ -1344,7 +1493,7 @@
     ],
     "outputs": [
       {
-        "type": "core::array::Array::<the_situation::onchain::common::FactoryBatchOpResultRaw>"
+        "type": "core::array::Array::<onchain_core::common::FactoryBatchOpResultRaw>"
       }
     ],
     "state_mutability": "external"
@@ -1366,60 +1515,8 @@
     "state_mutability": "external"
   },
   {
-    "type": "function",
-    "name": "settle_hurricane_markets_best_effort",
-    "inputs": [
-      {
-        "name": "markets",
-        "type": "core::array::Span::<core::starknet::contract_address::ContractAddress>"
-      },
-      {
-        "name": "settlement_snapshot_id",
-        "type": "core::integer::u64"
-      },
-      {
-        "name": "feed_entries",
-        "type": "core::array::Array::<the_situation::onchain::markets::hurricane::math::settlement_mapping_law::HurricaneSettlementFeedEntryRaw>"
-      },
-      {
-        "name": "policy",
-        "type": "the_situation::onchain::markets::hurricane::math::settlement_mapping_law::HurricaneSettlementMappingPolicyRaw"
-      }
-    ],
-    "outputs": [
-      {
-        "type": "core::array::Array::<the_situation::onchain::common::FactoryBatchOpResultRaw>"
-      }
-    ],
-    "state_mutability": "external"
-  },
-  {
-    "type": "function",
-    "name": "settle_hurricane_markets_strict",
-    "inputs": [
-      {
-        "name": "markets",
-        "type": "core::array::Span::<core::starknet::contract_address::ContractAddress>"
-      },
-      {
-        "name": "settlement_snapshot_id",
-        "type": "core::integer::u64"
-      },
-      {
-        "name": "feed_entries",
-        "type": "core::array::Array::<the_situation::onchain::markets::hurricane::math::settlement_mapping_law::HurricaneSettlementFeedEntryRaw>"
-      },
-      {
-        "name": "policy",
-        "type": "the_situation::onchain::markets::hurricane::math::settlement_mapping_law::HurricaneSettlementMappingPolicyRaw"
-      }
-    ],
-    "outputs": [],
-    "state_mutability": "external"
-  },
-  {
     "type": "struct",
-    "name": "the_situation::onchain::common::FactoryBatchFeeResultRaw",
+    "name": "onchain_core::common::FactoryBatchFeeResultRaw",
     "members": [
       {
         "name": "market",
@@ -1427,7 +1524,7 @@
       },
       {
         "name": "status",
-        "type": "the_situation::onchain::common::FactoryOpStatus"
+        "type": "onchain_core::common::FactoryOpStatus"
       },
       {
         "name": "amount",
@@ -1446,7 +1543,7 @@
     ],
     "outputs": [
       {
-        "type": "core::array::Array::<the_situation::onchain::common::FactoryBatchFeeResultRaw>"
+        "type": "core::array::Array::<onchain_core::common::FactoryBatchFeeResultRaw>"
       }
     ],
     "state_mutability": "external"
@@ -1517,7 +1614,7 @@
       },
       {
         "name": "profile",
-        "type": "the_situation::onchain::common::MarketDeployProfileRaw"
+        "type": "onchain_core::common::MarketDeployProfileRaw"
       }
     ],
     "outputs": [],
@@ -1597,6 +1694,26 @@
   },
   {
     "type": "function",
+    "name": "set_market_type_class_hashes",
+    "inputs": [
+      {
+        "name": "market_type",
+        "type": "core::integer::u8"
+      },
+      {
+        "name": "amm_class_hash",
+        "type": "core::starknet::class_hash::ClassHash"
+      },
+      {
+        "name": "runtime_class_hash",
+        "type": "core::starknet::class_hash::ClassHash"
+      }
+    ],
+    "outputs": [],
+    "state_mutability": "external"
+  },
+  {
+    "type": "function",
     "name": "set_market_type_enabled",
     "inputs": [
       {
@@ -1625,6 +1742,18 @@
   },
   {
     "type": "function",
+    "name": "upgrade",
+    "inputs": [
+      {
+        "name": "new_class_hash",
+        "type": "core::starknet::class_hash::ClassHash"
+      }
+    ],
+    "outputs": [],
+    "state_mutability": "external"
+  },
+  {
+    "type": "function",
     "name": "pause",
     "inputs": [],
     "outputs": [],
@@ -1639,7 +1768,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::MarketDeployed",
+    "name": "factory::contract::distribution_factory::MarketDeployed",
     "kind": "struct",
     "members": [
       {
@@ -1679,27 +1808,27 @@
       },
       {
         "name": "k",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
         "name": "backing",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
         "name": "tolerance",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
         "name": "min_trade_collateral",
-        "type": "the_situation::types::sq128::types::SQ128x128Raw",
+        "type": "sq128::types::SQ128x128Raw",
         "kind": "data"
       },
       {
         "name": "fee_config",
-        "type": "the_situation::onchain::common::FeeConfigRaw",
+        "type": "onchain_core::common::FeeConfigRaw",
         "kind": "data"
       },
       {
@@ -1716,7 +1845,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::MarketTypeConfigured",
+    "name": "factory::contract::distribution_factory::MarketTypeConfigured",
     "kind": "struct",
     "members": [
       {
@@ -1748,7 +1877,128 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::MarketTypeEnabledSet",
+    "name": "factory::contract::distribution_factory::MarketTypeRegistered",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "market_type",
+        "type": "core::integer::u8",
+        "kind": "key"
+      },
+      {
+        "name": "amm_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "runtime_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "plugin",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "enabled",
+        "type": "core::bool",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "factory::contract::distribution_factory::MarketTypeUpdated",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "market_type",
+        "type": "core::integer::u8",
+        "kind": "key"
+      },
+      {
+        "name": "previous_amm_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "amm_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "previous_runtime_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "runtime_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "previous_plugin",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "plugin",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      },
+      {
+        "name": "previous_enabled",
+        "type": "core::bool",
+        "kind": "data"
+      },
+      {
+        "name": "enabled",
+        "type": "core::bool",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "factory::contract::distribution_factory::MarketTypeClassHashesUpdated",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "market_type",
+        "type": "core::integer::u8",
+        "kind": "key"
+      },
+      {
+        "name": "previous_amm_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "amm_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "previous_runtime_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "runtime_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "by",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "factory::contract::distribution_factory::MarketTypeEnabledSet",
     "kind": "struct",
     "members": [
       {
@@ -1765,7 +2015,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::DeployProfileUpserted",
+    "name": "factory::contract::distribution_factory::DeployProfileUpserted",
     "kind": "struct",
     "members": [
       {
@@ -1787,7 +2037,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::DeployProfileEnabledSet",
+    "name": "factory::contract::distribution_factory::DeployProfileEnabledSet",
     "kind": "struct",
     "members": [
       {
@@ -1804,7 +2054,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::OperatorSet",
+    "name": "factory::contract::distribution_factory::OperatorSet",
     "kind": "struct",
     "members": [
       {
@@ -1821,7 +2071,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::TreasuryUpdated",
+    "name": "factory::contract::distribution_factory::TreasuryUpdated",
     "kind": "struct",
     "members": [
       {
@@ -1838,7 +2088,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::OwnerTransferred",
+    "name": "factory::contract::distribution_factory::OwnerTransferred",
     "kind": "struct",
     "members": [
       {
@@ -1855,7 +2105,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::FactoryPaused",
+    "name": "factory::contract::distribution_factory::FactoryPaused",
     "kind": "struct",
     "members": [
       {
@@ -1867,7 +2117,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::FactoryUnpaused",
+    "name": "factory::contract::distribution_factory::FactoryUnpaused",
     "kind": "struct",
     "members": [
       {
@@ -1879,7 +2129,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::ProtocolFeesCollected",
+    "name": "factory::contract::distribution_factory::ProtocolFeesCollected",
     "kind": "struct",
     "members": [
       {
@@ -1906,7 +2156,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::ExtensionApproved",
+    "name": "factory::contract::distribution_factory::ExtensionApproved",
     "kind": "struct",
     "members": [
       {
@@ -1918,7 +2168,7 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::ExtensionRevoked",
+    "name": "factory::contract::distribution_factory::ExtensionRevoked",
     "kind": "struct",
     "members": [
       {
@@ -1930,72 +2180,109 @@
   },
   {
     "type": "event",
-    "name": "the_situation::onchain::factory::contract::distribution_factory::Event",
+    "name": "factory::contract::distribution_factory::FactoryUpgraded",
+    "kind": "struct",
+    "members": [
+      {
+        "name": "new_class_hash",
+        "type": "core::starknet::class_hash::ClassHash",
+        "kind": "data"
+      },
+      {
+        "name": "by",
+        "type": "core::starknet::contract_address::ContractAddress",
+        "kind": "data"
+      }
+    ]
+  },
+  {
+    "type": "event",
+    "name": "factory::contract::distribution_factory::Event",
     "kind": "enum",
     "variants": [
       {
         "name": "MarketDeployed",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::MarketDeployed",
+        "type": "factory::contract::distribution_factory::MarketDeployed",
         "kind": "nested"
       },
       {
         "name": "MarketTypeConfigured",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::MarketTypeConfigured",
+        "type": "factory::contract::distribution_factory::MarketTypeConfigured",
+        "kind": "nested"
+      },
+      {
+        "name": "MarketTypeRegistered",
+        "type": "factory::contract::distribution_factory::MarketTypeRegistered",
+        "kind": "nested"
+      },
+      {
+        "name": "MarketTypeUpdated",
+        "type": "factory::contract::distribution_factory::MarketTypeUpdated",
+        "kind": "nested"
+      },
+      {
+        "name": "MarketTypeClassHashesUpdated",
+        "type": "factory::contract::distribution_factory::MarketTypeClassHashesUpdated",
         "kind": "nested"
       },
       {
         "name": "MarketTypeEnabledSet",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::MarketTypeEnabledSet",
+        "type": "factory::contract::distribution_factory::MarketTypeEnabledSet",
         "kind": "nested"
       },
       {
         "name": "DeployProfileUpserted",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::DeployProfileUpserted",
+        "type": "factory::contract::distribution_factory::DeployProfileUpserted",
         "kind": "nested"
       },
       {
         "name": "DeployProfileEnabledSet",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::DeployProfileEnabledSet",
+        "type": "factory::contract::distribution_factory::DeployProfileEnabledSet",
         "kind": "nested"
       },
       {
         "name": "OperatorSet",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::OperatorSet",
+        "type": "factory::contract::distribution_factory::OperatorSet",
         "kind": "nested"
       },
       {
         "name": "TreasuryUpdated",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::TreasuryUpdated",
+        "type": "factory::contract::distribution_factory::TreasuryUpdated",
         "kind": "nested"
       },
       {
         "name": "OwnerTransferred",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::OwnerTransferred",
+        "type": "factory::contract::distribution_factory::OwnerTransferred",
         "kind": "nested"
       },
       {
         "name": "FactoryPaused",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::FactoryPaused",
+        "type": "factory::contract::distribution_factory::FactoryPaused",
         "kind": "nested"
       },
       {
         "name": "FactoryUnpaused",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::FactoryUnpaused",
+        "type": "factory::contract::distribution_factory::FactoryUnpaused",
         "kind": "nested"
       },
       {
         "name": "ProtocolFeesCollected",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::ProtocolFeesCollected",
+        "type": "factory::contract::distribution_factory::ProtocolFeesCollected",
         "kind": "nested"
       },
       {
         "name": "ExtensionApproved",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::ExtensionApproved",
+        "type": "factory::contract::distribution_factory::ExtensionApproved",
         "kind": "nested"
       },
       {
         "name": "ExtensionRevoked",
-        "type": "the_situation::onchain::factory::contract::distribution_factory::ExtensionRevoked",
+        "type": "factory::contract::distribution_factory::ExtensionRevoked",
+        "kind": "nested"
+      },
+      {
+        "name": "FactoryUpgraded",
+        "type": "factory::contract::distribution_factory::FactoryUpgraded",
         "kind": "nested"
       }
     ]

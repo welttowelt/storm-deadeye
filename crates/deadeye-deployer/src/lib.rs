@@ -116,6 +116,10 @@ pub struct CollateralToken {
 pub struct Deployment {
     /// Network identifier (`"mainnet"`).
     pub network: String,
+    /// Contracts release version this manifest was deployed from (e.g.
+    /// `"0.13.0"`).
+    #[serde(rename = "contractsVersion")]
+    pub contracts_version: String,
     /// ISO-8601 timestamp.
     pub timestamp: String,
     /// Address that performed the deployment.
@@ -182,10 +186,17 @@ mod tests {
     fn mainnet_manifest_parses() {
         let d = Deployment::mainnet().expect("mainnet manifest parses");
         assert_eq!(d.network, "mainnet");
+        assert_eq!(d.contracts_version, "0.13.0");
         assert!(!d.factory_address.is_empty());
         assert!(!d.oracle_address.is_empty());
         let factory = d.factory_felt().expect("factory address is a valid felt");
         assert!(factory != Felt::ZERO);
+    }
+
+    /// The bundled release manifest must pin the live v0.13.0 contracts.
+    #[test]
+    fn release_version_is_pinned() {
+        assert_eq!(deadeye_artifacts::RELEASE_VERSION, "0.13.0");
     }
 
     #[test]
@@ -197,5 +208,43 @@ mod tests {
         assert!(!d.class_hashes.bivariate_amm.is_empty());
         assert!(!d.class_hashes.distribution_factory.is_empty());
         assert!(!d.class_hashes.oracle.is_empty());
+    }
+
+    /// Drift guard: the per-family AMM class hashes must match the live
+    /// v0.13.0 mainnet deployment. If the upstream deployer republishes the
+    /// manifest with new class hashes, this test fails until the pins below
+    /// are bumped.
+    #[test]
+    fn amm_class_hashes_pinned_to_v0_13() {
+        let d = Deployment::mainnet().expect("mainnet manifest parses");
+        for (label, manifest_raw, pinned) in [
+            (
+                "normal_amm",
+                &d.class_hashes.normal_amm,
+                "0x784ef10f901193cca1a735a122f868c987308b04cdb20c996bb4aaa804dd9d7",
+            ),
+            (
+                "lognormal_amm",
+                &d.class_hashes.lognormal_amm,
+                "0x30eb01f2444b8eca1faea25607dc0679e691a7d8d363cf427b6c7343d6d5688",
+            ),
+            (
+                "bivariate_amm",
+                &d.class_hashes.bivariate_amm,
+                "0x73bd6488183a278e46aabb76dfe555df1cc9b493b088a11a0a11dcc5f7e4257",
+            ),
+            (
+                "multinoulli_amm",
+                &d.class_hashes.multinoulli_amm,
+                "0x32eeb4c9f11bbed4a5ecc24849424754fb2e59e11cf172bc7d794723ea4aae4",
+            ),
+        ] {
+            let manifest_felt = Felt::from_hex(manifest_raw).expect("manifest hash parses");
+            let pinned_felt = Felt::from_hex(pinned).expect("pinned hash parses");
+            assert_eq!(
+                manifest_felt, pinned_felt,
+                "drift in {label}: manifest={manifest_raw} pinned={pinned}"
+            );
+        }
     }
 }
