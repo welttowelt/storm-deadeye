@@ -126,7 +126,7 @@ deadeye trade journal --tail 20       # recent trade log
 Re-run the installer to update the binary and refresh this skill:
 
 ```bash
-curl -fsSL https://raw.githubusercontent.com/teddyjfpender/deadeye-rs/main/install.sh | sh
+curl -fsSL https://project-deadeye.vercel.app/install.sh | sh
 ```
 
 Restart the agent app after installing or updating skills.
