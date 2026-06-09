@@ -5,7 +5,7 @@
 //! and `--help` still documents the command.
 
 use anyhow::{Context as _, Result};
-use deadeye_core::Sq128;
+use deadeye_core::{Distribution as _, Sq128};
 use deadeye_sdk::bulk::Family;
 use deadeye_starknet::{
     BivariateMarketReader, LognormalMarketReader, MultinoulliMarketReader, NormalMarketReader,
@@ -15,7 +15,10 @@ use serde_json::json;
 use crate::{
     cli::{FamilyArg, PositionCmd, PositionSellArgs},
     commands::{
-        render_helpers::{submission_from_receipt, submission_from_trade_error},
+        render_helpers::{
+            LegRow, LegValueRow, PositionLegsView, PositionValueView, submission_from_receipt,
+            submission_from_trade_error,
+        },
         runtime_resolver::{
             build_owned_account, build_provider, family_label, parse_felt, resolve_runtime,
         },
@@ -37,8 +40,27 @@ pub(crate) async fn run(action: PositionCmd, ctx: &AppContext, confirm: bool) ->
             trader,
             family,
         } => show(ctx, &market, trader, family).await,
+        PositionCmd::Value {
+            market,
+            trader,
+            at,
+            belief,
+            belief_sigma,
+            family,
+        } => value(ctx, &market, trader, at, belief, belief_sigma, family).await,
         PositionCmd::Sell(args) => sell(ctx, args, confirm).await,
     }
+}
+
+/// Resolve the trader address from `--trader` or the active profile.
+fn resolve_trader(ctx: &AppContext, trader_opt: Option<String>) -> Result<deadeye_starknet::Felt> {
+    let trader_str = match trader_opt {
+        Some(s) => s,
+        None => ctx.config.address.clone().context(
+            "no trader address — pass --trader, set DEADEYE_ADDRESS, or configure a profile",
+        )?,
+    };
+    parse_address(&trader_str)
 }
 
 async fn sell(ctx: &AppContext, args: PositionSellArgs, confirm: bool) -> Result<()> {
@@ -188,31 +210,39 @@ async fn show(
         super::markets::detect_family(&client, market).await?
     };
 
+    // Normal-family markets use the trade-lot (multi-leg) model: enumerate
+    // the trader's legs + summary rather than the removed compact position.
+    if matches!(family, Family::Normal) {
+        let pos = client
+            .normal_market(market)
+            .legs(trader)
+            .await
+            .map_err(|e| anyhow::anyhow!("reading normal position legs: {e}"))?;
+        let view = PositionLegsView {
+            market: market_str.to_owned(),
+            trader: format!("{trader:#x}"),
+            family: "normal",
+            exists: pos.exists,
+            claimed: pos.claimed,
+            tracks_settlement_claim: pos.tracks_settlement_claim,
+            total_collateral: pos.total_collateral,
+            leg_count: pos.legs.len(),
+            active_legs: pos.active_legs(),
+            legs: pos
+                .legs
+                .iter()
+                .map(|l| LegRow {
+                    lot_id: l.lot_id,
+                    settled: l.settled,
+                    cancelled: l.cancelled,
+                })
+                .collect(),
+        };
+        return ctx.renderer.print(&view);
+    }
+
     let view = match family {
-        Family::Normal => {
-            let reader = NormalMarketReader::new(client.provider(), market);
-            let pos = reader
-                .position(trader)
-                .await
-                .map_err(|e| anyhow::anyhow!("reading normal position: {e}"))?;
-            PositionShowView {
-                market_address: market_str.to_owned(),
-                trader: format!("{trader:#x}"),
-                family: "normal".to_owned(),
-                total_collateral: Sq128::from_raw(pos.total_collateral).to_f64(),
-                flags: pos.flags,
-                extra: json!({
-                    "original_mean": Sq128::from_raw(pos.original_mean).to_f64(),
-                    "original_sigma": Sq128::from_raw(pos.original_sigma).to_f64(),
-                    "original_variance": Sq128::from_raw(pos.original_variance).to_f64(),
-                    "original_lambda": Sq128::from_raw(pos.original_lambda).to_f64(),
-                    "effective_mean": Sq128::from_raw(pos.effective_mean).to_f64(),
-                    "effective_sigma": Sq128::from_raw(pos.effective_sigma).to_f64(),
-                    "effective_variance": Sq128::from_raw(pos.effective_variance).to_f64(),
-                    "effective_lambda": Sq128::from_raw(pos.effective_lambda).to_f64(),
-                }),
-            }
-        },
+        Family::Normal => unreachable!("normal handled above"),
         Family::Lognormal => {
             let reader = LognormalMarketReader::new(client.provider(), market);
             let pos = reader
@@ -264,5 +294,111 @@ async fn show(
             }
         },
     };
+    ctx.renderer.print(&view)
+}
+
+/// `position value` — value a trader's multi-leg position at a settlement
+/// outcome and/or compute its expected P&L under a forecast.
+async fn value(
+    ctx: &AppContext,
+    market_str: &str,
+    trader_opt: Option<String>,
+    at: Option<f64>,
+    belief: Option<f64>,
+    belief_sigma: Option<f64>,
+    family_override: Option<FamilyArg>,
+) -> Result<()> {
+    let market = parse_address(market_str)?;
+    let trader = resolve_trader(ctx, trader_opt)?;
+    let client = ctx.deadeye_client()?;
+    let family = if let Some(f) = family_override {
+        f.as_sdk()
+    } else {
+        super::markets::detect_family(&client, market).await?
+    };
+    if !matches!(family, Family::Normal) {
+        anyhow::bail!(
+            "`position value` currently supports normal-family markets; {family:?} not yet wired"
+        );
+    }
+    let mkt = client.normal_market(market);
+
+    let mut view = PositionValueView {
+        market: market_str.to_owned(),
+        trader: format!("{trader:#x}"),
+        family: "normal",
+        exists: false,
+        total_collateral: 0.0,
+        settlement: None,
+        total_position_value: None,
+        gross_return: None,
+        legs: Vec::new(),
+        belief_mean: None,
+        belief_sigma: None,
+        expected_pnl: None,
+    };
+
+    // With neither --at nor --belief, value at the current market mean.
+    let settlement = match (at, belief) {
+        (Some(x), _) => Some(x),
+        (None, None) => Some(
+            mkt.distribution()
+                .await
+                .map_err(|e| anyhow::anyhow!("reading market distribution: {e}"))?
+                .mean()
+                .to_f64(),
+        ),
+        (None, Some(_)) => None,
+    };
+
+    if let Some(x) = settlement {
+        let v = mkt
+            .position_value_at(trader, x)
+            .await
+            .map_err(|e| anyhow::anyhow!("valuing position at x*={x}: {e}"))?;
+        view.exists = v.exists;
+        view.total_collateral = v.total_collateral;
+        view.settlement = Some(v.settlement);
+        view.total_position_value = Some(v.total_position_value);
+        view.gross_return = Some(v.gross_return);
+        view.legs = v
+            .legs
+            .iter()
+            .map(|l| LegValueRow {
+                lot_id: l.lot_id,
+                settled: l.settled,
+                cancelled: l.cancelled,
+                value_at: l.value_at,
+            })
+            .collect();
+    }
+
+    if let Some(bm) = belief {
+        let bs = match belief_sigma {
+            Some(s) => s,
+            None => mkt
+                .distribution()
+                .await
+                .map_err(|e| anyhow::anyhow!("reading market distribution: {e}"))?
+                .sigma()
+                .to_f64(),
+        };
+        let ev = mkt
+            .expected_value_under_belief(trader, bm, bs)
+            .await
+            .map_err(|e| anyhow::anyhow!("computing expected value: {e}"))?;
+        view.belief_mean = Some(bm);
+        view.belief_sigma = Some(bs);
+        view.expected_pnl = Some(ev);
+        if view.settlement.is_none() {
+            let legs = mkt
+                .legs(trader)
+                .await
+                .map_err(|e| anyhow::anyhow!("reading position legs: {e}"))?;
+            view.exists = legs.exists;
+            view.total_collateral = legs.total_collateral;
+        }
+    }
+
     ctx.renderer.print(&view)
 }

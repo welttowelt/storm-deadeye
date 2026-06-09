@@ -290,7 +290,8 @@ pub(crate) struct QuoteResult {
     pub(crate) x_star: Option<f64>,
     pub(crate) required_collateral: Option<f64>,
     pub(crate) padded_collateral: Option<f64>,
-    /// Backing-derived σ-floor: candidate σ below this is rejected SIGMA_TOO_LOW.
+    /// Backing-derived σ-floor: candidate σ below this is rejected
+    /// SIGMA_TOO_LOW.
     pub(crate) sigma_floor: Option<f64>,
     /// Current on-chain market curve.
     pub(crate) market_mean: Option<f64>,
@@ -606,5 +607,209 @@ pub(crate) fn submission_from_receipt(
         accepted: true,
         rejection: None,
         note: None,
+    }
+}
+
+// ─── Multi-leg position views ────────────────────────────────────────────
+
+/// One leg row for `position show`.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LegRow {
+    pub(crate) lot_id: u64,
+    pub(crate) settled: bool,
+    pub(crate) cancelled: bool,
+}
+
+/// `position show` for the trade-lot model: the trader's legs + summary.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct PositionLegsView {
+    pub(crate) market: String,
+    pub(crate) trader: String,
+    pub(crate) family: &'static str,
+    pub(crate) exists: bool,
+    pub(crate) claimed: bool,
+    pub(crate) tracks_settlement_claim: bool,
+    pub(crate) total_collateral: f64,
+    pub(crate) leg_count: usize,
+    pub(crate) active_legs: usize,
+    pub(crate) legs: Vec<LegRow>,
+}
+
+impl Render for PositionLegsView {
+    fn render_pretty(&self, r: &Renderer) {
+        r.header(&format!("Position — {} market", self.family));
+        r.kv("market", &self.market);
+        r.kv("trader", &self.trader);
+        if !self.exists {
+            r.kv("position", "none (no legs)");
+            return;
+        }
+        r.kv(
+            "total_collateral",
+            &format!("{:.6} XP", self.total_collateral),
+        );
+        r.kv(
+            "legs",
+            &format!(
+                "{} ({} active / claimable)",
+                self.leg_count, self.active_legs
+            ),
+        );
+        r.kv("claimed", &self.claimed.to_string());
+        r.kv(
+            "pending_settlement_claim",
+            &self.tracks_settlement_claim.to_string(),
+        );
+        for leg in &self.legs {
+            let state = if leg.settled {
+                "settled"
+            } else if leg.cancelled {
+                "cancelled"
+            } else {
+                "active"
+            };
+            println!("  {} lot #{:<4} {}", r.dim("·"), leg.lot_id, r.dim(state));
+        }
+    }
+
+    fn render_plain(&self, w: &mut dyn Write) -> io::Result<()> {
+        writeln!(w, "market: {}", self.market)?;
+        writeln!(w, "trader: {}", self.trader)?;
+        writeln!(w, "family: {}", self.family)?;
+        writeln!(w, "exists: {}", self.exists)?;
+        writeln!(w, "total_collateral: {}", self.total_collateral)?;
+        writeln!(w, "leg_count: {}", self.leg_count)?;
+        writeln!(w, "active_legs: {}", self.active_legs)?;
+        writeln!(w, "claimed: {}", self.claimed)?;
+        for leg in &self.legs {
+            writeln!(
+                w,
+                "leg: lot_id={} settled={} cancelled={}",
+                leg.lot_id, leg.settled, leg.cancelled
+            )?;
+        }
+        Ok(())
+    }
+}
+
+/// One valued leg row for `position value`.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct LegValueRow {
+    pub(crate) lot_id: u64,
+    pub(crate) settled: bool,
+    pub(crate) cancelled: bool,
+    pub(crate) value_at: f64,
+}
+
+/// `position value`: settlement valuation and/or expected P&L under a belief.
+#[derive(Debug, Clone, Serialize)]
+pub(crate) struct PositionValueView {
+    pub(crate) market: String,
+    pub(crate) trader: String,
+    pub(crate) family: &'static str,
+    pub(crate) exists: bool,
+    pub(crate) total_collateral: f64,
+    /// Settlement outcome valued at (when `--at`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) settlement: Option<f64>,
+    /// Σ leg value at `settlement` — the P&L if it settles there.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) total_position_value: Option<f64>,
+    /// total_collateral + total_position_value.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) gross_return: Option<f64>,
+    /// Per-leg valuations (when `--at`).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub(crate) legs: Vec<LegValueRow>,
+    /// Forecast (when `--belief`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) belief_mean: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) belief_sigma: Option<f64>,
+    /// Expected P&L under the belief (when `--belief`).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) expected_pnl: Option<f64>,
+}
+
+impl Render for PositionValueView {
+    fn render_pretty(&self, r: &Renderer) {
+        r.header(&format!("Position value — {} market", self.family));
+        r.kv("market", &self.market);
+        r.kv("trader", &self.trader);
+        if !self.exists {
+            r.kv("position", "none (no legs to value)");
+            return;
+        }
+        r.kv(
+            "total_collateral",
+            &format!("{:.6} XP", self.total_collateral),
+        );
+        if let (Some(x), Some(pv), Some(gr)) = (
+            self.settlement,
+            self.total_position_value,
+            self.gross_return,
+        ) {
+            r.kv("if_settles_at", &format!("x* = {x:.6}"));
+            r.kv("position_value (P&L)", &format!("{pv:+.6} XP"));
+            r.kv("gross_return", &format!("{gr:.6} XP (collateral + P&L)"));
+            for leg in &self.legs {
+                let tag = if leg.settled {
+                    " (settled)"
+                } else if leg.cancelled {
+                    " (cancelled)"
+                } else {
+                    ""
+                };
+                println!(
+                    "  {} lot #{:<4} value {:+.6} XP{}",
+                    r.dim("·"),
+                    leg.lot_id,
+                    leg.value_at,
+                    r.dim(tag)
+                );
+            }
+        }
+        if let (Some(bm), Some(bs), Some(ev)) =
+            (self.belief_mean, self.belief_sigma, self.expected_pnl)
+        {
+            println!();
+            r.kv("belief", &format!("μ={bm:.6}, σ={bs:.6}"));
+            r.kv(
+                "expected_pnl",
+                &format!("{ev:+.6} XP (E[P&L] under belief)"),
+            );
+        }
+    }
+
+    fn render_plain(&self, w: &mut dyn Write) -> io::Result<()> {
+        writeln!(w, "market: {}", self.market)?;
+        writeln!(w, "trader: {}", self.trader)?;
+        writeln!(w, "family: {}", self.family)?;
+        writeln!(w, "exists: {}", self.exists)?;
+        writeln!(w, "total_collateral: {}", self.total_collateral)?;
+        if let (Some(x), Some(pv), Some(gr)) = (
+            self.settlement,
+            self.total_position_value,
+            self.gross_return,
+        ) {
+            writeln!(w, "settlement: {x}")?;
+            writeln!(w, "total_position_value: {pv}")?;
+            writeln!(w, "gross_return: {gr}")?;
+            for leg in &self.legs {
+                writeln!(
+                    w,
+                    "leg: lot_id={} value_at={} settled={} cancelled={}",
+                    leg.lot_id, leg.value_at, leg.settled, leg.cancelled
+                )?;
+            }
+        }
+        if let (Some(bm), Some(bs), Some(ev)) =
+            (self.belief_mean, self.belief_sigma, self.expected_pnl)
+        {
+            writeln!(w, "belief_mean: {bm}")?;
+            writeln!(w, "belief_sigma: {bs}")?;
+            writeln!(w, "expected_pnl: {ev}")?;
+        }
+        Ok(())
     }
 }

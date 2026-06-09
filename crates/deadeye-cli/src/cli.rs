@@ -761,6 +761,37 @@ pub(crate) enum PositionCmd {
         #[arg(long, value_name = "FAMILY")]
         family: Option<FamilyArg>,
     },
+    /// Value a trader's multi-leg position: per-leg + total payout at a
+    /// settlement outcome, the P&L if it settles there, and (with `--belief`)
+    /// the expected P&L under a forecast. Normal-family markets.
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// deadeye position value 0x53e5…0fcf4 --at 4.2     # gross return + P&L if x*=4.2
+    /// deadeye position value 0x53e5…0fcf4 --belief 4.3 --belief-sigma 0.2   # expected P&L
+    /// ```
+    Value {
+        /// Market contract address.
+        #[arg(value_name = "ADDRESS")]
+        market: String,
+        /// Trader address; defaults to the active profile's address.
+        #[arg(long, value_name = "0x...")]
+        trader: Option<String>,
+        /// Settlement outcome x* to value the position at (per-leg + total).
+        #[arg(long, value_name = "X")]
+        at: Option<f64>,
+        /// Forecast mean μ — compute expected P&L under N(μ, σ) instead of a
+        /// single x* (integrates the on-chain leg value over the belief).
+        #[arg(long, value_name = "MU")]
+        belief: Option<f64>,
+        /// Forecast σ for `--belief` (defaults to the current market σ).
+        #[arg(long, value_name = "SIGMA")]
+        belief_sigma: Option<f64>,
+        /// Force a specific family (only `normal` is supported today).
+        #[arg(long, value_name = "FAMILY")]
+        family: Option<FamilyArg>,
+    },
     /// Close a position via `sell_position` (Driver B write path).
     Sell(PositionSellArgs),
 }

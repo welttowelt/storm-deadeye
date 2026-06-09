@@ -97,6 +97,7 @@ pub mod bulk;
 pub mod client;
 pub mod error;
 pub mod journal;
+pub mod legs;
 pub mod portfolio;
 pub mod quote;
 pub mod stream;
@@ -128,6 +129,7 @@ pub use journal::{
     EntryKind, JournalEntry, JournalError, JournalSink, JournalledBivariateWriter,
     JournalledLognormalWriter, JournalledMultinoulliWriter, JournalledNormalWriter, TradeJournal,
 };
+pub use legs::{LegInfo, LegValuation, PositionLegs, PositionValuation};
 pub use portfolio::{HedgeRecommendation, LpEntry, MarketRef, Portfolio, PositionEntry};
 pub use stream::{
     BlockNumberSource, CandidateQuote, MarketStateStream, MarketStateUpdate, QuoteSnapshot,

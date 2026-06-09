@@ -47,6 +47,41 @@ pub mod amm {
         static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_position_compact"));
         *V
     }
+    /// Selector for the `get_trader_trade_lot_count` entry-point.
+    pub fn get_trader_trade_lot_count() -> Felt {
+        static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_trader_trade_lot_count"));
+        *V
+    }
+    /// Selector for the `get_trader_trade_lot_id` entry-point.
+    pub fn get_trader_trade_lot_id() -> Felt {
+        static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_trader_trade_lot_id"));
+        *V
+    }
+    /// Selector for the `get_trade_lot_settled` entry-point.
+    pub fn get_trade_lot_settled() -> Felt {
+        static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_trade_lot_settled"));
+        *V
+    }
+    /// Selector for the `get_trade_lot_cancelled` entry-point.
+    pub fn get_trade_lot_cancelled() -> Felt {
+        static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_trade_lot_cancelled"));
+        *V
+    }
+    /// Selector for the `get_trade_lot_value_at` entry-point.
+    pub fn get_trade_lot_value_at() -> Felt {
+        static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_trade_lot_value_at"));
+        *V
+    }
+    /// Selector for the `settle_trade_lots` entry-point (batch lot settlement).
+    pub fn settle_trade_lots() -> Felt {
+        static V: LazyLock<Felt> = LazyLock::new(|| super::compute("settle_trade_lots"));
+        *V
+    }
+    /// Selector for the `batch_claim_for` entry-point.
+    pub fn batch_claim_for() -> Felt {
+        static V: LazyLock<Felt> = LazyLock::new(|| super::compute("batch_claim_for"));
+        *V
+    }
     /// Selector for the `get_lp_info` entry-point.
     pub fn get_lp_info() -> Felt {
         static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_lp_info"));
@@ -235,13 +270,15 @@ pub mod factory {
         static V: LazyLock<Felt> = LazyLock::new(|| super::compute("settle_lognormal_market"));
         *V
     }
-    /// Selector for the single-market `settle_bivariate_normal_market(market, point)`.
+    /// Selector for the single-market `settle_bivariate_normal_market(market,
+    /// point)`.
     pub fn settle_bivariate_normal_market() -> Felt {
         static V: LazyLock<Felt> =
             LazyLock::new(|| super::compute("settle_bivariate_normal_market"));
         *V
     }
-    /// Selector for the single-market `settle_multinoulli_market(market, outcome)`.
+    /// Selector for the single-market `settle_multinoulli_market(market,
+    /// outcome)`.
     pub fn settle_multinoulli_market() -> Felt {
         static V: LazyLock<Felt> = LazyLock::new(|| super::compute("settle_multinoulli_market"));
         *V

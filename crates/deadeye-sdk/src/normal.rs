@@ -66,9 +66,14 @@ use deadeye_starknet::{
     Account, ExecutionReceipt, Felt, NormalMarketReader, NormalMarketWriter, NormalTradeQuote,
     Provider, TradeRejectionReason, types::normal::TradeInput,
 };
+use futures::future::join_all;
 use tracing::instrument;
 
-use crate::{error::SdkResult, quote::PreparedQuote};
+use crate::{
+    error::{SdkError, SdkResult},
+    legs::{LegInfo, LegValuation, PositionLegs, PositionValuation, belief_grid},
+    quote::PreparedQuote,
+};
 
 /// Cairo `SQRT_PI_RAW` from
 /// `the-situation/contracts/src/market/normal/constants.cairo`.
@@ -831,6 +836,132 @@ where
         let initial_backing = Sq128::from_raw(params.backing);
         let effective_k = live_effective_k(base_k, pool_backing, initial_backing).to_f64();
         Ok(normal_sigma_floor(effective_k, pool_backing.to_f64()))
+    }
+
+    // ── Multi-leg (trade-lot) position tracking + valuation ─────────────
+
+    /// Enumerate a trader's legs (lot ids + lifecycle flags) and read the
+    /// position summary. Lifecycle flags are fetched concurrently.
+    #[instrument(skip(self), fields(market = %self.reader.address(), %trader))]
+    pub async fn legs(&self, trader: Felt) -> SdkResult<PositionLegs> {
+        let summary = self.reader.position_summary(trader).await?;
+        let ids = self.reader.trade_lot_ids(trader).await?;
+        let legs = join_all(ids.iter().map(|&lot_id| async move {
+            let settled = self.reader.trade_lot_settled(lot_id).await?;
+            let cancelled = self.reader.trade_lot_cancelled(lot_id).await?;
+            Ok::<LegInfo, SdkError>(LegInfo {
+                lot_id,
+                settled,
+                cancelled,
+            })
+        }))
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+        Ok(PositionLegs {
+            trader: format!("{trader:#x}"),
+            legs,
+            total_collateral: Sq128::from_raw(summary.total_collateral_locked).to_f64(),
+            exists: summary.exists,
+            claimed: summary.claimed,
+            tracks_settlement_claim: summary.tracks_settlement_claim,
+        })
+    }
+
+    /// Value a trader's whole position at a settlement outcome `x*`,
+    /// authoritatively (each active leg via the on-chain `value_at` view).
+    /// `total_position_value` is the position's P&L if the market settles at
+    /// `x*`; `gross_return` adds back the locked collateral.
+    #[instrument(skip(self), fields(market = %self.reader.address(), %trader, settlement))]
+    pub async fn position_value_at(
+        &self,
+        trader: Felt,
+        settlement: f64,
+    ) -> SdkResult<PositionValuation> {
+        let summary = self.reader.position_summary(trader).await?;
+        let ids = self.reader.trade_lot_ids(trader).await?;
+        let x_raw = Sq128::from_f64(settlement)?.to_raw();
+        let legs = join_all(ids.iter().map(|&lot_id| async move {
+            let settled = self.reader.trade_lot_settled(lot_id).await?;
+            let cancelled = self.reader.trade_lot_cancelled(lot_id).await?;
+            // Settled/cancelled legs have no future payout.
+            let value_at = if settled || cancelled {
+                0.0
+            } else {
+                Sq128::from_raw(self.reader.trade_lot_value_at(lot_id, x_raw).await?).to_f64()
+            };
+            Ok::<LegValuation, SdkError>(LegValuation {
+                lot_id,
+                settled,
+                cancelled,
+                value_at,
+            })
+        }))
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+        let total_position_value: f64 = legs.iter().map(|l| l.value_at).sum();
+        let total_collateral = Sq128::from_raw(summary.total_collateral_locked).to_f64();
+        Ok(PositionValuation {
+            trader: format!("{trader:#x}"),
+            settlement,
+            legs,
+            total_collateral,
+            total_position_value,
+            gross_return: total_collateral + total_position_value,
+            exists: summary.exists,
+            claimed: summary.claimed,
+        })
+    }
+
+    /// Expected position value (P&L) under a Gaussian belief `N(μ, σ)`,
+    /// integrating the on-chain leg value over the belief via a normal-pdf-
+    /// weighted grid. Returns the expected P&L in XP. Costs `nodes × active
+    /// legs` `value_at` reads (fanned out concurrently) — call when an agent
+    /// wants its forward EV, not on every tick.
+    #[instrument(skip(self), fields(market = %self.reader.address(), %trader, belief_mean, belief_sigma))]
+    pub async fn expected_value_under_belief(
+        &self,
+        trader: Felt,
+        belief_mean: f64,
+        belief_sigma: f64,
+    ) -> SdkResult<f64> {
+        let ids = self.reader.trade_lot_ids(trader).await?;
+        // Keep only claimable legs.
+        let flags = join_all(ids.iter().map(|&lot_id| async move {
+            let settled = self.reader.trade_lot_settled(lot_id).await?;
+            let cancelled = self.reader.trade_lot_cancelled(lot_id).await?;
+            Ok::<(u64, bool), SdkError>((lot_id, !settled && !cancelled))
+        }))
+        .await
+        .into_iter()
+        .collect::<Result<Vec<_>, _>>()?;
+        let active: Vec<u64> = flags
+            .into_iter()
+            .filter_map(|(id, ok)| ok.then_some(id))
+            .collect();
+        if active.is_empty() {
+            return Ok(0.0);
+        }
+        // E[value] = Σ_i w_i · Σ_legs value_at(lot, x_i), weights summing to 1.
+        let grid = belief_grid(belief_mean, belief_sigma, 4.0, 21);
+        let mut futs = Vec::with_capacity(grid.len() * active.len());
+        for (x, w) in &grid {
+            let x_raw = Sq128::from_f64(*x)?.to_raw();
+            for &lot_id in &active {
+                let weight = *w;
+                futs.push(async move {
+                    let v = Sq128::from_raw(self.reader.trade_lot_value_at(lot_id, x_raw).await?)
+                        .to_f64();
+                    Ok::<f64, SdkError>(weight * v)
+                });
+            }
+        }
+        let parts = join_all(futs)
+            .await
+            .into_iter()
+            .collect::<Result<Vec<_>, _>>()?;
+        Ok(parts.into_iter().sum())
     }
 
     /// Bind an [`Account`] to this market, returning a write-capable handle.

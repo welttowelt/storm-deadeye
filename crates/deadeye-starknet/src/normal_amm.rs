@@ -110,6 +110,12 @@ where
     }
 
     /// Reads a trader's compact position record.
+    ///
+    /// NOTE: the live contract (trade-lot model) no longer exposes
+    /// `get_position_compact`; a trader now holds one or more *trade lots*.
+    /// Use [`Self::trade_lot_ids`] / [`Self::trade_lot_value_at`] /
+    /// [`Self::position_summary`] for the current model. This method remains
+    /// for older deployments that still telescope to a single compact position.
     #[instrument(skip(self), fields(market = %self.address, %trader))]
     pub async fn position(&self, trader: Felt) -> ContractResult<PositionCompactRaw> {
         self.call_view::<PositionCompactRaw>(
@@ -120,15 +126,98 @@ where
         .await
     }
 
+    // ── Trade-lot (multi-leg) read surface ──────────────────────────────
+    //
+    // Each market-moving trade stores an explicit *trade lot* (leg). A
+    // trader accumulates one lot per admitted delta; legs are valued and
+    // settled independently. These low-level views mirror the on-chain lot
+    // entrypoints; the SDK aggregates them into a `MultiLegPosition`.
+
+    /// Number of trade lots (legs) this trader holds in the market.
+    #[instrument(skip(self), fields(market = %self.address, %trader))]
+    pub async fn trade_lot_count(&self, trader: Felt) -> ContractResult<u64> {
+        self.call_view::<u64>(
+            "get_trader_trade_lot_count",
+            amm::get_trader_trade_lot_count(),
+            &[trader],
+        )
+        .await
+    }
+
+    /// The `lot_id` at `index` in this trader's lot list (`index < count`).
+    #[instrument(skip(self), fields(market = %self.address, %trader, index))]
+    pub async fn trade_lot_id(&self, trader: Felt, index: u64) -> ContractResult<u64> {
+        self.call_view::<u64>(
+            "get_trader_trade_lot_id",
+            amm::get_trader_trade_lot_id(),
+            &[trader, Felt::from(index)],
+        )
+        .await
+    }
+
+    /// Whether a lot has already been settled (paid out).
+    #[instrument(skip(self), fields(market = %self.address, lot_id))]
+    pub async fn trade_lot_settled(&self, lot_id: u64) -> ContractResult<bool> {
+        self.call_view::<bool>("get_trade_lot_settled", amm::get_trade_lot_settled(), &[
+            Felt::from(lot_id),
+        ])
+        .await
+    }
+
+    /// Whether a lot was cancelled (terminalised without payout — collateral
+    /// forfeit to the LP because it could not be valued at settlement).
+    #[instrument(skip(self), fields(market = %self.address, lot_id))]
+    pub async fn trade_lot_cancelled(&self, lot_id: u64) -> ContractResult<bool> {
+        self.call_view::<bool>(
+            "get_trade_lot_cancelled",
+            amm::get_trade_lot_cancelled(),
+            &[Felt::from(lot_id)],
+        )
+        .await
+    }
+
+    /// The lot's **signed** scoring-rule value at a settlement outcome `x*`
+    /// (`to_λ·pdf(x*; to) − from_λ·pdf(x*; from)`), read authoritatively from
+    /// the chain. This is the per-leg position value; gross payout for the leg
+    /// is `collateral_locked + value_at(x*)`.
+    #[instrument(skip(self, settlement), fields(market = %self.address, lot_id))]
+    pub async fn trade_lot_value_at(
+        &self,
+        lot_id: u64,
+        settlement: Sq128Raw,
+    ) -> ContractResult<Sq128Raw> {
+        let mut calldata = vec![Felt::from(lot_id)];
+        settlement.encode(&mut calldata);
+        self.call_view::<Sq128Raw>(
+            "get_trade_lot_value_at",
+            amm::get_trade_lot_value_at(),
+            &calldata,
+        )
+        .await
+    }
+
+    /// Enumerate **all** of a trader's `lot_id`s (count → id-by-index). One
+    /// RPC for the count plus one per lot; the SDK wraps this with concurrent
+    /// fan-out for bulk valuation.
+    #[instrument(skip(self), fields(market = %self.address, %trader))]
+    pub async fn trade_lot_ids(&self, trader: Felt) -> ContractResult<Vec<u64>> {
+        let count = self.trade_lot_count(trader).await?;
+        let mut ids = Vec::with_capacity(usize::try_from(count).unwrap_or(0));
+        for index in 0..count {
+            ids.push(self.trade_lot_id(trader, index).await?);
+        }
+        Ok(ids)
+    }
+
     /// Quote a candidate trade against the **current** market.
     ///
     /// This is the preflight a production market-maker takes before
     /// every submission. The reader:
     /// 1. Reads the current distribution + AMM params.
-    /// 2. Fetches chain-correct sqrt hints for `candidate` from
-    ///    `runtime`'s `compute_hints_view`.
-    /// 3. Calls `check_trade_view` to obtain the chain's verdict
-    ///    (`is_valid`, `rejection_reason`, computed collateral).
+    /// 2. Fetches chain-correct sqrt hints for `candidate` from `runtime`'s
+    ///    `compute_hints_view`.
+    /// 3. Calls `check_trade_view` to obtain the chain's verdict (`is_valid`,
+    ///    `rejection_reason`, computed collateral).
     ///
     /// The returned [`NormalTradeQuote`] carries everything
     /// [`NormalMarketWriter::execute_quote`] needs to submit the trade —
@@ -499,7 +588,8 @@ where
 
     /// Build the [`Call`] for `remove_liquidity(share_amount)`.
     ///
-    /// The ABI declares only `share_amount`; see [`Self::build_add_liquidity_call`].
+    /// The ABI declares only `share_amount`; see
+    /// [`Self::build_add_liquidity_call`].
     pub fn build_remove_liquidity_call(&self, share_amount: deadeye_core::sq128::Sq128Raw) -> Call {
         Call {
             to: self.reader.address(),
@@ -612,9 +702,9 @@ where
     /// * reads live `distribution`, `params`, `lp_info` (so the on-chain
     ///   `expected_*` guards see byte-exact values);
     /// * fetches chain-correct sqrt hints for the current dist;
-    /// * builds [`SellExecutionGuardsRaw`] using live LP backing (the
-    ///   AMM guards against `get_pool_backing()` — see
-    ///   `docs/DEVNET_SHAKEDOWN.md` for why `params.backing` is wrong);
+    /// * builds [`SellExecutionGuardsRaw`] using live LP backing (the AMM
+    ///   guards against `get_pool_backing()` — see `docs/DEVNET_SHAKEDOWN.md`
+    ///   for why `params.backing` is wrong);
     /// * submits `sell_position_guarded(current_dist, x* = current.mean,
     ///   current_hints, guards)`.
     ///
@@ -805,7 +895,8 @@ mod tests {
         let call = writer.build_trade_call(input);
         assert_eq!(call.to, Felt::from(0x1234_u64));
         assert_eq!(call.selector, amm::execute_trade());
-        // calldata = 5 felts/Sq128Raw * 3 distribution + 5 + 5 + 2*5 hints = 15 + 5 + 5 + 10 = 35
+        // calldata = 5 felts/Sq128Raw * 3 distribution + 5 + 5 + 2*5 hints = 15 + 5 + 5
+        // + 10 = 35
         assert_eq!(call.calldata.len(), 35);
     }
 
