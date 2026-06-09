@@ -16,8 +16,17 @@ pub(crate) const DEFAULT_SEPOLIA_RPC: &str = "https://starknet-sepolia.drpc.org"
 /// Default Sepolia indexer URL.
 pub(crate) const DEFAULT_SEPOLIA_INDEXER: &str = "https://situation-indexer.fly.dev";
 
+/// Default public mainnet RPC endpoint.
+pub(crate) const DEFAULT_MAINNET_RPC: &str = "https://starknet-mainnet.public.blastapi.io/rpc/v0_8";
+
+/// Default mainnet indexer URL.
+pub(crate) const DEFAULT_MAINNET_INDEXER: &str = "https://178-105-210-177.sslip.io";
+
 /// Canonical Sepolia chain id (`SN_SEPOLIA`).
 pub(crate) const SEPOLIA_CHAIN_ID: &str = "0x534e5f5345504f4c4941";
+
+/// Canonical mainnet chain id (`SN_MAIN`).
+pub(crate) const MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
 
 /// Canonical STRK ERC-20 address (Sepolia & mainnet share the deployment).
 pub(crate) const STRK_TOKEN_ADDRESS: &str =
@@ -47,6 +56,21 @@ pub(crate) struct ProfileConfig {
     pub(crate) address: Option<String>,
     /// ERC-20 collateral token (defaults to canonical STRK).
     pub(crate) strk_token: Option<String>,
+    /// Account private key (hex felt).
+    ///
+    /// Written by `deadeye onboard` so an agent can recover the wallet on
+    /// every run without an interactive unlock. This is a **spendable
+    /// secret stored in cleartext** — the file is created `0600`. Only the
+    /// gas STRK on this address is at risk; XP collateral is
+    /// non-transferable. Prefer `DEADEYE_PRIVATE_KEY` (env) where you can.
+    pub(crate) private_key: Option<String>,
+    /// BIP-39 recovery phrase for `private_key` (backup convenience).
+    pub(crate) mnemonic: Option<String>,
+    /// Account-contract class hash this address was derived against.
+    pub(crate) account_class_hash: Option<String>,
+    /// `true` once the account contract has been deployed on-chain.
+    #[serde(default)]
+    pub(crate) account_deployed: bool,
 }
 
 /// Path resolver — returns `~/.config/deadeye/config.toml` unless
@@ -85,8 +109,15 @@ pub(crate) fn save(cfg: &ConfigFile) -> Result<PathBuf> {
     let body = toml::to_string_pretty(cfg).context("serializing config to TOML")?;
     let mut header = String::from(
         "# Deadeye CLI configuration.\n\
-         # Private keys are NEVER stored here.\n\
-         # Set DEADEYE_PRIVATE_KEY in your environment instead.\n\
+         #\n\
+         # `deadeye onboard` may store a wallet `private_key` (and its\n\
+         # `mnemonic`) here in CLEARTEXT so an agent can recover the wallet\n\
+         # on every run. This file is written 0600 (owner read/write only).\n\
+         # Anyone who reads it can spend the gas STRK on the address; XP\n\
+         # collateral is non-transferable and cannot be drained.\n\
+         #\n\
+         # To keep secrets out of this file, set DEADEYE_PRIVATE_KEY in the\n\
+         # environment instead — it takes precedence over the stored key.\n\
          #\n\
          # See `deadeye config --help` for management commands.\n\n",
     );
@@ -95,8 +126,24 @@ pub(crate) fn save(cfg: &ConfigFile) -> Result<PathBuf> {
         fs::File::create(&path).with_context(|| format!("opening {} for write", path.display()))?;
     file.write_all(header.as_bytes())
         .with_context(|| format!("writing {}", path.display()))?;
+    // Best-effort 0600 — the file may hold a spendable private key.
+    restrict_permissions(&file);
     Ok(path)
 }
+
+/// Tighten file permissions to owner-only (0600) on Unix. No-op elsewhere.
+#[cfg(unix)]
+fn restrict_permissions(file: &fs::File) {
+    use std::os::unix::fs::PermissionsExt as _;
+    if let Ok(meta) = file.metadata() {
+        let mut perms = meta.permissions();
+        perms.set_mode(0o600);
+        let _ = file.set_permissions(perms);
+    }
+}
+
+#[cfg(not(unix))]
+fn restrict_permissions(_file: &fs::File) {}
 
 /// Resolved configuration after merging CLI flags + env + file defaults.
 #[derive(Debug, Clone)]
@@ -107,7 +154,10 @@ pub(crate) struct ResolvedConfig {
     pub(crate) chain_id: String,
     pub(crate) address: Option<String>,
     pub(crate) strk_token: String,
-    /// `true` iff a private key is plumbed in via env (write paths only).
+    /// Resolved private key (hex felt), from `DEADEYE_PRIVATE_KEY` (wins) or
+    /// the active profile's stored `private_key`. `None` if neither is set.
+    pub(crate) private_key: Option<String>,
+    /// `true` iff a private key is available (env or stored profile key).
     pub(crate) has_private_key: bool,
 }
 
@@ -162,7 +212,13 @@ impl ResolvedConfig {
             .strk_token
             .unwrap_or_else(|| STRK_TOKEN_ADDRESS.to_owned());
 
-        let has_private_key = std::env::var_os("DEADEYE_PRIVATE_KEY").is_some();
+        // Env wins over the stored profile key so callers can override a
+        // saved wallet without rewriting config.
+        let private_key = std::env::var("DEADEYE_PRIVATE_KEY")
+            .ok()
+            .filter(|s| !s.trim().is_empty())
+            .or(profile.private_key);
+        let has_private_key = private_key.is_some();
 
         Ok(Self {
             profile_name,
@@ -171,6 +227,7 @@ impl ResolvedConfig {
             chain_id,
             address,
             strk_token,
+            private_key,
             has_private_key,
         })
     }

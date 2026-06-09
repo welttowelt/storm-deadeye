@@ -127,12 +127,10 @@ where
 /// Build an [`OwnedAccount`] for the caller, sourcing the private key
 /// from `DEADEYE_PRIVATE_KEY`.
 pub(crate) fn build_owned_account(ctx: &AppContext) -> Result<OwnedAccount> {
-    if !ctx.config.has_private_key {
-        bail!("this command requires a private key; set DEADEYE_PRIVATE_KEY in your environment");
-    }
+    let raw_key = ctx.config.private_key.as_deref().context(
+        "this command requires a private key; run `deadeye onboard`, or set DEADEYE_PRIVATE_KEY",
+    )?;
     let address = ctx.resolved_address_felt()?;
-    let raw_key = std::env::var("DEADEYE_PRIVATE_KEY")
-        .context("DEADEYE_PRIVATE_KEY missing despite resolution flag")?;
     let key = parse_felt("private key", raw_key.trim())?;
     let chain_id = parse_felt("chain_id", &ctx.config.chain_id)?;
 

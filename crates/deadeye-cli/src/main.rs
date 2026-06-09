@@ -48,6 +48,7 @@ mod config;
 mod context;
 mod output;
 mod render;
+mod wallet;
 
 use crate::cli::Cli;
 

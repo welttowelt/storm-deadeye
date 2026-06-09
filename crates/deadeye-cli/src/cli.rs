@@ -106,6 +106,21 @@ impl OutputModeArg {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum Command {
+    /// Create or recover a local wallet and deploy its account (start here).
+    ///
+    /// Interactive wizard: generate or import a BIP-39 phrase, derive the
+    /// Starknet account, print the address to fund with STRK, poll the
+    /// balance, then deploy the account contract. The key is saved to the
+    /// active profile so every later command (and any agent) recovers the
+    /// same wallet.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye onboard --network mainnet
+    /// deadeye onboard --import            # recover from an existing phrase
+    /// ```
+    Onboard(OnboardArgs),
     /// Inspect the active account / profile.
     Account {
         #[command(subcommand)]
@@ -158,6 +173,45 @@ pub(crate) enum Command {
         #[command(subcommand)]
         action: CollateralCmd,
     },
+}
+
+/// Target network for `deadeye onboard`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum NetworkArg {
+    /// Starknet mainnet (real STRK for gas).
+    Mainnet,
+    /// Starknet Sepolia testnet (faucet STRK).
+    Sepolia,
+}
+
+/// `deadeye onboard …`
+#[derive(Debug, clap::Args)]
+pub(crate) struct OnboardArgs {
+    /// Network to onboard against. Sets RPC, indexer, and chain id.
+    #[arg(long, value_name = "NETWORK", default_value = "mainnet")]
+    pub(crate) network: NetworkArg,
+    /// Profile name to write the wallet into (defaults to the network name).
+    #[arg(long, value_name = "NAME")]
+    pub(crate) profile: Option<String>,
+    /// Recover from an existing recovery phrase instead of generating one.
+    #[arg(long)]
+    pub(crate) import: bool,
+    /// Account-contract class hash to deploy. Defaults to the bundled
+    /// OpenZeppelin class; must be declared on the target network.
+    #[arg(long, value_name = "0x...")]
+    pub(crate) account_class_hash: Option<String>,
+    /// Minimum STRK the address must hold before deploying the account.
+    #[arg(long, default_value_t = 0.001)]
+    pub(crate) min_strk: f64,
+    /// Skip the balance/fund wait and deploy step (wallet is saved only).
+    #[arg(long)]
+    pub(crate) skip_deploy: bool,
+    /// Override the RPC URL (otherwise derived from `--network`).
+    #[arg(long, value_name = "URL")]
+    pub(crate) rpc_url: Option<String>,
+    /// Override the indexer URL (otherwise derived from `--network`).
+    #[arg(long, value_name = "URL")]
+    pub(crate) indexer_url: Option<String>,
 }
 
 // ─── Driver B argument types ─────────────────────────────────────────

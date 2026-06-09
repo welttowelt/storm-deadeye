@@ -23,6 +23,7 @@ pub(crate) mod collateral;
 pub(crate) mod config_cmd;
 pub(crate) mod lp;
 pub(crate) mod markets;
+pub(crate) mod onboard;
 pub(crate) mod position;
 pub(crate) mod render_helpers;
 pub(crate) mod runtime_resolver;
@@ -54,6 +55,9 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
     let ctx = AppContext::from_cli(&cli)?;
     let confirm = cli.confirm();
     match cli.command {
+        // Onboard runs before the context's profile is required — it
+        // creates that profile — so it takes the raw args, not `ctx`.
+        Command::Onboard(args) => onboard::run(args, &ctx, confirm).await,
         Command::Account { action } => account::run(action, &ctx).await,
         Command::Markets { action } => markets::run(action, &ctx).await,
         Command::Position { action } => position::run(action, &ctx, confirm).await,

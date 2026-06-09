@@ -30,7 +30,12 @@ starknet-core = { workspace = true, features = ["std"] }
 starknet-providers = { workspace = true }
 starknet-contract = { workspace = true }
 starknet-accounts = { workspace = true }
+starknet-signers = { workspace = true }
 rand = { workspace = true, features = ["std", "std_rng"] }
+
+# Wallet onboarding: BIP-39 mnemonic <-> stark key derivation.
+bip39 = { version = "2", default-features = false, features = ["std"] }
+sha2 = { version = "0.10", default-features = false }
 
 # CLI / I/O surface.
 clap = { version = "4", features = ["derive", "env", "wrap_help"] }
