@@ -61,13 +61,23 @@ you need to parse.
 
 ## 2. Produce a Bayesian forecast
 
-This is your job as a superforecaster, not the CLI's:
+This is your job as a superforecaster. The CLI now gives you a structured,
+auditable workspace for it — use the **deadeye-superforecaster** skill for the
+full loop, **evidence-ledger** for research discipline, and
+**bayes-forecast-scratchpad** for the math. In short:
 
-1. Read the market question from `markets info`.
-2. Browse the web for evidence; weigh base rates against current signals.
-3. Output a **calibrated** posterior: a mean `μ_you` and a 1σ uncertainty
-   `σ_you` for numeric markets (or `p ± σ` for a binary). Be honest about σ —
-   overconfidence is punished when the market settles.
+```bash
+deadeye forecast new <MARKET_ADDR> --title "<question>" --lower <lo> --upper <hi>
+deadeye forecast base-rate <MARKET_ADDR> --name "<class>" --rate <r> --applicability <a> --uncertainty <u>
+deadeye forecast evidence  <MARKET_ADDR> --claim "<...>" --stance up|down --source "<...>" --reliability <0..1> --relevance <0..1>
+deadeye forecast bayes aggregate-normal --input '{"rho":0.3,"components":[{"mu":..,"sigma":..,"weight":..}, ...]}'
+deadeye forecast snapshot  <MARKET_ADDR> --mean <μ> --sd <σ> --rationale "<...>"
+deadeye forecast show      <MARKET_ADDR>
+```
+
+Output a **calibrated** posterior: a mean `μ_you` and 1σ uncertainty `σ_you`
+(or `p ± σ` for a binary). Be honest about σ — overconfidence is punished when
+the market settles. The snapshot prints the exact `trade quote` command to run.
 
 ## 3. Turn the forecast into the highest-EV trade
 

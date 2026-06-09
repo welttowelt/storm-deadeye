@@ -67,7 +67,10 @@ or set DEADEYE_RELEASE_BASE to a prebuilt-binary host, then re-run."
 
 cargo_bin() { printf '%s' "${CARGO_HOME:-$HOME/.cargo}/bin"; }
 
-# ── 2. Install the agent skill ───────────────────────────────────────────
+# ── 2. Install the agent skills ──────────────────────────────────────────
+# The forecasting suite + the CLI usage skill.
+SKILLS="deadeye-cli deadeye-superforecaster bayes-forecast-scratchpad evidence-ledger"
+
 install_skill() {
   # Install for every supported agent whose home skills dir exists (always
   # do Claude). Source: local checkout if present, else raw GitHub.
@@ -76,17 +79,19 @@ install_skill() {
       "$HOME/.claude/skills") ;;                 # always install for Claude
       *) [ -d "$(dirname "$dir")" ] || continue ;;  # others: only if agent home exists
     esac
-    dest="$dir/deadeye-cli"
-    mkdir -p "$dest"
-    if [ -f "skills/deadeye-cli/SKILL.md" ]; then
-      cp "skills/deadeye-cli/SKILL.md" "$dest/SKILL.md"
-    else
-      curl -fsSL "${RAW_BASE}/skills/deadeye-cli/SKILL.md" -o "$dest/SKILL.md" \
-        || { warn "could not fetch SKILL.md for $dir"; continue; }
-    fi
-    info "Installed /deadeye-cli skill to $dest/SKILL.md"
+    for skill in $SKILLS; do
+      dest="$dir/$skill"
+      mkdir -p "$dest"
+      if [ -f "skills/$skill/SKILL.md" ]; then
+        cp "skills/$skill/SKILL.md" "$dest/SKILL.md"
+      else
+        curl -fsSL "${RAW_BASE}/skills/$skill/SKILL.md" -o "$dest/SKILL.md" \
+          || { warn "could not fetch $skill SKILL.md for $dir"; continue; }
+      fi
+      info "Installed /$skill skill to $dest/SKILL.md"
+    done
   done
-  warn "Restart your agent app to pick up the new skill."
+  warn "Restart your agent app to pick up the new skills."
 }
 
 # ── main ─────────────────────────────────────────────────────────────────

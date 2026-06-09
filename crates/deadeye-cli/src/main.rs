@@ -46,6 +46,7 @@ mod cli;
 mod commands;
 mod config;
 mod context;
+mod forecast;
 mod output;
 mod render;
 mod wallet;

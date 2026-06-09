@@ -121,6 +121,12 @@ pub(crate) enum Command {
     /// deadeye onboard --import            # recover from an existing phrase
     /// ```
     Onboard(OnboardArgs),
+    /// Superforecasting workspace: gather evidence, blend base rates, and
+    /// curate a calibrated (mean, σ) forecast that feeds `trade quote`.
+    Forecast {
+        #[command(subcommand)]
+        action: ForecastCmd,
+    },
     /// Inspect the active account / profile.
     Account {
         #[command(subcommand)]
@@ -741,6 +747,187 @@ pub(crate) enum ConfigCmd {
         #[arg(value_name = "NAME")]
         name: String,
     },
+}
+
+// ─── Forecast (superforecasting workspace) ───────────────────────────────
+
+/// `deadeye forecast …`
+#[derive(Debug, Subcommand)]
+pub(crate) enum ForecastCmd {
+    /// Create a forecast workspace for a market.
+    New(ForecastNewArgs),
+    /// List markets that have a forecast workspace.
+    List,
+    /// Show a workspace: question, evidence, base rates, snapshot, next step.
+    Show {
+        /// Market contract address.
+        #[arg(value_name = "MARKET")]
+        market: String,
+    },
+    /// Append a timestamped evidence item.
+    Evidence(ForecastEvidenceAddArgs),
+    /// Add a reference class (base rate) to the prior.
+    BaseRate(ForecastBaseRateAddArgs),
+    /// Blend the recorded reference classes into a prior (prints the result).
+    BlendBaseRates {
+        /// Market contract address.
+        #[arg(value_name = "MARKET")]
+        market: String,
+    },
+    /// Commit the curated `(mean, σ)` snapshot for the market.
+    Snapshot(ForecastSnapshotArgs),
+    /// Run a Bayesian / aggregation routine (JSON in, JSON + rationale out).
+    Bayes(ForecastBayesArgs),
+}
+
+/// Stance of an evidence item (CLI shadow of `ledger::Stance`).
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum StanceArg {
+    /// Pushes the outcome up / supports.
+    Up,
+    /// Pushes the outcome down / against.
+    Down,
+    /// Background context.
+    Context,
+    /// Mixed signal.
+    Mixed,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ForecastNewArgs {
+    /// Market contract address (the workspace key).
+    #[arg(value_name = "MARKET")]
+    pub(crate) market: String,
+    /// Human question / market title. If omitted, pulled from the indexer.
+    #[arg(long)]
+    pub(crate) title: Option<String>,
+    /// What outcome resolves the market.
+    #[arg(long)]
+    pub(crate) resolution: Option<String>,
+    /// Lower bound of the outcome range.
+    #[arg(long)]
+    pub(crate) lower: Option<f64>,
+    /// Upper bound of the outcome range.
+    #[arg(long)]
+    pub(crate) upper: Option<f64>,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ForecastEvidenceAddArgs {
+    /// Market contract address.
+    #[arg(value_name = "MARKET")]
+    pub(crate) market: String,
+    /// The headline claim.
+    #[arg(long)]
+    pub(crate) claim: String,
+    /// Which way it points.
+    #[arg(long, value_name = "STANCE")]
+    pub(crate) stance: StanceArg,
+    /// Source label (e.g. `FRED CPIAUCSL`).
+    #[arg(long)]
+    pub(crate) source: Option<String>,
+    /// Source URL.
+    #[arg(long)]
+    pub(crate) url: Option<String>,
+    /// Source reliability `[0, 1]`.
+    #[arg(long)]
+    pub(crate) reliability: Option<f64>,
+    /// Relevance to the question `[0, 1]`.
+    #[arg(long)]
+    pub(crate) relevance: Option<f64>,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ForecastBaseRateAddArgs {
+    /// Market contract address.
+    #[arg(value_name = "MARKET")]
+    pub(crate) market: String,
+    /// Name / description of the reference class.
+    #[arg(long)]
+    pub(crate) name: String,
+    /// Class base rate (probability or numeric anchor).
+    #[arg(long)]
+    pub(crate) rate: f64,
+    /// Applicability to this question `[0, 1]`.
+    #[arg(long, default_value_t = 1.0)]
+    pub(crate) applicability: f64,
+    /// Within-class uncertainty `>= 0`.
+    #[arg(long, default_value_t = 0.0)]
+    pub(crate) uncertainty: f64,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ForecastSnapshotArgs {
+    /// Market contract address.
+    #[arg(value_name = "MARKET")]
+    pub(crate) market: String,
+    /// Forecast mean (μ).
+    #[arg(long)]
+    pub(crate) mean: f64,
+    /// Forecast standard deviation (σ).
+    #[arg(long)]
+    pub(crate) sd: f64,
+    /// Aggregation / pooling method label.
+    #[arg(long, default_value = "manual")]
+    pub(crate) method: String,
+    /// Prose rationale.
+    #[arg(long, default_value = "")]
+    pub(crate) rationale: String,
+    /// A reason the forecast could move up (repeatable).
+    #[arg(long = "reason-up")]
+    pub(crate) reason_up: Vec<String>,
+    /// A reason the forecast could move down (repeatable).
+    #[arg(long = "reason-down")]
+    pub(crate) reason_down: Vec<String>,
+    /// What would change your mind (repeatable).
+    #[arg(long = "change-my-mind")]
+    pub(crate) change_my_mind: Vec<String>,
+}
+
+/// Bayesian / aggregation routines exposed by `forecast bayes`.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
+pub(crate) enum BayesRoutine {
+    /// Aggregate component `(mu, sigma, weight, side)` beliefs → `(mean, sd, variance, quantiles)`.
+    AggregateNormal,
+    /// Blend reference classes `[{base_rate, applicability, uncertainty}]` → prior.
+    BlendBaseRates,
+    /// Pool probabilities `[{p, weight}]` via log-odds (default) or linear.
+    Pool,
+    /// Convert qualitative evidence → likelihood ratio.
+    EvidenceWeight,
+    /// Apply likelihood ratios to a prior: `{prior, lrs:[...]}`.
+    LrUpdate,
+    /// De-vig a binary market: `{yes, no}`.
+    Devig,
+    /// Effective independent count of a correlated cluster: `{n, rho}`.
+    EffectiveCount,
+    /// P(outcome ≤ x) under a normal: `{x, mean, sd}`.
+    ProbBelow,
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct ForecastBayesArgs {
+    /// Routine to run.
+    #[arg(value_name = "ROUTINE")]
+    pub(crate) routine: BayesRoutine,
+    /// JSON input. If omitted, read from stdin.
+    #[arg(long, value_name = "JSON")]
+    pub(crate) input: Option<String>,
+    /// Emit only JSON (no human rationale line).
+    #[arg(long)]
+    pub(crate) json: bool,
+}
+
+impl StanceArg {
+    pub(crate) const fn into_ledger(self) -> crate::forecast::ledger::Stance {
+        use crate::forecast::ledger::Stance;
+        match self {
+            Self::Up => Stance::Up,
+            Self::Down => Stance::Down,
+            Self::Context => Stance::Context,
+            Self::Mixed => Stance::Mixed,
+        }
+    }
 }
 
 /// CLI-facing family enum. Mirrors [`deadeye_sdk::bulk::Family`] without
