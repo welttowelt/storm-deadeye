@@ -45,11 +45,11 @@ class_hash        = "0x46d492bbef..."
 deployed_at_block = 1234567
 deployed_tx       = "0x..."
 
-[sepolia.lognormal]
+[devnet.lognormal]
 # ...
 ```
 
-Top-level keys: `mainnet`, `sepolia`, `devnet`. Inner keys: the four
+Top-level keys: `mainnet`, `devnet`. Inner keys: the four
 family slugs. Missing file → empty cache; malformed → typed
 `DeployerError::InvalidFelt { field: "runtimes_toml", … }`.
 
@@ -82,7 +82,7 @@ New deployer unit tests cover: TOML round-trip + missing/malformed
 files; `projected_deploy_address` determinism (deployer ignored under
 `unique = false`); `unique = true` branch differs; all four mainnet
 class hashes round-trip; `ChainKey::from_chain_id_hex` recognises
-`SN_MAIN` / `SN_SEPOLIA`; `Family::env_var_name` returns
+`SN_MAIN`; `Family::env_var_name` returns
 `DEADEYE_<FAMILY>_RUNTIME_ADDR`.
 
 ## 5. Devnet integration test outcome
@@ -100,7 +100,7 @@ assert `on_chain_verified=true` + cache populated → re-run → assert
 ```json
 {
   "mode": "deploy",
-  "chain": "sepolia",
+  "chain": "devnet",
   "family": "normal",
   "address": "0x50ef518fb430f231b9f94ee5603838789aba1fde6ad36c50179d68b874e85d3",
   "class_hash": "0x46d492bbef6f8034b1647a95a96580555742fd4655e766dee04e442a778a753",

@@ -165,7 +165,7 @@ ERC20 abstraction. The Cairo factory tests
 small backings and a fully funded snforge test caller.
 
 Our testkit pulled the value `1000` from production-style configs;
-production-style accounts on Sepolia/main hold far more than 1 000 STRK
+production-style accounts on mainnet hold far more than 1 000 STRK
 so the underflow never surfaced there.
 
 ## 5. Fix applied (Rust)

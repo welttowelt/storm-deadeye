@@ -23,15 +23,15 @@ through `deadeye-starknet`.
 ## Indexer access
 
 `deadeye-indexer` sits alongside the RPC stack — it's a thin HTTP client
-for the Deadeye Sepolia / mainnet indexer (`situation-indexer.fly.dev`,
-`situation-indexer-mainnet.fly.dev`). For MMs the workflow typically is:
+for the Deadeye mainnet indexer (`https://178-105-210-177.sslip.io`). For
+MMs the workflow typically is:
 
 1. Use `deadeye-indexer` to discover markets and watch aggregated
    activity (this is the cheap, batched, eventually-consistent path).
 2. Use `deadeye-starknet` + `deadeye-sdk` to read authoritative state and
    submit trades (the expensive, immediate, strongly-consistent path).
 
-CI runs a `sepolia-indexer` smoke job on every workflow_dispatch and on
+CI runs a `mainnet-indexer` smoke job on every workflow_dispatch and on
 the weekly schedule to catch upstream schema drift early.
 
 ## Why a workspace?
@@ -88,7 +88,7 @@ state.
   commutativity laws.
 * **Integration tests**: `crates/deadeye-e2e/tests/`. Skipped unless
   `DEADEYE_RUN_INTEGRATION=1`. Target is selected by
-  `DEADEYE_TEST_TARGET=devnet|cartridge` (default `devnet`).
+  `DEADEYE_TEST_TARGET=devnet|hosted` (default `devnet`).
 * **CI**: GitHub Actions runs fmt + clippy + test + docs on every PR.
-  Integration suite runs weekly + on demand against Cartridge Sepolia
-  and a `starknet-devnet-rs` service container.
+  Integration suite runs weekly + on demand against a hosted public
+  mainnet RPC and a `starknet-devnet-rs` service container.

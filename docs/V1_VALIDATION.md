@@ -33,16 +33,15 @@ chain-failure rate (the off-chain guard accepted): **0** — every
 chain-fail assert is too tight for this random walk; widen to
 "trade-only ≤ 5%" or top-up allowance per trade. Filed v1.1.
 
-## 2. Sepolia smoke — read-only
+## 2. Mainnet smoke — read-only
 
-**Passed** against `https://starknet-sepolia.drpc.org` (spec 0.10.2).
-Blast API is retired; Nethermind DNS is unresolvable here.
+**Passed** against `https://api.zan.top/public/starknet-mainnet/rpc/v0_10` (spec 0.10.2).
 
 Live normal market `0x53e5…0fcf4` ("BTC Hashrate Apr 2026"), found via
-`https://situation-indexer.fly.dev/api/markets`. Captured:
+`https://178-105-210-177.sslip.io/api/markets`. Captured:
 
 ```
-✅ chain id = 0x534e5f5345504f4c4941 (SN_SEPOLIA)
+✅ chain id = 0x534e5f4d41494e (SN_MAIN)
 ✅ block_number = 9685234
 ✅ distribution: μ = 1.030000, σ = 0.073305
 ✅ params: k=50.0000, backing=1000.0000, tol=1.0000e-3
@@ -50,13 +49,12 @@ Live normal market `0x53e5…0fcf4` ("BTC Hashrate Apr 2026"), found via
 ✅ position: total_collateral=0.000000  (address 0x0)
 ✅ bulk distributions: 5/5 ok
 ✅ bulk positions: 5/5 ok
-✅ sepolia_read_only_smoke PASSED  (2.20s)
+✅ mainnet_read_only_smoke PASSED  (2.20s)
 ```
 
-`quote_trade` was skipped — `DEADEYE_SEPOLIA_NORMAL_RUNTIME_ADDR` is
-not exposed via the public indexer and not in the deployer's
-`declared-sepolia-*.json` (those carry class hashes only). Filed v1.1.
-The read paths the smoke covers are all RPC-compat-verified.
+`quote_trade` was skipped — quotes are now computed client-side, so no
+math runtime address is needed; the chain re-verifies on submit. Filed
+v1.1. The read paths the smoke covers are all RPC-compat-verified.
 
 ## 3. WalletPool throughput — measured
 
@@ -133,7 +131,7 @@ Evidence:
 - All 4 families execute `quote_trade → execute_quote` at scale (50
   random actions each, 100% solver convergence, 0 unexplained chain
   failures on accepted trades).
-- Read paths verified against live Sepolia.
+- Read paths verified against live mainnet.
 - WalletPool measured 22× over single-wallet baseline.
 - Optimizer wired into the SDK with a unit-tested compose path.
 - Clippy + lib tests green.
@@ -144,9 +142,8 @@ Evidence:
    exercising sell-w/o-position + lp-remove-w/o-shares + draining
    `transferFrom` allowance. Widen to "trade-only failures ≤ 5%" or
    top-up allowance per trade.
-2. Sepolia `quote_trade` smoke needs `*_RUNTIME_ADDR` plumbing —
-   indexer endpoint or hard-coded testnet manifest in
-   `deadeye-artifacts`.
+2. Mainnet `quote_trade` smoke now runs client-side; no runtime address
+   plumbing is required since the chain re-verifies on submit.
 3. `optimize_quote` for the three non-normal families pends the
    optimizer crate's expansion.
 4. Effective-k scaling in `optimize_quote` uses `params.k` directly;

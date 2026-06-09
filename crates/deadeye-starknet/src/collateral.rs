@@ -1,6 +1,6 @@
 //! View + write clients for the Deadeye `restricted_collateral_token`.
 //!
-//! The collateral token (XP on mainnet, SPICE on sepolia) is an ERC-20
+//! The collateral token (XP on mainnet) is an ERC-20
 //! that the Deadeye AMMs accept as `transfer_from` source on every trade.
 //! It additionally exposes a one-shot per-account `claim_initial_grant`
 //! entrypoint — a fixed-size mint that lets a fresh wallet obtain enough
@@ -16,23 +16,24 @@
 //! `has_claimed_initial_grant(caller) == false`. This module provides:
 //!
 //! 1. [`CollateralTokenReader`] — typed view calls for `balance_of`,
-//!    `allowance`, `initial_grant`, `has_claimed_initial_grant`, plus
-//!    the registered-markets surface.
+//!    `allowance`, `initial_grant`, `has_claimed_initial_grant`, plus the
+//!    registered-markets surface.
 //! 2. [`CollateralTokenWriter`] — pairs a reader with an [`Account`] and
 //!    exposes `claim_initial_grant` + `approve` as one-call submits.
 //!
 //! ## Idempotency
 //!
 //! `claim_initial_grant` reverts on a second call from the same wallet.
-//! Callers should preflight with [`CollateralTokenReader::has_claimed_initial_grant`]
-//! and skip the submit when it returns `true` (see the cpi-bot's
-//! `claim_grant` subcommand for the canonical shape).
+//! Callers should preflight with
+//! [`CollateralTokenReader::has_claimed_initial_grant`] and skip the submit
+//! when it returns `true` (see the cpi-bot's `claim_grant` subcommand for the
+//! canonical shape).
 //!
 //! ## Address constants
 //!
 //! The mainnet XP address is pinned at compile time — it's part of the
 //! deployment artifact and won't change without a redeploy. Callers
-//! targeting other networks (sepolia, devnet) must supply the address
+//! targeting other networks (devnet) must supply the address
 //! explicitly.
 
 use starknet_core::types::{Felt, FunctionCall, U256};
@@ -48,9 +49,8 @@ use crate::{
 
 /// Mainnet `XP` collateral token address (pinned from
 /// `deployment-mainnet.json`).
-pub const MAINNET_XP_TOKEN_ADDRESS: Felt = Felt::from_hex_unchecked(
-    "0x01d77ce77f1d86035c5e27444da7d2fc77de1d384326074f60f973fa0dd80aff",
-);
+pub const MAINNET_XP_TOKEN_ADDRESS: Felt =
+    Felt::from_hex_unchecked("0x01d77ce77f1d86035c5e27444da7d2fc77de1d384326074f60f973fa0dd80aff");
 
 /// ABI-decoded `core::integer::u256` returned from view calls.
 ///
@@ -237,11 +237,9 @@ where
 
     /// `true` iff `market` is registered AND currently enabled.
     pub async fn is_market_enabled(&self, market: Felt) -> ContractResult<bool> {
-        self.call_view::<bool>(
-            "is_market_enabled",
-            selectors::is_market_enabled(),
-            &[market],
-        )
+        self.call_view::<bool>("is_market_enabled", selectors::is_market_enabled(), &[
+            market,
+        ])
         .await
     }
 
@@ -368,10 +366,9 @@ mod tests {
         // hex literal. The deployment manifest is the source of truth;
         // if this constant ever drifts, the test fixture below will
         // need to be updated explicitly.
-        let expected = Felt::from_hex(
-            "0x01d77ce77f1d86035c5e27444da7d2fc77de1d384326074f60f973fa0dd80aff",
-        )
-        .unwrap();
+        let expected =
+            Felt::from_hex("0x01d77ce77f1d86035c5e27444da7d2fc77de1d384326074f60f973fa0dd80aff")
+                .unwrap();
         assert_eq!(MAINNET_XP_TOKEN_ADDRESS, expected);
     }
 

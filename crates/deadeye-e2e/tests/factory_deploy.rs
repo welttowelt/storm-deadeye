@@ -5,35 +5,35 @@
     reason = "integration tests in tests/ are top-level — printing aids debugging, unwrap is OK"
 )]
 
-//! Phase 4 e2e: factory + oracle read paths against live Sepolia.
+//! Phase 4 e2e: factory + oracle read paths against live mainnet.
 //!
-//! The Sepolia factory at 0x024127...32B (per deployment-sepolia-02.json)
+//! The mainnet factory (per deployment-mainnet.json)
 //! is the production fixture. We hit a handful of read endpoints to verify
 //! the Cairo Serde shapes match the on-chain types end-to-end.
 
 use deadeye_sdk::{DeadeyeClient, starknet::JsonRpcProvider};
-use deadeye_testkit::cartridge::CartridgeNetwork;
+use deadeye_testkit::default_mainnet_rpc;
 use starknet_core::types::Felt;
 use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 
-const SEPOLIA_FACTORY: &str = "0x024127708aBca7086b5F1237C8Bb2e8887caB270A5E8F4c9f1DBf724A977C32B";
+const MAINNET_FACTORY: &str = "0x0224716CC051F21fe7a7e7e0e4a74B13fd09c21b5F31A860861688aC40828dDE";
 
 fn integration_enabled() -> bool {
     std::env::var("DEADEYE_RUN_INTEGRATION").is_ok()
 }
 
 #[tokio::test]
-async fn sepolia_factory_read_passthrough() {
+async fn mainnet_factory_read_passthrough() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
-    let url = CartridgeNetwork::Sepolia.url();
+    let url = default_mainnet_rpc();
     let rpc = JsonRpcClient::new(HttpTransport::new(url));
     let provider = JsonRpcProvider::new(rpc);
     let client = DeadeyeClient::new(provider);
 
-    let factory_address = Felt::from_hex(SEPOLIA_FACTORY).unwrap();
+    let factory_address = Felt::from_hex(MAINNET_FACTORY).unwrap();
     let factory = client.factory(factory_address);
 
     let owner = factory.reader().owner().await.expect("get_owner reads");

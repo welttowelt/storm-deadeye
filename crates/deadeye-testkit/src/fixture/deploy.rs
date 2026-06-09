@@ -14,7 +14,8 @@ pub enum DeployError {
     Submit(String),
 }
 
-/// Deploy a contract via the legacy UDC (the one starknet-devnet-rs predeploys).
+/// Deploy a contract via the legacy UDC (the one starknet-devnet-rs
+/// predeploys).
 ///
 /// Uses `unique = false` so the address is deterministic from the salt; salt
 /// of `Felt::ZERO` makes the address content-addressed.

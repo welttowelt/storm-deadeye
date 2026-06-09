@@ -12,8 +12,8 @@ A Rust SDK for the Deadeye prediction-market protocol on Starknet, built for
 | `deadeye-collateral` | Off-chain collateral solver (L2 norm, lambda, Newton-Raphson minimiser).        |
 | `deadeye-starknet`   | Calldata encoders, entry-point selectors, view-call wrappers over `starknet-rs`.|
 | `deadeye-sdk`        | High-level façade: client, quote, per-market handles.                           |
-| `deadeye-indexer`    | Typed HTTP client for the production indexer (`situation-indexer.fly.dev`).     |
-| `deadeye-testkit`    | Integration-test helpers (devnet, Cartridge RPC, harness). Unpublished.         |
+| `deadeye-indexer`    | Typed HTTP client for the production indexer (`178-105-210-177.sslip.io`).       |
+| `deadeye-testkit`    | Integration-test helpers (devnet, hosted public RPC, harness). Unpublished.      |
 | `deadeye-e2e`        | End-to-end tests against a live RPC. Unpublished.                               |
 | `xtask`              | Workspace task runner (`cargo xtask ci`, `cargo xtask devnet-up`). Unpublished. |
 
@@ -49,7 +49,7 @@ use url::Url;
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let rpc = JsonRpcClient::new(HttpTransport::new(
-        Url::parse("https://api.cartridge.gg/x/starknet/sepolia")?,
+        Url::parse("https://api.zan.top/public/starknet-mainnet/rpc/v0_10")?,
     ));
     let client = DeadeyeClient::new(JsonRpcProvider::new(rpc));
 
@@ -80,7 +80,7 @@ network:
 
 | Method | When to use | Chain round-trips | Guarantees |
 | --- | --- | --- | --- |
-| `optimize_quote(runtime, μ_b, σ_b, budget)` | A math-runtime instance is deployed (devnet, Sepolia, or self-hosted). | 4 view calls (`distribution`, `params`, `compute_hints_view × 2`, `check_trade_view`) | Chain-validated: `on_chain_will_accept` reflects `check_trade_view`'s verdict. |
+| `optimize_quote(runtime, μ_b, σ_b, budget)` | A math-runtime instance is deployed (devnet or self-hosted). | 4 view calls (`distribution`, `params`, `compute_hints_view × 2`, `check_trade_view`) | Chain-validated: `on_chain_will_accept` reflects `check_trade_view`'s verdict. |
 | `optimize_quote_offline(μ_b, σ_b, budget)` | **Mainnet today** — the normal AMM uses library dispatch (class hash) with no separate runtime contract. | 3 view calls (`distribution`, `params`, `lp_info`) — no math-runtime hops. | σ + hints are **bit-exact** with what the chain would derive (`Sq128::sqrt` matches `sqrt_verified` 20/20 on devnet; see [`docs/SQ128_SQRT.md`](docs/SQ128_SQRT.md)). |
 
 The offline path eliminates `INVALID_DISTRIBUTION` and `INVALID_HINTS`
@@ -118,11 +118,11 @@ cargo test --workspace --all-features --lib --bins
 # Run integration tests against a local devnet
 DEADEYE_RUN_INTEGRATION=1 cargo test -p deadeye-e2e -- --nocapture
 
-# Run integration tests against Cartridge Sepolia
-DEADEYE_RUN_INTEGRATION=1 DEADEYE_TEST_TARGET=cartridge \
+# Run integration tests against a hosted public RPC (mainnet)
+DEADEYE_RUN_INTEGRATION=1 DEADEYE_TEST_TARGET=hosted \
   cargo test -p deadeye-e2e -- --nocapture
 
-# Smoke-test the live Sepolia indexer (situation-indexer.fly.dev)
+# Smoke-test the live mainnet indexer (178-105-210-177.sslip.io)
 DEADEYE_RUN_INTEGRATION=1 cargo test -p deadeye-e2e --test indexer_smoke -- --nocapture
 ```
 

@@ -10,28 +10,19 @@ use std::{collections::BTreeMap, fs, io::Write as _, path::PathBuf};
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
-/// Default public Sepolia RPC endpoint — ZAN's public node, JSON-RPC v0_10
-/// (the latest spec, matching the webapp).
-pub(crate) const DEFAULT_SEPOLIA_RPC: &str =
-    "https://api.zan.top/public/starknet-sepolia/rpc/v0_10";
-
-/// Default Sepolia indexer URL.
-pub(crate) const DEFAULT_SEPOLIA_INDEXER: &str = "https://situation-indexer.fly.dev";
-
-/// Default public mainnet RPC endpoint — ZAN's public node, JSON-RPC v0_10.
+/// Default public mainnet RPC endpoint — ZAN's public node, JSON-RPC v0_10
+/// (the latest spec, matching the webapp). The CLI uses the `pre_confirmed`
+/// block tag, so the endpoint must speak spec ≥ v0_9.
 pub(crate) const DEFAULT_MAINNET_RPC: &str =
     "https://api.zan.top/public/starknet-mainnet/rpc/v0_10";
 
-/// Default mainnet indexer URL.
+/// Default mainnet indexer URL (Hetzner, via sslip.io).
 pub(crate) const DEFAULT_MAINNET_INDEXER: &str = "https://178-105-210-177.sslip.io";
-
-/// Canonical Sepolia chain id (`SN_SEPOLIA`).
-pub(crate) const SEPOLIA_CHAIN_ID: &str = "0x534e5f5345504f4c4941";
 
 /// Canonical mainnet chain id (`SN_MAIN`).
 pub(crate) const MAINNET_CHAIN_ID: &str = "0x534e5f4d41494e";
 
-/// Canonical STRK ERC-20 address (Sepolia & mainnet share the deployment).
+/// Canonical STRK ERC-20 address.
 pub(crate) const STRK_TOKEN_ADDRESS: &str =
     "0x04718f5a0fc34cc1af16a1cdee98ffb20c31f5cd61d6ab07201858f4287c938d";
 
@@ -178,14 +169,14 @@ impl ResolvedConfig {
     ///   1. CLI flag (passed in via `inputs`)
     ///   2. Env var (DEADEYE_RPC_URL, DEADEYE_INDEXER_URL, …)
     ///   3. Profile in `cfg`
-    ///   4. Built-in defaults (Sepolia public RPC + indexer).
+    ///   4. Built-in defaults (mainnet public RPC + indexer).
     pub(crate) fn resolve(cfg: &ConfigFile, inputs: ResolutionInputs) -> Result<Self> {
-        // Profile name: CLI > env (DEADEYE_PROFILE) > cfg.default_profile > "sepolia".
+        // Profile name: CLI > env (DEADEYE_PROFILE) > cfg.default_profile > "mainnet".
         let profile_name = inputs
             .profile
             .or_else(|| std::env::var("DEADEYE_PROFILE").ok())
             .or_else(|| cfg.default_profile.clone())
-            .unwrap_or_else(|| "sepolia".to_owned());
+            .unwrap_or_else(|| "mainnet".to_owned());
 
         let profile = cfg.profiles.get(&profile_name).cloned().unwrap_or_default();
 
@@ -193,18 +184,18 @@ impl ResolvedConfig {
             .rpc_url
             .or_else(|| std::env::var("DEADEYE_RPC_URL").ok())
             .or(profile.rpc_url)
-            .unwrap_or_else(|| DEFAULT_SEPOLIA_RPC.to_owned());
+            .unwrap_or_else(|| DEFAULT_MAINNET_RPC.to_owned());
 
         let indexer_url = inputs
             .indexer_url
             .or_else(|| std::env::var("DEADEYE_INDEXER_URL").ok())
             .or(profile.indexer_url)
-            .unwrap_or_else(|| DEFAULT_SEPOLIA_INDEXER.to_owned());
+            .unwrap_or_else(|| DEFAULT_MAINNET_INDEXER.to_owned());
 
         let chain_id = std::env::var("DEADEYE_CHAIN_ID")
             .ok()
             .or(profile.chain_id)
-            .unwrap_or_else(|| SEPOLIA_CHAIN_ID.to_owned());
+            .unwrap_or_else(|| MAINNET_CHAIN_ID.to_owned());
 
         let address = inputs
             .address

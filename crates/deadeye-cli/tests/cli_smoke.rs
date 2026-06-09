@@ -3,7 +3,7 @@
 //! These exercise the CLI surface via `assert_cmd` so the
 //! flag-parsing + dispatch layer is covered. They deliberately do not
 //! depend on a live RPC for the common-case checks — the only test that
-//! talks to Sepolia is gated behind `DEADEYE_RUN_SEPOLIA=1`.
+//! talks to mainnet is gated behind `DEADEYE_RUN_MAINNET=1`.
 
 #![allow(
     clippy::unwrap_used,
@@ -127,18 +127,18 @@ fn profile_list_json_is_valid_array() {
     assert!(parsed.is_array(), "profile-list JSON must be an array");
 }
 
-/// `deadeye markets show <addr> --output json` against the live Sepolia
+/// `deadeye markets show <addr> --output json` against the live mainnet
 /// indexer-discovered market produces parseable JSON. Gated.
 #[test]
-#[ignore = "requires Sepolia access; set DEADEYE_RUN_SEPOLIA=1 and \
-            DEADEYE_SEPOLIA_MARKET_ADDR=0x… to enable"]
-fn markets_show_json_sepolia_gated() {
-    if std::env::var_os("DEADEYE_RUN_SEPOLIA").is_none() {
-        eprintln!("skip: DEADEYE_RUN_SEPOLIA not set");
+#[ignore = "requires mainnet access; set DEADEYE_RUN_MAINNET=1 and \
+            DEADEYE_MAINNET_MARKET_ADDR=0x… to enable"]
+fn markets_show_json_mainnet_gated() {
+    if std::env::var_os("DEADEYE_RUN_MAINNET").is_none() {
+        eprintln!("skip: DEADEYE_RUN_MAINNET not set");
         return;
     }
-    let market = std::env::var("DEADEYE_SEPOLIA_MARKET_ADDR")
-        .expect("DEADEYE_SEPOLIA_MARKET_ADDR required for this gated test");
+    let market = std::env::var("DEADEYE_MAINNET_MARKET_ADDR")
+        .expect("DEADEYE_MAINNET_MARKET_ADDR required for this gated test");
     let output = deadeye()
         .arg("markets")
         .arg("show")
@@ -159,10 +159,10 @@ fn markets_show_json_sepolia_gated() {
 /// `deadeye markets list` against the live indexer returns a non-empty
 /// list. Gated.
 #[test]
-#[ignore = "requires Sepolia access; set DEADEYE_RUN_SEPOLIA=1 to enable"]
-fn markets_list_sepolia_gated() {
-    if std::env::var_os("DEADEYE_RUN_SEPOLIA").is_none() {
-        eprintln!("skip: DEADEYE_RUN_SEPOLIA not set");
+#[ignore = "requires mainnet access; set DEADEYE_RUN_MAINNET=1 to enable"]
+fn markets_list_mainnet_gated() {
+    if std::env::var_os("DEADEYE_RUN_MAINNET").is_none() {
+        eprintln!("skip: DEADEYE_RUN_MAINNET not set");
         return;
     }
     let output = deadeye()
@@ -180,7 +180,7 @@ fn markets_list_sepolia_gated() {
     let parsed: serde_json::Value =
         serde_json::from_slice(&output).expect("markets list JSON parses");
     let arr = parsed.as_array().expect("array");
-    assert!(!arr.is_empty(), "Sepolia indexer should return ≥1 market");
+    assert!(!arr.is_empty(), "mainnet indexer should return ≥1 market");
 }
 
 // ─── `deadeye admin deploy-math-runtime` confirm-gate smoke tests ─────
@@ -217,8 +217,7 @@ fn deploy_math_runtime_without_confirm_is_dry_run() {
         .get_output()
         .stdout
         .clone();
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&output).expect("dry-run emits JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&output).expect("dry-run emits JSON");
     assert_eq!(parsed["mode"], "dry_run", "must be a dry-run");
     assert_eq!(parsed["family"], "normal");
     assert_eq!(parsed["chain"], "mainnet");
@@ -256,8 +255,7 @@ fn deploy_math_runtime_status_empty_cache() {
         .get_output()
         .stdout
         .clone();
-    let parsed: serde_json::Value =
-        serde_json::from_slice(&output).expect("status emits JSON");
+    let parsed: serde_json::Value = serde_json::from_slice(&output).expect("status emits JSON");
     assert_eq!(parsed["mode"], "status");
     assert_eq!(parsed["cached"], false);
     assert_eq!(parsed["chain"], "mainnet");

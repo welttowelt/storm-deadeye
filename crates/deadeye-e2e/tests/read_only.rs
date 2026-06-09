@@ -7,15 +7,15 @@
 //! Read-only end-to-end tests against a live (or local) Starknet RPC.
 //!
 //! These tests are skipped unless `DEADEYE_RUN_INTEGRATION=1`. Target the
-//! local devnet by default, or set `DEADEYE_TEST_TARGET=cartridge` to hit
-//! a Cartridge-hosted public RPC.
+//! local devnet by default, or set `DEADEYE_TEST_TARGET=hosted` to hit
+//! a hosted public mainnet RPC.
 //!
 //! ```bash
 //! # Local devnet (must be running on :5050):
 //! DEADEYE_RUN_INTEGRATION=1 cargo test -p deadeye-e2e -- --nocapture
 //!
-//! # Cartridge Sepolia:
-//! DEADEYE_RUN_INTEGRATION=1 DEADEYE_TEST_TARGET=cartridge \
+//! # Hosted mainnet RPC:
+//! DEADEYE_RUN_INTEGRATION=1 DEADEYE_TEST_TARGET=hosted \
 //!   cargo test -p deadeye-e2e -- --nocapture
 //! ```
 
@@ -41,7 +41,7 @@ async fn harness_reaches_target_environment() {
         },
         Err(e) => {
             eprintln!(
-                "skip: harness not reachable ({e}). Set DEADEYE_TEST_TARGET=cartridge to use a hosted RPC, or start starknet-devnet on :5050."
+                "skip: harness not reachable ({e}). Set DEADEYE_TEST_TARGET=hosted to use a hosted RPC, or start starknet-devnet on :5050."
             );
         },
     }

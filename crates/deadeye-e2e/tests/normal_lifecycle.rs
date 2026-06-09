@@ -10,14 +10,13 @@
 //! Two test surfaces:
 //!
 //! 1. **Devnet account smoke** — verifies that `OwnedAccount` constructs
-//!    correctly from a starknet-devnet predeployed account and can read
-//!    its own nonce. Requires `DEADEYE_RUN_INTEGRATION=1` and a running
-//!    devnet at `:5050`.
+//!    correctly from a starknet-devnet predeployed account and can read its own
+//!    nonce. Requires `DEADEYE_RUN_INTEGRATION=1` and a running devnet at
+//!    `:5050`.
 //!
-//! 2. **Sepolia read passthrough** — against the live Sepolia deployment
-//!    via Cartridge, opens a known normal market and reads its
-//!    distribution + market status. Pure read-only; no funded account
-//!    required.
+//! 2. **Mainnet read passthrough** — against the live mainnet deployment via a
+//!    hosted public RPC, opens a known normal market and reads its distribution
+//!    + market status. Pure read-only; no funded account required.
 //!
 //! The "full deploy → trade → sell → claim" lifecycle test lands in
 //! `crates/deadeye-e2e/tests/factory_deploy.rs` once Phase 4 is in,
@@ -26,7 +25,7 @@
 use deadeye_core::Distribution;
 use deadeye_sdk::{DeadeyeClient, starknet::JsonRpcProvider};
 use deadeye_starknet::{Account, OwnedAccount};
-use deadeye_testkit::{cartridge::CartridgeNetwork, devnet, predeployed_one};
+use deadeye_testkit::{default_mainnet_rpc, devnet, predeployed_one};
 use starknet_core::types::Felt;
 use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 use url::Url;
@@ -57,7 +56,7 @@ async fn devnet_account_smoke() {
         predeployed.address, predeployed.private_key
     );
 
-    // Chain ID for starknet-devnet-rs (SN_SEPOLIA-like by default).
+    // Chain ID for starknet-devnet-rs (SN_MAIN by default).
     let chain_id = devnet::chain_id(&url).await.expect("chain_id reads");
 
     let rpc = JsonRpcClient::new(HttpTransport::new(url.clone()));
@@ -69,17 +68,17 @@ async fn devnet_account_smoke() {
 }
 
 #[tokio::test]
-async fn sepolia_normal_market_read_passthrough() {
+async fn mainnet_normal_market_read_passthrough() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
-    let url = CartridgeNetwork::Sepolia.url();
+    let url = default_mainnet_rpc();
     let rpc = JsonRpcClient::new(HttpTransport::new(url));
     let provider = JsonRpcProvider::new(rpc);
     let client = DeadeyeClient::new(provider);
 
-    // Known live normal market on Sepolia (resolved via the indexer at
+    // Known live normal market on mainnet (resolved via the indexer at
     // dev-time; if this market settles or moves, replace with another
     // `marketType=="normal"` address from /api/markets).
     let market_address =
@@ -89,7 +88,7 @@ async fn sepolia_normal_market_read_passthrough() {
 
     let dist = market.distribution().await.expect("distribution reads");
     eprintln!(
-        "sepolia normal market: mean={}, sigma={}",
+        "mainnet normal market: mean={}, sigma={}",
         dist.mean().to_f64(),
         dist.sigma().to_f64()
     );

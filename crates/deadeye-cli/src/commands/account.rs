@@ -195,7 +195,6 @@ fn list(ctx: &AppContext) -> Result<()> {
 fn chain_label(chain_id: Option<&str>) -> &'static str {
     match chain_id {
         Some(config::MAINNET_CHAIN_ID) => "mainnet",
-        Some(config::SEPOLIA_CHAIN_ID) => "sepolia",
         _ => "custom",
     }
 }

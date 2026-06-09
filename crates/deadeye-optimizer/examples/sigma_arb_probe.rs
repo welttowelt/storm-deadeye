@@ -3,8 +3,8 @@
 //!
 //! Driven by the live CPI mainnet numbers (2026-05-14):
 //!   belief : `μ=4.3274` `σ=0.2143` (`cpi_decomposition_v3` against live FRED)
-//!   market : `μ=4.2900` `σ=0.3500` (mainnet AMM via Cartridge RPC)
-//!   `k_eff` : 75.07 (live, via fly.dev indexer)
+//!   market : `μ=4.2900` `σ=0.3500` (mainnet AMM via public RPC)
+//!   `k_eff` : 75.07 (live, via the mainnet indexer)
 
 #![allow(
     clippy::print_stdout,
@@ -16,14 +16,78 @@ use deadeye_optimizer::{NormalOptimizationInput, optimize_normal_trade};
 fn main() {
     let cases: &[(&str, f64, f64, f64, f64, f64, f64)] = &[
         // (label, mu_b, sigma_b, mu_m, sigma_m, k_eff, budget)
-        ("live-CPI-2026-05-14",        4.3274, 0.2143, 4.2900, 0.3500, 75.07, 50.0),
-        ("μ-only arb HUGE budget",     4.5000, 0.3500, 4.2900, 0.3500, 75.07, 1e9),
-        ("σ-only HUGE budget",         4.2900, 0.2143, 4.2900, 0.3500, 75.07, 1e9),
-        ("classic README scenario",    2.4700, 0.1581, 2.1000, 0.2000, 50.00, 50.0),
-        ("scenario w/ low k",          4.5000, 0.3500, 4.2900, 0.3500,  1.00, 50.0),
-        ("CPI shape unequal-σ",        4.3274, 0.2143, 2.1000, 0.3500, 75.07, 50.0),
-        ("CPI σ + low-μ market",       4.3274, 0.2143, 0.1000, 0.3500, 75.07, 50.0),
-        ("README+CPI-μ μ-only",        2.4700, 0.2000, 2.1000, 0.2000, 50.00, 50.0),
+        (
+            "live-CPI-2026-05-14",
+            4.3274,
+            0.2143,
+            4.2900,
+            0.3500,
+            75.07,
+            50.0,
+        ),
+        (
+            "μ-only arb HUGE budget",
+            4.5000,
+            0.3500,
+            4.2900,
+            0.3500,
+            75.07,
+            1e9,
+        ),
+        (
+            "σ-only HUGE budget",
+            4.2900,
+            0.2143,
+            4.2900,
+            0.3500,
+            75.07,
+            1e9,
+        ),
+        (
+            "classic README scenario",
+            2.4700,
+            0.1581,
+            2.1000,
+            0.2000,
+            50.00,
+            50.0,
+        ),
+        (
+            "scenario w/ low k",
+            4.5000,
+            0.3500,
+            4.2900,
+            0.3500,
+            1.00,
+            50.0,
+        ),
+        (
+            "CPI shape unequal-σ",
+            4.3274,
+            0.2143,
+            2.1000,
+            0.3500,
+            75.07,
+            50.0,
+        ),
+        (
+            "CPI σ + low-μ market",
+            4.3274,
+            0.2143,
+            0.1000,
+            0.3500,
+            75.07,
+            50.0,
+        ),
+        (
+            "README+CPI-μ μ-only",
+            2.4700,
+            0.2000,
+            2.1000,
+            0.2000,
+            50.00,
+            50.0,
+        ),
     ];
 
     println!(
@@ -39,10 +103,7 @@ fn main() {
         println!(
             "{label:<26} {mu_b:>9.4} {sigma_b:>9.4} {mu_m:>9.4} {sigma_m:>9.4} {k:>11.4} \
              {budget:>10.2} {:>9.4} {:>9.4} {:>9.4} {:>9.4}",
-            r.optimized_mean,
-            r.optimized_sigma,
-            r.collateral_required,
-            r.expected_value,
+            r.optimized_mean, r.optimized_sigma, r.collateral_required, r.expected_value,
         );
     }
 }

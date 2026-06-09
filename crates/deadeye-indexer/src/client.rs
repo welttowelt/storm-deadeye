@@ -51,11 +51,6 @@ pub struct IndexerClient {
 }
 
 impl IndexerClient {
-    /// Construct a client against the canonical Sepolia indexer.
-    pub fn sepolia() -> Result<Self, IndexerError> {
-        Self::new(crate::SEPOLIA_URL)
-    }
-
     /// Construct a client against the canonical mainnet indexer.
     pub fn mainnet() -> Result<Self, IndexerError> {
         Self::new(crate::MAINNET_URL)

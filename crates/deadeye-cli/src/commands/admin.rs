@@ -191,7 +191,7 @@ use crate::output::Render;
 struct DeployMathRuntimeResult {
     /// Either "deploy", "dry_run", or "status".
     mode: &'static str,
-    /// Chain slug (`mainnet`, `sepolia`, `devnet`).
+    /// Chain slug (`mainnet`, `devnet`).
     chain: &'static str,
     /// Family slug (`normal`, ...).
     family: &'static str,
@@ -283,7 +283,7 @@ async fn deploy_math_runtime(ctx: &AppContext, args: AdminDeployMathRuntimeArgs)
         )?
         .as_deployer();
 
-    // Resolve class hash: CLI override > canonical mainnet/sepolia.
+    // Resolve class hash: CLI override > canonical mainnet.
     let class_hash = if let Some(raw) = args.class_hash.as_deref() {
         parse_felt("class_hash", raw)?
     } else {
@@ -417,16 +417,12 @@ async fn deploy_math_runtime(ctx: &AppContext, args: AdminDeployMathRuntimeArgs)
     let tx_hex = format!("{:#x}", tx.transaction_hash);
 
     if verified {
-        cache.upsert(
-            chain,
-            family,
-            RuntimeEntry {
-                address: address_hex.clone(),
-                class_hash: class_hex.clone(),
-                deployed_at_block: deployed_block,
-                deployed_tx: Some(tx_hex.clone()),
-            },
-        );
+        cache.upsert(chain, family, RuntimeEntry {
+            address: address_hex.clone(),
+            class_hash: class_hex.clone(),
+            deployed_at_block: deployed_block,
+            deployed_tx: Some(tx_hex.clone()),
+        });
         cache.save(&cache_path).context("saving runtime cache")?;
     }
 
@@ -529,7 +525,6 @@ async fn deploy_math_runtime_status(ctx: &AppContext, chain: ChainKey) -> Result
 fn static_chain_slug(s: &str) -> &'static str {
     match s {
         "mainnet" => "mainnet",
-        "sepolia" => "sepolia",
         "devnet" => "devnet",
         _ => "unknown",
     }

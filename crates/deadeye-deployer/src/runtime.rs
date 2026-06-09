@@ -7,11 +7,10 @@
 //!
 //! This module provides:
 //!
-//! * [`Family`] — the four supported families and their canonical
-//!   mainnet class hashes.
+//! * [`Family`] — the four supported families and their canonical mainnet class
+//!   hashes.
 //! * [`runtime_class_hash`] — class-hash lookup keyed by `(chain, family)`,
-//!   with mainnet hashes embedded as compile-time constants and sepolia
-//!   hashes pulled from the bundled manifest.
+//!   with mainnet hashes embedded as compile-time constants.
 //! * [`projected_deploy_address`] — pure address derivation via the
 //!   [`get_udc_deployed_address`](starknet_core::utils::get_udc_deployed_address)
 //!   helper. Used for dry-runs and idempotency checks.
@@ -116,7 +115,8 @@ impl Family {
     }
 }
 
-/// Mainnet math-runtime class hashes (from `the-situation` `deployment-mainnet-01.json`).
+/// Mainnet math-runtime class hashes (from `the-situation`
+/// `deployment-mainnet-01.json`).
 ///
 /// These are pinned at the crate level so the CLI can compute a projected
 /// deploy address *without* touching the network — the only round-trip
@@ -142,9 +142,8 @@ pub mod mainnet_class_hashes {
 pub enum ChainKey {
     /// Starknet mainnet (`SN_MAIN`).
     Mainnet,
-    /// Starknet sepolia (`SN_SEPOLIA`).
-    Sepolia,
-    /// Any other chain — typically a local devnet. The raw chain-id felt is preserved.
+    /// Any other chain — typically a local devnet. The raw chain-id felt is
+    /// preserved.
     Other,
 }
 
@@ -152,13 +151,11 @@ impl ChainKey {
     /// Derive the [`ChainKey`] from a hex-encoded chain-id felt.
     #[must_use]
     pub fn from_chain_id_hex(hex: &str) -> Self {
-        // "SN_MAIN" felt-encoded; "SN_SEPOLIA" felt-encoded.
+        // "SN_MAIN" felt-encoded.
         let normalised = hex.trim_start_matches("0x").trim_start_matches('0');
         let lower = normalised.to_ascii_lowercase();
         if lower == "534e5f4d41494e" {
             Self::Mainnet
-        } else if lower == "534e5f5345504f4c4941" {
-            Self::Sepolia
         } else {
             Self::Other
         }
@@ -169,30 +166,19 @@ impl ChainKey {
     pub const fn slug(self) -> &'static str {
         match self {
             Self::Mainnet => "mainnet",
-            Self::Sepolia => "sepolia",
             Self::Other => "devnet",
         }
     }
 }
 
 /// Return the canonical math-runtime class hash for the given
-/// `(chain, family)`. For sepolia, falls back to the bundled deployment
-/// manifest; for mainnet, returns the pinned constant.
+/// `(chain, family)`. For mainnet, returns the pinned constant.
 pub fn runtime_class_hash(chain: ChainKey, family: Family) -> Result<Felt, DeployerError> {
     let raw: String = match (chain, family) {
         (ChainKey::Mainnet, Family::Normal) => mainnet_class_hashes::NORMAL.to_owned(),
         (ChainKey::Mainnet, Family::Lognormal) => mainnet_class_hashes::LOGNORMAL.to_owned(),
         (ChainKey::Mainnet, Family::Bivariate) => mainnet_class_hashes::BIVARIATE.to_owned(),
         (ChainKey::Mainnet, Family::Multinoulli) => mainnet_class_hashes::MULTINOULLI.to_owned(),
-        (ChainKey::Sepolia, family) => {
-            let d = crate::Deployment::sepolia()?;
-            match family {
-                Family::Normal => d.class_hashes.normal_math_runtime,
-                Family::Lognormal => d.class_hashes.lognormal_math_runtime,
-                Family::Multinoulli => d.class_hashes.multinoulli_math_runtime,
-                Family::Bivariate => d.class_hashes.bivariate_math_runtime,
-            }
-        },
         (ChainKey::Other, _) => {
             // The cache machinery still works for devnet, but we can't
             // know the class hash up front — caller must declare it
@@ -267,13 +253,13 @@ pub struct RuntimeEntry {
 /// deployed_at_block = 1234567
 /// deployed_tx = "0x..."
 ///
-/// [sepolia.normal]
+/// [devnet.normal]
 /// # ...
 /// ```
 #[derive(Debug, Clone, Default, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(transparent)]
 pub struct RuntimeCache {
-    /// Outer map keyed by chain slug (`mainnet`, `sepolia`, `devnet`), inner
+    /// Outer map keyed by chain slug (`mainnet`, `devnet`), inner
     /// map keyed by family slug (`normal`, `lognormal`, …).
     pub chains: BTreeMap<String, BTreeMap<String, RuntimeEntry>>,
 }
@@ -451,14 +437,15 @@ mod tests {
     }
 
     #[test]
-    fn chain_key_detects_mainnet_and_sepolia() {
+    fn chain_key_detects_mainnet() {
         assert_eq!(
             ChainKey::from_chain_id_hex("0x534e5f4d41494e"),
             ChainKey::Mainnet
         );
+        // Any non-mainnet chain id (e.g. a local devnet felt) → Other.
         assert_eq!(
             ChainKey::from_chain_id_hex("0x534e5f5345504f4c4941"),
-            ChainKey::Sepolia
+            ChainKey::Other
         );
         assert_eq!(ChainKey::from_chain_id_hex("0xdeadbeef"), ChainKey::Other);
         // Leading zero tolerated.
@@ -510,8 +497,7 @@ mod tests {
             let pinned_felt = Felt::from_hex(pinned).expect("pinned parses");
             let manifest_felt = Felt::from_hex(manifest_raw).expect("manifest parses");
             assert_eq!(
-                pinned_felt,
-                manifest_felt,
+                pinned_felt, manifest_felt,
                 "drift in {family:?}: pinned={pinned} manifest={manifest_raw}"
             );
         }
@@ -556,26 +542,18 @@ mod tests {
     #[test]
     fn cache_roundtrips_via_toml() {
         let mut cache = RuntimeCache::default();
-        cache.upsert(
-            ChainKey::Mainnet,
-            Family::Normal,
-            RuntimeEntry {
-                address: "0xabc".to_owned(),
-                class_hash: mainnet_class_hashes::NORMAL.to_owned(),
-                deployed_at_block: Some(1_234_567),
-                deployed_tx: Some("0xdef".to_owned()),
-            },
-        );
-        cache.upsert(
-            ChainKey::Sepolia,
-            Family::Lognormal,
-            RuntimeEntry {
-                address: "0xfeed".to_owned(),
-                class_hash: "0xface".to_owned(),
-                deployed_at_block: None,
-                deployed_tx: None,
-            },
-        );
+        cache.upsert(ChainKey::Mainnet, Family::Normal, RuntimeEntry {
+            address: "0xabc".to_owned(),
+            class_hash: mainnet_class_hashes::NORMAL.to_owned(),
+            deployed_at_block: Some(1_234_567),
+            deployed_tx: Some("0xdef".to_owned()),
+        });
+        cache.upsert(ChainKey::Other, Family::Lognormal, RuntimeEntry {
+            address: "0xfeed".to_owned(),
+            class_hash: "0xface".to_owned(),
+            deployed_at_block: None,
+            deployed_tx: None,
+        });
 
         let dir = tempfile::tempdir().expect("tempdir");
         let path = dir.path().join("runtimes.toml");
@@ -588,7 +566,7 @@ mod tests {
         // Sanity: the rendered TOML mentions the chain slug + family slug.
         let raw = fs::read_to_string(&path).expect("read back");
         assert!(raw.contains("[mainnet.normal]"));
-        assert!(raw.contains("[sepolia.lognormal]"));
+        assert!(raw.contains("[devnet.lognormal]"));
     }
 
     #[test]

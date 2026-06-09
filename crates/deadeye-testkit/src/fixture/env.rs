@@ -181,12 +181,10 @@ pub async fn bootstrap_devnet(cfg: BootstrapConfig) -> Result<TestEnv, TestEnvEr
     let declared = declare_all(&admin_handle, &artifacts).await?;
 
     // Step 4: deploy factory(owner=admin, treasury=admin).
-    let factory = udc_deploy(
-        admin_handle.clone(),
-        declared.factory,
-        Felt::ZERO,
-        vec![admin.address, admin.address],
-    )
+    let factory = udc_deploy(admin_handle.clone(), declared.factory, Felt::ZERO, vec![
+        admin.address,
+        admin.address,
+    ])
     .await?;
 
     // Step 5: deploy each family plugin (no constructor args).

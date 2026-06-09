@@ -14,7 +14,7 @@ use crate::output::OutputMode;
 /// # Examples
 ///
 /// ```text
-/// # One-shot read against the default Sepolia profile:
+/// # One-shot read against the default mainnet profile:
 /// deadeye markets list --limit 5
 ///
 /// # Inspect one market (family auto-detected):
@@ -36,7 +36,7 @@ pub(crate) struct Cli {
     /// Override the Starknet JSON-RPC URL.
     ///
     /// Falls back to `DEADEYE_RPC_URL`, then to the active profile's
-    /// `rpc_url`, then to a public Sepolia endpoint.
+    /// `rpc_url`, then to a public mainnet endpoint.
     #[arg(long, global = true, value_name = "URL", env = "DEADEYE_RPC_URL")]
     pub(crate) rpc_url: Option<String>,
 
@@ -213,13 +213,11 @@ pub(crate) enum Command {
     },
 }
 
-/// Target network for `deadeye onboard`.
+/// Target network for `deadeye onboard`. Mainnet is the only deployment.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum NetworkArg {
     /// Starknet mainnet (real STRK for gas).
     Mainnet,
-    /// Starknet Sepolia testnet (faucet STRK).
-    Sepolia,
 }
 
 /// `deadeye onboard …`
@@ -449,7 +447,7 @@ pub(crate) enum CollateralCmd {
     /// # Real submission.
     /// deadeye collateral claim-grant --execute
     ///
-    /// # Custom token address (sepolia / devnet).
+    /// # Custom token address (devnet / other).
     /// deadeye collateral claim-grant --token 0x4583… --execute
     /// ```
     ClaimGrant(CollateralClaimGrantArgs),
@@ -464,7 +462,7 @@ pub(crate) enum CollateralCmd {
 pub(crate) struct CollateralClaimGrantArgs {
     /// Override the collateral-token address. Defaults to the bundled
     /// mainnet XP address (`MAINNET_XP_TOKEN_ADDRESS`). Required on
-    /// sepolia / devnet.
+    /// non-mainnet chains.
     #[arg(long, value_name = "0x...")]
     pub(crate) token: Option<String>,
     /// Submit the transaction. Without this flag, the command performs
@@ -556,8 +554,8 @@ pub(crate) struct AdminDeployMathRuntimeArgs {
     pub(crate) salt: Option<String>,
     /// Override the math-runtime class hash. Defaults to the canonical
     /// class hash for `(chain_id, family)` from the bundled deployment
-    /// manifest (sepolia) or the pinned mainnet constants. Required on
-    /// chains other than mainnet / sepolia.
+    /// the pinned mainnet constants. Required on
+    /// chains other than mainnet.
     #[arg(long, value_name = "0x...")]
     pub(crate) class_hash: Option<String>,
     /// Required for a real on-chain deploy. Without it, the command is a
@@ -774,11 +772,11 @@ pub(crate) enum ConfigCmd {
     /// # Example
     ///
     /// ```text
-    /// deadeye config init --profile sepolia
+    /// deadeye config init --profile mainnet
     /// ```
     Init {
         /// Name of the profile to create / update.
-        #[arg(long, default_value = "sepolia")]
+        #[arg(long, default_value = "mainnet")]
         profile: String,
         /// Address to associate with the profile (hex felt).
         #[arg(long, value_name = "0x...")]
@@ -793,6 +791,19 @@ pub(crate) enum ConfigCmd {
         #[arg(long)]
         set_default: bool,
     },
+    /// Update fields on a profile — only the flags you pass are changed.
+    ///
+    /// Targets the **active** profile by default (the one `config show`
+    /// resolves), so `deadeye config set --rpc-url <url>` just works. Pass
+    /// `--profile <name>` to target another (created if it doesn't exist).
+    ///
+    /// # Examples
+    ///
+    /// ```text
+    /// deadeye config set --rpc-url https://… --indexer-url https://…
+    /// deadeye config set --profile bot2 --address 0x… --default
+    /// ```
+    Set(ConfigSetArgs),
     /// Print the resolved configuration (private key redacted).
     Show,
     /// List configured profiles.
@@ -802,13 +813,41 @@ pub(crate) enum ConfigCmd {
     /// # Example
     ///
     /// ```text
-    /// deadeye config profile-use sepolia
+    /// deadeye config profile-use mainnet
     /// ```
     ProfileUse {
         /// Profile name to mark as default.
         #[arg(value_name = "NAME")]
         name: String,
     },
+}
+
+/// `deadeye config set …` — update one or more fields on a profile.
+#[derive(Debug, clap::Args)]
+pub(crate) struct ConfigSetArgs {
+    /// Profile to update. Defaults to the active profile (`--profile`,
+    /// `DEADEYE_PROFILE`, or the saved default). Created if it doesn't exist.
+    #[arg(long, value_name = "NAME")]
+    pub(crate) profile: Option<String>,
+    /// Trader / account address (hex felt).
+    #[arg(long, value_name = "0x...")]
+    pub(crate) address: Option<String>,
+    /// Starknet JSON-RPC URL (must speak spec ≥ v0_9 for the pre_confirmed
+    /// tag).
+    #[arg(long, value_name = "URL")]
+    pub(crate) rpc_url: Option<String>,
+    /// Indexer base URL.
+    #[arg(long, value_name = "URL")]
+    pub(crate) indexer_url: Option<String>,
+    /// Chain id (hex felt) — e.g. `0x534e5f4d41494e` for SN_MAIN.
+    #[arg(long, value_name = "HEX")]
+    pub(crate) chain_id: Option<String>,
+    /// ERC-20 collateral token address (defaults to canonical STRK).
+    #[arg(long, value_name = "0x...")]
+    pub(crate) strk_token: Option<String>,
+    /// Also make this the default profile.
+    #[arg(long)]
+    pub(crate) default: bool,
 }
 
 // ─── Update (self-update) ────────────────────────────────────────────────
@@ -864,7 +903,8 @@ pub(crate) struct FeedbackArgs {
     /// Component this concerns (e.g. cli, forecast, wallet, trade, indexer).
     #[arg(long)]
     pub(crate) component: Option<String>,
-    /// Extra GitHub label to apply (repeatable). Must already exist on the repo.
+    /// Extra GitHub label to apply (repeatable). Must already exist on the
+    /// repo.
     #[arg(long = "label")]
     pub(crate) labels: Vec<String>,
     /// Target repository (`owner/name`). Defaults to the deadeye-rs repo or
@@ -1014,9 +1054,11 @@ pub(crate) struct ForecastSnapshotArgs {
 /// Bayesian / aggregation routines exposed by `forecast bayes`.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, ValueEnum)]
 pub(crate) enum BayesRoutine {
-    /// Aggregate component `(mu, sigma, weight, side)` beliefs → `(mean, sd, variance, quantiles)`.
+    /// Aggregate component `(mu, sigma, weight, side)` beliefs → `(mean, sd,
+    /// variance, quantiles)`.
     AggregateNormal,
-    /// Blend reference classes `[{base_rate, applicability, uncertainty}]` → prior.
+    /// Blend reference classes `[{base_rate, applicability, uncertainty}]` →
+    /// prior.
     BlendBaseRates,
     /// Pool probabilities `[{p, weight}]` via log-odds (default) or linear.
     Pool,

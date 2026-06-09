@@ -5,7 +5,7 @@
     reason = "integration tests in tests/ are top-level — printing aids debugging, unwrap is OK"
 )]
 
-//! Phase 2 e2e: multinoulli read paths + solver against live Sepolia.
+//! Phase 2 e2e: multinoulli read paths + solver against live mainnet.
 //!
 //! Full deploy/trade lifecycle for multinoulli markets lands in Phase 4
 //! once the Factory wrapper is in.
@@ -14,7 +14,7 @@ use deadeye_collateral::categorical_collateral;
 use deadeye_core::CategoricalDistribution;
 use deadeye_indexer::IndexerClient;
 use deadeye_sdk::{DeadeyeClient, starknet::JsonRpcProvider};
-use deadeye_testkit::cartridge::CartridgeNetwork;
+use deadeye_testkit::default_mainnet_rpc;
 use starknet_core::types::Felt;
 use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 
@@ -24,7 +24,7 @@ fn integration_enabled() -> bool {
 
 /// Resolves a live multinoulli market via the indexer.
 async fn pick_multinoulli_market() -> Option<(Felt, f64)> {
-    let client = IndexerClient::sepolia().ok()?;
+    let client = IndexerClient::mainnet().ok()?;
     let markets = client.markets().await.ok()?;
     for m in markets {
         if m.market_type != "multinoulli" {
@@ -44,19 +44,19 @@ async fn pick_multinoulli_market() -> Option<(Felt, f64)> {
 }
 
 #[tokio::test]
-async fn sepolia_multinoulli_read_passthrough() {
+async fn mainnet_multinoulli_read_passthrough() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
 
     let Some((address, k)) = pick_multinoulli_market().await else {
-        eprintln!("skip: no live multinoulli market found on Sepolia");
+        eprintln!("skip: no live multinoulli market found on mainnet");
         return;
     };
     eprintln!("picked multinoulli market: {address:#x} k={k}");
 
-    let url = CartridgeNetwork::Sepolia.url();
+    let url = default_mainnet_rpc();
     let rpc = JsonRpcClient::new(HttpTransport::new(url));
     let provider = JsonRpcProvider::new(rpc);
     let client = DeadeyeClient::new(provider);

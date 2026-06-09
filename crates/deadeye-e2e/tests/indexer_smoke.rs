@@ -4,8 +4,8 @@
     reason = "integration tests in tests/ are top-level — printing aids debugging"
 )]
 
-//! Smoke tests against the production Sepolia indexer at
-//! `situation-indexer.fly.dev`.
+//! Smoke tests against the production mainnet indexer at
+//! `178-105-210-177.sslip.io`.
 //!
 //! Enable with:
 //!
@@ -20,12 +20,12 @@ fn integration_enabled() -> bool {
 }
 
 #[tokio::test]
-async fn sepolia_indexer_is_healthy() {
+async fn mainnet_indexer_is_healthy() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
-    let client = IndexerClient::sepolia().expect("client builds");
+    let client = IndexerClient::mainnet().expect("client builds");
     let health = client.health().await.expect("health responds");
     assert_eq!(
         health.status, "ok",
@@ -38,18 +38,18 @@ async fn sepolia_indexer_is_healthy() {
         health.db_status
     );
     eprintln!(
-        "sepolia indexer: uptime={}s markets={} events={}",
+        "mainnet indexer: uptime={}s markets={} events={}",
         health.uptime, health.markets_count, health.events_count
     );
 }
 
 #[tokio::test]
-async fn sepolia_indexer_lists_markets() {
+async fn mainnet_indexer_lists_markets() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
-    let client = IndexerClient::sepolia().expect("client builds");
+    let client = IndexerClient::mainnet().expect("client builds");
     let markets = client.markets().await.expect("markets responds");
     assert!(!markets.is_empty(), "indexer must have at least one market");
     let first = &markets[0];
@@ -68,12 +68,12 @@ async fn sepolia_indexer_lists_markets() {
 }
 
 #[tokio::test]
-async fn sepolia_indexer_full_endpoint_surface() {
+async fn mainnet_indexer_full_endpoint_surface() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
-    let client = IndexerClient::sepolia().expect("client builds");
+    let client = IndexerClient::mainnet().expect("client builds");
 
     // Rankings.
     let rankings = client.rankings(5).await.expect("rankings responds");
@@ -116,12 +116,12 @@ async fn sepolia_indexer_full_endpoint_surface() {
 }
 
 #[tokio::test]
-async fn sepolia_indexer_extended_endpoints() {
+async fn mainnet_indexer_extended_endpoints() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
-    let client = IndexerClient::sepolia().expect("client builds");
+    let client = IndexerClient::mainnet().expect("client builds");
     let markets = client.markets().await.expect("markets responds");
     assert!(!markets.is_empty(), "indexer must have at least one market");
     let market_addr = markets[0].address.clone();

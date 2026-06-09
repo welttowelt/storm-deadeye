@@ -10,7 +10,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 - `CollateralTokenReader` / `CollateralTokenWriter` — typed view + write
   client pair for the deployed `restricted_collateral_token` (XP on
-  Deadeye mainnet, SPICE on sepolia). Reader exposes `balance_of`,
+  Deadeye mainnet). Reader exposes `balance_of`,
   `allowance`, `total_supply`, `initial_grant`,
   `has_claimed_initial_grant`, `is_market_registered`,
   `is_market_enabled`; writer pairs it with an `Account` and exposes
@@ -46,8 +46,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   the XP token, minting the fixed grant to the configured wallet.
   Idempotent: reads `has_claimed_initial_grant` up front and skips the
   submit on an already-funded wallet. Dry-run by default; `--execute`
-  to submit. Honors `--token` for non-mainnet deploys
-  (e.g. sepolia's SPICE) and falls back to `MAINNET_XP_TOKEN_ADDRESS`.
+  to submit. Honors `--token` for non-mainnet deploys and falls back
+  to `MAINNET_XP_TOKEN_ADDRESS`.
 - `deadeye collateral balance` — prints the wallet's XP balance, the
   `initial_grant` amount, and whether the grant has been claimed.
   Read-only.
@@ -175,9 +175,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
     pre-computed entry-point selectors, `NormalMarketReader` view client.
   - `deadeye-sdk` — `DeadeyeClient`, per-market handles, `PreparedQuote`.
   - `deadeye-indexer` — typed HTTP client for the production indexer
-    (`situation-indexer.fly.dev`), with `health()`, `markets()`, and
-    per-market detail accessors.
-  - `deadeye-testkit` — devnet lifecycle helpers, Cartridge RPC
+    (`https://178-105-210-177.sslip.io`), with `health()`, `markets()`,
+    and per-market detail accessors.
+  - `deadeye-testkit` — devnet lifecycle helpers, hosted public RPC
     discovery, integration `Harness`.
   - `deadeye-e2e` — read-only end-to-end tests, opt-in via
     `DEADEYE_RUN_INTEGRATION=1`.
@@ -185,5 +185,5 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Pedantic lint posture: `clippy::all + pedantic + nursery` plus curated
   `clippy::restriction` lints; `unsafe_code = forbid`.
 - GitHub Actions CI for fmt, clippy, test, docs, MSRV, and
-  `cargo-deny` checks; weekly integration workflow against Cartridge
-  Sepolia and starknet-devnet-rs.
+  `cargo-deny` checks; weekly integration workflow against a hosted
+  public mainnet RPC and starknet-devnet-rs.

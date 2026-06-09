@@ -47,7 +47,8 @@ fn save_cache(cache: &HashMap<String, String>) {
 
 /// Extracts the chain's expected compiled class hash from a declare error
 /// message of the form
-///   "Mismatch compiled class hash for class with hash 0x… . Actual: 0x…, Expected: 0x…".
+///   "Mismatch compiled class hash for class with hash 0x… . Actual: 0x…,
+/// Expected: 0x…".
 fn extract_expected_hash(error_text: &str) -> Option<Felt> {
     let marker = "Expected: ";
     let start = error_text.find(marker)? + marker.len();

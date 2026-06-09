@@ -86,9 +86,6 @@ pub const ALL: &[Abi] = &[
 /// Raw JSON bytes of the release manifest.
 pub const MANIFEST_BYTES: &[u8] = include_bytes!("../abis/release-manifest.json");
 
-/// Raw JSON bytes of the deployed-class manifest for Sepolia.
-pub const SEPOLIA_DEPLOYMENT_BYTES: &[u8] = include_bytes!("../abis/deployment-sepolia.json");
-
 /// Raw JSON bytes of the deployed-class manifest for mainnet.
 pub const MAINNET_DEPLOYMENT_BYTES: &[u8] = include_bytes!("../abis/deployment-mainnet.json");
 

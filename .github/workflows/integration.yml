@@ -11,19 +11,20 @@ env:
   DEADEYE_RUN_INTEGRATION: "1"
 
 jobs:
-  cartridge:
-    name: Cartridge Sepolia smoke
+  hosted:
+    name: Hosted mainnet smoke
     runs-on: ubuntu-latest
     env:
-      DEADEYE_TEST_TARGET: cartridge
-      DEADEYE_TEST_NETWORK: sepolia
+      DEADEYE_TEST_TARGET: hosted
+      DEADEYE_TEST_NETWORK: mainnet
+      DEADEYE_TEST_RPC: https://api.zan.top/public/starknet-mainnet/rpc/v0_10
     steps:
       - uses: actions/checkout@v4
       - uses: Swatinem/rust-cache@v2
       - run: cargo test -p deadeye-e2e --no-fail-fast -- --nocapture
 
-  sepolia-indexer:
-    name: Sepolia indexer smoke (situation-indexer.fly.dev)
+  mainnet-indexer:
+    name: Mainnet indexer smoke (https://178-105-210-177.sslip.io)
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

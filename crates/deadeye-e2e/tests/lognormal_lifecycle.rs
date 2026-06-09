@@ -5,12 +5,12 @@
     reason = "integration tests in tests/ are top-level — printing aids debugging, unwrap is OK"
 )]
 
-//! Phase 3 e2e: lognormal read paths + solver against live Sepolia.
+//! Phase 3 e2e: lognormal read paths + solver against live mainnet.
 
 use deadeye_core::Distribution;
 use deadeye_indexer::IndexerClient;
 use deadeye_sdk::{DeadeyeClient, starknet::JsonRpcProvider};
-use deadeye_testkit::cartridge::CartridgeNetwork;
+use deadeye_testkit::default_mainnet_rpc;
 use starknet_core::types::Felt;
 use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 
@@ -19,7 +19,7 @@ fn integration_enabled() -> bool {
 }
 
 async fn pick_lognormal_market() -> Option<Felt> {
-    let client = IndexerClient::sepolia().ok()?;
+    let client = IndexerClient::mainnet().ok()?;
     let markets = client.markets().await.ok()?;
     for m in markets {
         if m.market_type != "lognormal" {
@@ -34,18 +34,18 @@ async fn pick_lognormal_market() -> Option<Felt> {
 }
 
 #[tokio::test]
-async fn sepolia_lognormal_read_passthrough() {
+async fn mainnet_lognormal_read_passthrough() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
     let Some(address) = pick_lognormal_market().await else {
-        eprintln!("skip: no live lognormal market on Sepolia");
+        eprintln!("skip: no live lognormal market on mainnet");
         return;
     };
     eprintln!("picked lognormal market: {address:#x}");
 
-    let url = CartridgeNetwork::Sepolia.url();
+    let url = default_mainnet_rpc();
     let rpc = JsonRpcClient::new(HttpTransport::new(url));
     let provider = JsonRpcProvider::new(rpc);
     let client = DeadeyeClient::new(provider);

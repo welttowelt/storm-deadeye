@@ -5,11 +5,11 @@
     reason = "integration tests in tests/ are top-level — printing aids debugging, unwrap is OK"
 )]
 
-//! Phase 3 e2e: bivariate read paths against live Sepolia.
+//! Phase 3 e2e: bivariate read paths against live mainnet.
 
 use deadeye_indexer::IndexerClient;
 use deadeye_sdk::{DeadeyeClient, starknet::JsonRpcProvider};
-use deadeye_testkit::cartridge::CartridgeNetwork;
+use deadeye_testkit::default_mainnet_rpc;
 use starknet_core::types::Felt;
 use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 
@@ -18,7 +18,7 @@ fn integration_enabled() -> bool {
 }
 
 async fn pick_bivariate_market() -> Option<Felt> {
-    let client = IndexerClient::sepolia().ok()?;
+    let client = IndexerClient::mainnet().ok()?;
     let markets = client.markets().await.ok()?;
     for m in markets {
         if m.market_type != "bivariate" {
@@ -30,18 +30,18 @@ async fn pick_bivariate_market() -> Option<Felt> {
 }
 
 #[tokio::test]
-async fn sepolia_bivariate_read_passthrough() {
+async fn mainnet_bivariate_read_passthrough() {
     if !integration_enabled() {
         eprintln!("skip: set DEADEYE_RUN_INTEGRATION=1 to enable");
         return;
     }
     let Some(address) = pick_bivariate_market().await else {
-        eprintln!("skip: no live bivariate market on Sepolia");
+        eprintln!("skip: no live bivariate market on mainnet");
         return;
     };
     eprintln!("picked bivariate market: {address:#x}");
 
-    let url = CartridgeNetwork::Sepolia.url();
+    let url = default_mainnet_rpc();
     let rpc = JsonRpcClient::new(HttpTransport::new(url));
     let provider = JsonRpcProvider::new(rpc);
     let client = DeadeyeClient::new(provider);

@@ -68,7 +68,7 @@ Usage: deadeye markets show [OPTIONS] <ADDRESS>
 
 ## 2. Sample output — `markets show` (pretty)
 
-A live Sepolia normal-family market:
+A live mainnet normal-family market:
 
 ```
 $ deadeye markets show 0x53e5ee2a3ff003fbcf7f96bba8370b833a06f4a8e23c055b91f1f9076a6fcf4 --output pretty
@@ -155,7 +155,7 @@ the JSON stream.
 - `config.rs` — TOML at `~/.config/deadeye/config.toml`. Resolution
   order: CLI flag → env (`DEADEYE_RPC_URL`, `DEADEYE_INDEXER_URL`,
   `DEADEYE_ADDRESS`, `DEADEYE_CHAIN_ID`, `DEADEYE_PROFILE`) → profile
-  → built-in Sepolia defaults. `private_key` is **only** read from
+  → built-in mainnet defaults. `private_key` is **only** read from
   `DEADEYE_PRIVATE_KEY` (`config show` redacts to `***`).
 - `context.rs` — per-invocation `AppContext` (resolved config +
   renderer + lazy SDK / indexer clients).
@@ -176,8 +176,8 @@ $ cargo clippy --workspace --all-targets -- -D warnings
 
 $ cargo test -p deadeye-cli --test cli_smoke
 running 6 tests
-test markets_list_sepolia_gated ... ignored
-test markets_show_json_sepolia_gated ... ignored
+test markets_list_mainnet_gated ... ignored
+test markets_show_json_mainnet_gated ... ignored
 test help_mentions_deadeye ... ok
 test config_show_with_env_overrides ... ok
 test config_init_then_show ... ok

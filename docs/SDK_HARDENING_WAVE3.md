@@ -2,7 +2,7 @@
 
 Coverage gaps + lint debt closed: `scale_chaos` now wires all four
 families to chain, the indexer client wraps every documented endpoint,
-a read-only Sepolia smoke covers the Wave-1/2 reader paths against a
+a read-only mainnet smoke covers the Wave-1/2 reader paths against a
 live full-node, and `cargo clippy --workspace --all-targets -- -D
 warnings` is clean.
 
@@ -50,21 +50,21 @@ events with `blockNumber >= since_block`. Docs note this is a "net
 realised cashflow" proxy, not a pure fee yield.
 
 `crates/deadeye-e2e/tests/indexer_smoke.rs` now also has
-`sepolia_indexer_extended_endpoints` exercising every new method
+`mainnet_indexer_extended_endpoints` exercising every new method
 against the live indexer.
 
-## 3. Sepolia smoke
+## 3. Mainnet smoke
 
-`crates/deadeye-e2e/tests/sepolia_smoke.rs` added.
-`sepolia_read_only_smoke` is `#[ignore]`-gated on `DEADEYE_RUN_SEPOLIA`
+`crates/deadeye-e2e/tests/mainnet_smoke.rs` added.
+`mainnet_read_only_smoke` is `#[ignore]`-gated on `DEADEYE_RUN_MAINNET`
 and skipped without RPC access. It validates chain id =
-`0x534e5f5345504f4c4941` ("SN_SEPOLIA"), reads `distribution / params
-/ lp_info / position` for a `DEADEYE_SEPOLIA_MARKET_ADDR` market, runs
+`0x534e5f4d41494e` ("SN_MAIN"), reads `distribution / params
+/ lp_info / position` for a `DEADEYE_MAINNET_MARKET_ADDR` market, runs
 a benign `quote_trade` (passes iff the verifier returns either
 acceptance or a *typed* `TradeRejectionReason` — a `Submission` error
 panics as a wire-format regression), and confirms `BulkReader`
 distributions+positions return 5/5 OK on parallel reads. Test was NOT
-run locally — no Sepolia RPC was reachable from the working environment.
+run locally — no mainnet RPC was reachable from the working environment.
 Module docstring documents the env-var contract for local runs.
 
 ## 4. Lint cleanup
@@ -101,7 +101,7 @@ was needed).
 
 ## Files touched
 
-- New: `crates/deadeye-e2e/tests/sepolia_smoke.rs`,
+- New: `crates/deadeye-e2e/tests/mainnet_smoke.rs`,
   `docs/SDK_HARDENING_WAVE3.md`.
 - Indexer: `crates/deadeye-indexer/src/{client,dto,lib}.rs` —
   13 new methods, 10+ new DTOs.
@@ -110,7 +110,7 @@ was needed).
 - Starknet: `crates/deadeye-starknet/src/{nonce,multi_rpc,runtime,
   signer,pricing,normal_amm,error}.rs`.
 - Testkit: `crates/deadeye-testkit/src/fixture/lifecycle.rs`.
-- E2E: `tests/{scale_chaos,indexer_smoke,sepolia_smoke,
+- E2E: `tests/{scale_chaos,indexer_smoke,mainnet_smoke,
   normal_chaos,lognormal_chaos,multinoulli_chaos,bivariate_chaos,
   bulk_reader,nonce_stress,multi_rpc_midflight_kill,portfolio,
   quote_stream,sq128_sqrt_parity}.rs` — primarily attribute updates.

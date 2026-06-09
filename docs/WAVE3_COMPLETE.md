@@ -21,7 +21,7 @@ post-flight validation).
 |---|------|------|
 | 5 | `scale_chaos` wired for **all 4 families** (was: normal only) | `crates/deadeye-e2e/tests/scale_chaos.rs` |
 | 6 | Indexer client surface: **13 new typed endpoints** + DTOs; `Portfolio::lp_yield_since` wired | `crates/deadeye-indexer/src/{client,dto}.rs` |
-| 7 | Sepolia read-only smoke test (gated on `DEADEYE_RUN_SEPOLIA`) | `crates/deadeye-e2e/tests/sepolia_smoke.rs` |
+| 7 | Mainnet read-only smoke test (gated on `DEADEYE_RUN_MAINNET`) | `crates/deadeye-e2e/tests/mainnet_smoke.rs` |
 | 8 | Lint cleanup: ~45 clippy errors fixed; workspace `-D warnings` clean | 20+ files across `deadeye-starknet`, `deadeye-sdk`, `deadeye-testkit`, chaos tests |
 
 ## Final validation (this turn)
@@ -54,14 +54,14 @@ Cumulative across Waves 1+2+3:
 - **Persistence**: `TradeJournal` JSONL with `sync_data()` for kernel-crash durability.
 - **Strategy framework**: `MarketStateStream` (block-polling), `Portfolio` aggregate, `BacktestEngine`.
 - **Test coverage**: 40,000 property cases × 4 families, 8 devnet integration tests, 161 unit tests, full 1000-action scale-chaos across all 4 families.
-- **Network coverage**: devnet smoke + Sepolia read-only smoke wired (gated, ready when ops sets the env vars).
+- **Network coverage**: devnet smoke + mainnet read-only smoke wired (gated, ready when ops sets the env vars).
 - **Lint posture**: workspace-wide `cargo clippy -- -D warnings` clean.
 
 ## What remains for v1.0
 
 The SDK is shippable. Reasonable next milestones for a v1.0 cut:
 
-1. **Run Sepolia smoke against real RPC** — verify wire-format parity on a real network. Currently gated and skipped because no RPC env vars in this session.
+1. **Run mainnet smoke against real RPC** — verify wire-format parity on a real network. Currently gated and skipped because no RPC env vars in this session.
 2. **Bench under realistic load** — `payout_at` is 2.7 ns; the full quote → execute round-trip under a 100-tx/sec sustained load would be the real benchmark.
 3. **CI nightly** — wire `scale_chaos` (~60–80 min full run across 4 families) into a scheduled GitHub Action.
 4. **API stability pass** — add `#[non_exhaustive]` on public enums, `#[doc(hidden)]` on impl-detail items, choose semver discipline.

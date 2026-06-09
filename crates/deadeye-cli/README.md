@@ -89,10 +89,10 @@ deployed_tx = "0x..."
 [mainnet.lognormal]
 # ...
 
-[sepolia.normal]
+[devnet.normal]
 # ...
 ```
 
-Top-level keys: `mainnet`, `sepolia`, `devnet` (anything else is grouped
+Top-level keys: `mainnet`, `devnet` (anything else is grouped
 under `devnet`). Inner keys: `normal`, `lognormal`, `multinoulli`,
 `bivariate`. Safe to delete — the next `--confirm` re-derives it.

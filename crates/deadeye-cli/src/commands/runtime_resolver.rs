@@ -2,11 +2,10 @@
 //!
 //! * Felt parsing with friendly error messages.
 //! * Math-runtime address resolution (CLI flag → family-specific env var).
-//! * Market family auto-detect using the factory's
-//!   `market_type_for_market` view call when a factory is configured,
-//!   else by probing each family's `distribution()` reader.
-//! * Owned-account construction from the resolved config + private-key
-//!   env var.
+//! * Market family auto-detect using the factory's `market_type_for_market`
+//!   view call when a factory is configured, else by probing each family's
+//!   `distribution()` reader.
+//! * Owned-account construction from the resolved config + private-key env var.
 //!
 //! All resolution failures are surfaced as `anyhow::Error` with a hint
 //! about which flag / env var would fix it.
@@ -91,7 +90,7 @@ const fn runtime_env_var(family: Family) -> &'static str {
 }
 
 /// Best-effort family auto-detection — try each reader's `distribution()`
-/// until one succeeds. Cheap on devnet; one extra round-trip on Sepolia.
+/// until one succeeds. Cheap on devnet; one extra round-trip on mainnet.
 pub(crate) async fn detect_family<P>(client: &DeadeyeClient<P>, market: Felt) -> Result<Family>
 where
     P: deadeye_starknet::Provider,

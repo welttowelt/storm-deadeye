@@ -4,8 +4,8 @@
 //!   1. Resolve the network (RPC / indexer / chain id) from `--network`.
 //!   2. Generate a fresh BIP-39 phrase, or import one with `--import`.
 //!   3. Derive the Starknet account and print the address.
-//!   4. Save the key into the active profile (cleartext, 0600) so every
-//!      later command — and any coding agent — recovers the same wallet.
+//!   4. Save the key into the active profile (cleartext, 0600) so every later
+//!      command — and any coding agent — recovers the same wallet.
 //!   5. Wait for the address to be funded with STRK for gas.
 //!   6. Deploy the account contract (paid in STRK, v3).
 //!
@@ -40,31 +40,20 @@ struct NetParams {
 }
 
 fn net_params(args: &OnboardArgs) -> NetParams {
-    let (default_profile, rpc, indexer, chain) = match args.network {
-        NetworkArg::Mainnet => (
-            "mainnet",
-            config::DEFAULT_MAINNET_RPC,
-            config::DEFAULT_MAINNET_INDEXER,
-            config::MAINNET_CHAIN_ID,
-        ),
-        NetworkArg::Sepolia => (
-            "sepolia",
-            config::DEFAULT_SEPOLIA_RPC,
-            config::DEFAULT_SEPOLIA_INDEXER,
-            config::SEPOLIA_CHAIN_ID,
-        ),
-    };
+    // Mainnet is the only deployed network — the irrefutable binding keeps
+    // `--network` forward-compatible while documenting the single case.
+    let NetworkArg::Mainnet = args.network;
     NetParams {
-        profile: args
-            .profile
+        profile: args.profile.clone().unwrap_or_else(|| "mainnet".to_owned()),
+        rpc_url: args
+            .rpc_url
             .clone()
-            .unwrap_or_else(|| default_profile.to_owned()),
-        rpc_url: args.rpc_url.clone().unwrap_or_else(|| rpc.to_owned()),
+            .unwrap_or_else(|| config::DEFAULT_MAINNET_RPC.to_owned()),
         indexer_url: args
             .indexer_url
             .clone()
-            .unwrap_or_else(|| indexer.to_owned()),
-        chain_id: chain.to_owned(),
+            .unwrap_or_else(|| config::DEFAULT_MAINNET_INDEXER.to_owned()),
+        chain_id: config::MAINNET_CHAIN_ID.to_owned(),
     }
 }
 

@@ -1,10 +1,13 @@
 //! High-level lifecycle helpers used by chaos tests.
 //!
 //! Sits one layer above the bootstrap and provides:
-//! * `upsert_normal_profile_for_test` — installs a reusable normal-market profile.
-//! * `deploy_normal_market_with_event` — deploys + extracts the market address from `MarketDeployed`.
+//! * `upsert_normal_profile_for_test` — installs a reusable normal-market
+//!   profile.
+//! * `deploy_normal_market_with_event` — deploys + extracts the market address
+//!   from `MarketDeployed`.
 //! * `wait_for_receipt` — polls `get_transaction_receipt` until inclusion.
-//! * `MarketCalldataBuilder` — sq128-friendly calldata helpers (init dist + hints + zero overrides).
+//! * `MarketCalldataBuilder` — sq128-friendly calldata helpers (init dist +
+//!   hints + zero overrides).
 
 use std::time::Duration;
 
@@ -20,9 +23,11 @@ use deadeye_core::{
 };
 use deadeye_starknet::{CairoSerde, types::lognormal::LognormalSqrtHintsRaw};
 use starknet_accounts::{Account, ConnectedAccount};
-use starknet_core::types::{BlockId, BlockTag, FunctionCall};
 use starknet_core::{
-    types::{Call, ExecutionResult, Felt, TransactionReceipt, TransactionReceiptWithBlockInfo},
+    types::{
+        BlockId, BlockTag, Call, ExecutionResult, Felt, FunctionCall, TransactionReceipt,
+        TransactionReceiptWithBlockInfo,
+    },
     utils::get_selector_from_name,
 };
 use starknet_providers::{Provider, ProviderError};
@@ -104,8 +109,8 @@ fn sq(v: f64) -> Sq128Raw {
 
 /// Installs a normal-market deploy profile suitable for chaos tests.
 ///
-/// Defaults: `k=50`, `backing=50`, `tolerance=1e-3`, `min_trade_collateral=1.0`,
-/// fees=0, no extension.
+/// Defaults: `k=50`, `backing=50`, `tolerance=1e-3`,
+/// `min_trade_collateral=1.0`, fees=0, no extension.
 ///
 /// **Why `backing=50` and not the production `1000`:** the devnet
 /// predeployed STRK token funds each account with **1000 STRK**, and the
@@ -666,7 +671,8 @@ where
     Ok(())
 }
 
-/// Calls `expand_distribution_core_view(core_dist)` on a deployed bivariate math runtime.
+/// Calls `expand_distribution_core_view(core_dist)` on a deployed bivariate
+/// math runtime.
 ///
 /// Returns the chain-correct full distribution byte-for-byte. The full
 /// distribution carries the chain-derived `sigma1`, `sigma2`,

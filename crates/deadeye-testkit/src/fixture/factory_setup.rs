@@ -1,4 +1,5 @@
-//! Factory configuration helpers — `configure_market_type` + `upsert_deploy_profile`.
+//! Factory configuration helpers — `configure_market_type` +
+//! `upsert_deploy_profile`.
 
 use deadeye_core::sq128::Sq128Raw;
 use deadeye_starknet::{CairoSerde, types::common::FeeConfigRaw};

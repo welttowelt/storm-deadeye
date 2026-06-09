@@ -54,10 +54,9 @@ async fn deploy_math_runtime_devnet_idempotent() {
 
     // The bootstrap declared every class for us; pull the normal math
     // runtime's class hash so we can pass it to the CLI as `--class-hash`.
-    // (Devnet chain_id = 0x534e5f5345504f4c4941 → ChainKey::Sepolia per
-    // our slug logic, so the sepolia manifest's class hash is what the
-    // CLI would default to. But manifest pinning ≠ what was just
-    // declared on this devnet, so we forward the freshly-declared hash.)
+    // (Devnet's chain id is non-mainnet → ChainKey::Other, slug "devnet",
+    // per our slug logic. There's no pinned manifest class hash for devnet,
+    // so we forward the freshly-declared hash.)
     let artifacts = AllArtifacts::load().expect("load artifacts");
     let admin_handle = env.account_handle(&env.admin);
     let class_hash = declare_idempotent(&admin_handle, &artifacts.normal_math_runtime)
@@ -125,7 +124,7 @@ async fn deploy_math_runtime_devnet_idempotent() {
     // Cache must be populated.
     let cache = RuntimeCache::load(&runtimes_path).expect("cache loads");
     let entry = cache
-        .get(ChainKey::Sepolia, DeployerFamily::Normal)
+        .get(ChainKey::Other, DeployerFamily::Normal)
         .expect("entry present");
     assert_eq!(entry.address, deployed_addr);
     assert_eq!(entry.class_hash, class_hex);

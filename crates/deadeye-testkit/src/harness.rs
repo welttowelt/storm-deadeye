@@ -11,15 +11,25 @@ use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 use thiserror::Error;
 use url::Url;
 
-use crate::{cartridge::CartridgeNetwork, devnet};
+use crate::devnet;
+
+/// Default hosted RPC for integration runs — ZAN's public mainnet node
+/// (JSON-RPC `v0_10`). Override with `DEADEYE_TEST_RPC`.
+pub const DEFAULT_HOSTED_RPC: &str = "https://api.zan.top/public/starknet-mainnet/rpc/v0_10";
+
+/// The default hosted mainnet RPC URL, parsed.
+#[must_use]
+pub fn default_mainnet_rpc() -> Url {
+    Url::parse(DEFAULT_HOSTED_RPC).expect("static mainnet URL parses")
+}
 
 /// Which environment a [`Harness`] is bound to.
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum HarnessKind {
     /// Local `starknet-devnet`.
     Devnet,
-    /// Hosted Cartridge endpoint (Sepolia by default).
-    Cartridge(CartridgeNetwork),
+    /// A hosted public RPC (mainnet).
+    Hosted,
 }
 
 /// Errors raised by the harness.
@@ -56,12 +66,11 @@ impl Harness {
         })
     }
 
-    /// Constructs a harness pointed at a Cartridge-hosted public RPC.
-    pub fn cartridge(network: CartridgeNetwork) -> Self {
-        let url = network.url();
+    /// Constructs a harness pointed at a hosted public RPC.
+    pub fn hosted(url: Url) -> Self {
         let provider = JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(url.clone())));
         Self {
-            kind: HarnessKind::Cartridge(network),
+            kind: HarnessKind::Hosted,
             url,
             provider,
         }
@@ -70,11 +79,15 @@ impl Harness {
     /// Picks a harness based on environment variables.
     ///
     /// * `DEADEYE_TEST_TARGET=devnet` → local devnet (default if unset).
-    /// * `DEADEYE_TEST_TARGET=cartridge` → Cartridge, with the network
-    ///   picked by [`CartridgeNetwork::from_env`].
+    /// * `DEADEYE_TEST_TARGET=hosted` → a hosted public RPC; the URL comes from
+    ///   `DEADEYE_TEST_RPC` (default [`DEFAULT_HOSTED_RPC`], mainnet).
     pub async fn from_env() -> Result<Self, HarnessError> {
         match env::var("DEADEYE_TEST_TARGET").as_deref() {
-            Ok("cartridge") => Ok(Self::cartridge(CartridgeNetwork::from_env())),
+            Ok("hosted") => {
+                let raw =
+                    env::var("DEADEYE_TEST_RPC").unwrap_or_else(|_| DEFAULT_HOSTED_RPC.to_owned());
+                Ok(Self::hosted(Url::parse(&raw)?))
+            },
             _ => Self::devnet().await,
         }
     }

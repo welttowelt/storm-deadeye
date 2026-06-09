@@ -5,11 +5,9 @@
 //!
 //! * Class hashes for every market family (AMM + math runtime + factory plugin)
 //!   plus the distribution factory, oracle, insurance, etc.
-//! * Deployed contract addresses (factory, oracle, plugins, collateral
-//!   token).
+//! * Deployed contract addresses (factory, oracle, plugins, collateral token).
 //!
 //! Embedded manifests are sourced from
-//! [`deadeye_artifacts::SEPOLIA_DEPLOYMENT_BYTES`] and
 //! [`deadeye_artifacts::MAINNET_DEPLOYMENT_BYTES`].
 //!
 //! ## Roadmap
@@ -18,11 +16,11 @@
 //! out of scope for v0.1. The artifacts are ~30 MB total; embedding them
 //! would bloat every consumer. The current path is:
 //!
-//! 1. Use [`Deployment::sepolia()`] / [`Deployment::mainnet()`] to read
-//!    class hashes pinned by the upstream deployer.
-//! 2. If a fresh network needs declaration, fetch Sierra/CASM from the
-//!    GitHub release assets (see `deadeye_artifacts::RELEASE_COMMIT`) and
-//!    invoke `starknet_accounts::Account::declare_v3` directly.
+//! 1. Use [`Deployment::mainnet()`] to read class hashes pinned by the upstream
+//!    deployer.
+//! 2. If a fresh network needs declaration, fetch Sierra/CASM from the GitHub
+//!    release assets (see `deadeye_artifacts::RELEASE_COMMIT`) and invoke
+//!    `starknet_accounts::Account::declare_v3` directly.
 //! 3. Use the [`Deployment::factory_address`](Deployment) field to bind a
 //!    [`deadeye_starknet::FactoryReader`](::deadeye_starknet::FactoryReader)
 //!    once the factory is deployed.
@@ -116,7 +114,7 @@ pub struct CollateralToken {
 /// Typed view over a Deadeye deployment manifest.
 #[derive(Debug, Clone, Deserialize, Serialize)]
 pub struct Deployment {
-    /// Network identifier (`"sepolia"` or `"mainnet"`).
+    /// Network identifier (`"mainnet"`).
     pub network: String,
     /// ISO-8601 timestamp.
     pub timestamp: String,
@@ -149,11 +147,6 @@ pub struct Deployment {
 }
 
 impl Deployment {
-    /// Decode the bundled Sepolia deployment manifest.
-    pub fn sepolia() -> Result<Self, DeployerError> {
-        serde_json::from_slice(deadeye_artifacts::SEPOLIA_DEPLOYMENT_BYTES).map_err(Into::into)
-    }
-
     /// Decode the bundled mainnet deployment manifest.
     pub fn mainnet() -> Result<Self, DeployerError> {
         serde_json::from_slice(deadeye_artifacts::MAINNET_DEPLOYMENT_BYTES).map_err(Into::into)
@@ -186,9 +179,9 @@ mod tests {
     use super::*;
 
     #[test]
-    fn sepolia_manifest_parses() {
-        let d = Deployment::sepolia().expect("sepolia manifest parses");
-        assert_eq!(d.network, "sepolia");
+    fn mainnet_manifest_parses() {
+        let d = Deployment::mainnet().expect("mainnet manifest parses");
+        assert_eq!(d.network, "mainnet");
         assert!(!d.factory_address.is_empty());
         assert!(!d.oracle_address.is_empty());
         let factory = d.factory_felt().expect("factory address is a valid felt");
@@ -196,14 +189,8 @@ mod tests {
     }
 
     #[test]
-    fn mainnet_manifest_parses() {
-        // Mainnet manifest may be a placeholder, but should still be valid JSON.
-        let _ = Deployment::mainnet().expect("mainnet manifest parses");
-    }
-
-    #[test]
     fn class_hashes_are_present() {
-        let d = Deployment::sepolia().expect("sepolia manifest parses");
+        let d = Deployment::mainnet().expect("mainnet manifest parses");
         assert!(!d.class_hashes.normal_amm.is_empty());
         assert!(!d.class_hashes.lognormal_amm.is_empty());
         assert!(!d.class_hashes.multinoulli_amm.is_empty());

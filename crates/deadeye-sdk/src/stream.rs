@@ -102,7 +102,7 @@ impl<P: starknet_providers::Provider + Send + Sync> BlockNumberSource for Starkn
 #[derive(Debug, Clone)]
 pub struct StreamConfig {
     /// How often to poll the chain head. Defaults to 1 s — fast
-    /// enough for Starknet block times (~30 s on Sepolia, ~2 s on
+    /// enough for Starknet block times (~30 s on mainnet, ~2 s on
     /// Madara), slow enough not to hammer the RPC.
     pub poll_interval: Duration,
     /// Re-read the market distribution on every new block.

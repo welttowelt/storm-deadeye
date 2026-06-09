@@ -1,6 +1,6 @@
 //! Data-transfer objects for the indexer HTTP API.
 //!
-//! These types mirror the JSON returned by `situation-indexer.fly.dev`. We
+//! These types mirror the JSON returned by the mainnet indexer. We
 //! deliberately keep them shallow — fields are `Option` whenever the
 //! upstream payload is allowed to omit them, so a single DTO accommodates
 //! every market shape (normal / lognormal / multinoulli / bivariate).

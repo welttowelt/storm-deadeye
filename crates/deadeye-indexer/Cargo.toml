@@ -1,6 +1,6 @@
 [package]
 name = "deadeye-indexer"
-description = "Typed HTTP client for the Deadeye Sepolia / mainnet indexer."
+description = "Typed HTTP client for the Deadeye mainnet indexer."
 version.workspace = true
 edition.workspace = true
 rust-version.workspace = true

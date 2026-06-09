@@ -87,7 +87,8 @@ pub fn artifacts_dir() -> PathBuf {
 
 /// Loads a single contract artifact given its base filename (no extension).
 ///
-/// Reads `<name>.contract_class.json` and `<name>.compiled_contract_class.json`.
+/// Reads `<name>.contract_class.json` and
+/// `<name>.compiled_contract_class.json`.
 pub fn load(name: &'static str, base: &str) -> Result<ContractArtifact, ArtifactError> {
     let dir = artifacts_dir();
     let sierra_path = dir.join(format!("{base}.contract_class.json"));
@@ -208,7 +209,8 @@ impl AllArtifacts {
     }
 }
 
-// Local helper trait to convert flatten errors into serde JSON errors uniformly.
+// Local helper trait to convert flatten errors into serde JSON errors
+// uniformly.
 trait CustomError {
     fn custom(msg: String) -> Self;
 }
