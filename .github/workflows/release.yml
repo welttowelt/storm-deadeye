@@ -1,0 +1,68 @@
+name: Release
+
+# Build prebuilt `deadeye` binaries per platform and attach them to the
+# GitHub Release for the pushed tag. `install.sh` downloads these from
+# releases/latest/download so `curl … | sh` needs no Rust toolchain.
+
+on:
+  push:
+    tags: ["v*.*.*"]
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Existing tag to (re)build binaries for"
+        required: true
+
+permissions:
+  contents: write
+
+env:
+  CARGO_TERM_COLOR: always
+
+jobs:
+  build:
+    name: ${{ matrix.target }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - { os: macos-latest, target: aarch64-apple-darwin }
+          - { os: macos-latest, target: x86_64-apple-darwin }
+          - { os: ubuntu-latest, target: x86_64-unknown-linux-gnu }
+          - { os: ubuntu-latest, target: aarch64-unknown-linux-gnu, cross_linker: aarch64-linux-gnu-gcc, apt: gcc-aarch64-linux-gnu }
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.inputs.tag || github.ref }}
+
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: ${{ matrix.target }}
+
+      - name: Add Rust target
+        run: rustup target add ${{ matrix.target }}
+
+      - name: Install cross linker
+        if: matrix.apt != ''
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ${{ matrix.apt }}
+
+      - name: Build
+        env:
+          CARGO_TARGET_AARCH64_UNKNOWN_LINUX_GNU_LINKER: ${{ matrix.cross_linker }}
+        run: cargo build --release --locked -p deadeye-cli --target ${{ matrix.target }}
+
+      - name: Package
+        run: |
+          tar -C "target/${{ matrix.target }}/release" -czf "deadeye-${{ matrix.target }}.tar.gz" deadeye
+          shasum -a 256 "deadeye-${{ matrix.target }}.tar.gz" > "deadeye-${{ matrix.target }}.tar.gz.sha256"
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ github.event.inputs.tag || github.ref_name }}
+          files: |
+            deadeye-${{ matrix.target }}.tar.gz
+            deadeye-${{ matrix.target }}.tar.gz.sha256

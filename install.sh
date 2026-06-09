@@ -23,38 +23,50 @@ warn()  { printf '\033[1;33mwarning:\033[0m %s\n' "$1" >&2; }
 die()   { printf '\033[1;31merror:\033[0m %s\n' "$1" >&2; exit 1; }
 have()  { command -v "$1" >/dev/null 2>&1; }
 
+# Default host for prebuilt release binaries (GitHub Releases). Overridable.
+DEFAULT_RELEASE_BASE="https://github.com/${REPO}/releases/latest/download"
+
 # ── 1. Install the binary ────────────────────────────────────────────────
+# Prefer a prebuilt binary (no toolchain needed); fall back to a source build
+# if none exists for this platform or the download fails.
 install_binary() {
-  if [ -n "${DEADEYE_RELEASE_BASE:-}" ]; then
-    install_prebuilt
-  else
-    install_from_source
+  base="${DEADEYE_RELEASE_BASE:-$DEFAULT_RELEASE_BASE}"
+  if install_prebuilt "$base"; then
+    return 0
   fi
+  warn "no prebuilt binary available; building from source (needs Rust)…"
+  install_from_source
 }
 
-# Prebuilt path — used once release artifacts exist at DEADEYE_RELEASE_BASE.
+# Prebuilt path. Returns non-zero (so the caller falls back) on unsupported
+# platform or download failure.
 install_prebuilt() {
+  base="$1"
   os=$(uname -s); arch=$(uname -m)
   case "$os-$arch" in
-    Darwin-arm64)  triple="aarch64-apple-darwin" ;;
-    Darwin-x86_64) triple="x86_64-apple-darwin" ;;
-    Linux-x86_64)  triple="x86_64-unknown-linux-gnu" ;;
-    Linux-aarch64) triple="aarch64-unknown-linux-gnu" ;;
-    *) die "no prebuilt binary for $os-$arch; unset DEADEYE_RELEASE_BASE to build from source" ;;
+    Darwin-arm64)            triple="aarch64-apple-darwin" ;;
+    Darwin-x86_64)           triple="x86_64-apple-darwin" ;;
+    Linux-x86_64)            triple="x86_64-unknown-linux-gnu" ;;
+    Linux-aarch64|Linux-arm64) triple="aarch64-unknown-linux-gnu" ;;
+    *) return 1 ;;
   esac
+  url="${base%/}/deadeye-${triple}.tar.gz"
+  info "Fetching prebuilt binary: $url"
+  tmp=$(mktemp -d)
+  if ! curl -fsSL "$url" | tar -xz -C "$tmp" 2>/dev/null || [ ! -f "$tmp/deadeye" ]; then
+    rm -rf "$tmp"
+    return 1
+  fi
   bindir="${DEADEYE_BIN_DIR:-$HOME/.local/bin}"
   mkdir -p "$bindir"
-  url="${DEADEYE_RELEASE_BASE%/}/deadeye-${triple}.tar.gz"
-  info "Downloading $url"
-  tmp=$(mktemp -d)
-  curl -fsSL "$url" | tar -xz -C "$tmp" || die "download/extract failed"
   install -m 0755 "$tmp/deadeye" "$bindir/deadeye"
   rm -rf "$tmp"
   info "Installed deadeye to $bindir/deadeye"
   case ":$PATH:" in *":$bindir:"*) ;; *) warn "add $bindir to your PATH" ;; esac
+  return 0
 }
 
-# Source path — the real path until release CI lands.
+# Source path — fallback when no prebuilt binary fits the platform.
 install_from_source() {
   have cargo || die "cargo (Rust toolchain) not found. Install Rust from https://rustup.rs, \
 or set DEADEYE_RELEASE_BASE to a prebuilt-binary host, then re-run."
