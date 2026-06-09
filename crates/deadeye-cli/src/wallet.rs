@@ -108,6 +108,7 @@ pub(crate) fn oz_account_address(public_key: Felt, class_hash: Felt) -> Felt {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "tests panic on construction failure")]
 mod tests {
     use super::*;
 
@@ -136,6 +137,6 @@ mod tests {
 
     #[test]
     fn rejects_bad_phrase() {
-        assert!(import("not a real mnemonic at all", class_hash()).is_err());
+        import("not a real mnemonic at all", class_hash()).unwrap_err();
     }
 }

@@ -309,6 +309,7 @@ fn read_json<T: for<'de> Deserialize<'de>>(path: &Path) -> Result<T> {
 }
 
 #[cfg(test)]
+#[expect(clippy::unwrap_used, reason = "tests panic on I/O or parse failure")]
 mod tests {
     use super::*;
 
@@ -371,9 +372,8 @@ mod tests {
         let snap = ws.load_snapshot().unwrap().unwrap();
         assert!((snap.mean - 3.1).abs() < 1e-9);
 
-        assert_eq!(
-            list_markets_in(tmp.path()).unwrap(),
-            vec!["0xabc".to_string()]
-        );
+        assert_eq!(list_markets_in(tmp.path()).unwrap(), vec![
+            "0xabc".to_owned()
+        ]);
     }
 }
