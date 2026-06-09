@@ -58,8 +58,38 @@ Confirm the wallet and claim your starting XP:
 
 ```bash
 deadeye account show                       # address, STRK balance, chain id
-deadeye collateral balance                 # XP balance + grant status
+deadeye collateral balance                 # XP balance + grant status (alias: `collateral show`)
 deadeye collateral claim-grant --execute   # mint the one-shot XP grant
+```
+
+### Prerequisites — are you ready to trade?
+
+Before quoting/executing, four things must be true. Quoting itself needs **none
+of them** (it's a zero-config client-side read), but *executing* does:
+
+1. **Account deployed** — `deadeye onboard` / `deadeye account deploy` (needs gas).
+2. **XP grant claimed** — `deadeye collateral claim-grant --execute` (your collateral).
+3. **Gas STRK** on the address — every tx (deploy, claim, trade) pays gas in STRK.
+4. **Reachable RPC + indexer** — defaults are mainnet (ZAN RPC, the mainnet
+   indexer); override per profile with `deadeye config set` if needed.
+
+There is **no math-runtime prerequisite** anymore — the trade math runs
+client-side. Check everything at once with the readiness preflight:
+
+```bash
+deadeye doctor                       # account, gas, XP, RPC, indexer — with fixes
+deadeye doctor --market <MARKET>     # also: market is active, initialised, on-chain readable
+deadeye doctor --output json         # machine-readable; non-zero exit if any check fails
+```
+
+`doctor` prints each check, a concrete fix for any failure, and exits non-zero
+when you're not ready — so you learn up front instead of failing mid-trade.
+
+To point a profile at a different RPC/indexer/address, update just that field:
+
+```bash
+deadeye config set --rpc-url <URL>            # update the active profile in place
+deadeye config set --profile bot2 --address 0x… --default   # create/switch another wallet
 ```
 
 ## 1. Pick a market and read its state
@@ -111,11 +141,14 @@ deadeye trade quote <MARKET_ADDR> --belief <MU_YOU> --budget <XP_BUDGET> --belie
 deadeye trade quote <MARKET_ADDR> --mean <MU'> --variance <VAR'>
 ```
 
-`trade quote` is read-only: it reads market state, computes the candidate, and
-runs the chain's `check_trade_view` so you see the quoted collateral and whether
-the chain will accept *before* spending anything. Some families need a math
-runtime address — pass `--runtime 0x...` or set `DEADEYE_<FAMILY>_RUNTIME_ADDR`
-if the quote asks for it.
+`trade quote` is read-only and **zero-config**: it reads market state and
+reproduces the AMM's accept/collateral math **client-side** (no math-runtime
+contract, almost no extra RPC), so you see the quoted collateral and whether the
+chain will accept *before* spending anything. It also surfaces the market's
+**σ-floor** — the narrowest σ the pool backing can support; a candidate below it
+is rejected on-chain with `SIGMA_TOO_LOW`, so size your variance above the floor.
+(`--runtime 0x...` still exists as an optional override to force the on-chain
+preflight path, but you never need it.)
 
 ## 4. Execute
 
