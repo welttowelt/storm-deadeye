@@ -71,7 +71,7 @@ use tracing::instrument;
 
 use crate::{
     error::{SdkError, SdkResult},
-    legs::{LegInfo, LegValuation, PositionLegs, PositionValuation, belief_grid},
+    legs::{LegInfo, LegValuation, PositionLegs, PositionValuation, SettlementPoint, belief_grid},
     quote::PreparedQuote,
 };
 
@@ -904,7 +904,7 @@ where
         let total_collateral = Sq128::from_raw(summary.total_collateral_locked).to_f64();
         Ok(PositionValuation {
             trader: format!("{trader:#x}"),
-            settlement,
+            settlement: SettlementPoint::Scalar(settlement),
             legs,
             total_collateral,
             total_position_value,

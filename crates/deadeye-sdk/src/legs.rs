@@ -17,6 +17,39 @@
 //! leg distributions are not individually exposed, so quadrature is the
 //! honest path).
 
+/// A settlement outcome to value a position at.
+///
+/// Its shape depends on the market family: normal / lognormal settle to a
+/// scalar `x*`; bivariate to a 2D point `(x1, x2)`; multinoulli to a
+/// categorical outcome index.
+#[derive(Debug, Clone, Copy, PartialEq, serde::Serialize)]
+#[serde(rename_all = "snake_case")]
+pub enum SettlementPoint {
+    /// Scalar outcome `x*` (normal, lognormal — lognormal in log-space).
+    Scalar(f64),
+    /// 2D outcome `(x1, x2)` (bivariate).
+    Point {
+        /// First-axis outcome.
+        x1: f64,
+        /// Second-axis outcome.
+        x2: f64,
+    },
+    /// Categorical outcome index (multinoulli).
+    Outcome(u32),
+}
+
+impl SettlementPoint {
+    /// Compact human label, e.g. `x*=4.2`, `(x1,x2)=(1.0, 2.0)`, `outcome #3`.
+    #[must_use]
+    pub fn label(&self) -> String {
+        match *self {
+            Self::Scalar(x) => format!("x*={x:.6}"),
+            Self::Point { x1, x2 } => format!("(x1,x2)=({x1:.6}, {x2:.6})"),
+            Self::Outcome(i) => format!("outcome #{i}"),
+        }
+    }
+}
+
 /// Lifecycle of one trade lot (leg), without valuation.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize)]
 pub struct LegInfo {
@@ -82,7 +115,7 @@ pub struct PositionValuation {
     /// Trader address (hex felt).
     pub trader: String,
     /// The settlement outcome the legs were valued at.
-    pub settlement: f64,
+    pub settlement: SettlementPoint,
     /// Per-leg valuations.
     pub legs: Vec<LegValuation>,
     /// Total collateral locked across the position (XP).

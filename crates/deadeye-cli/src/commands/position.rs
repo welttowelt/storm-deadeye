@@ -333,8 +333,7 @@ async fn value(
         total_position_value: None,
         gross_return: None,
         legs: Vec::new(),
-        belief_mean: None,
-        belief_sigma: None,
+        belief: None,
         expected_pnl: None,
     };
 
@@ -387,8 +386,7 @@ async fn value(
             .expected_value_under_belief(trader, bm, bs)
             .await
             .map_err(|e| anyhow::anyhow!("computing expected value: {e}"))?;
-        view.belief_mean = Some(bm);
-        view.belief_sigma = Some(bs);
+        view.belief = Some(format!("μ={bm:.6}, σ={bs:.6}"));
         view.expected_pnl = Some(ev);
         if view.settlement.is_none() {
             let legs = mkt

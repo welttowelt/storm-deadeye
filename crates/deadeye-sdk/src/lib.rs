@@ -129,7 +129,7 @@ pub use journal::{
     EntryKind, JournalEntry, JournalError, JournalSink, JournalledBivariateWriter,
     JournalledLognormalWriter, JournalledMultinoulliWriter, JournalledNormalWriter, TradeJournal,
 };
-pub use legs::{LegInfo, LegValuation, PositionLegs, PositionValuation};
+pub use legs::{LegInfo, LegValuation, PositionLegs, PositionValuation, SettlementPoint};
 pub use portfolio::{HedgeRecommendation, LpEntry, MarketRef, Portfolio, PositionEntry};
 pub use stream::{
     BlockNumberSource, CandidateQuote, MarketStateStream, MarketStateUpdate, QuoteSnapshot,

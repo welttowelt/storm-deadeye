@@ -7,6 +7,7 @@
 
 use std::io::{self, Write};
 
+use deadeye_sdk::SettlementPoint;
 use deadeye_starknet::{TradeRejectionReason, VerificationSubReason};
 use serde::Serialize;
 
@@ -709,24 +710,22 @@ pub(crate) struct PositionValueView {
     pub(crate) family: &'static str,
     pub(crate) exists: bool,
     pub(crate) total_collateral: f64,
-    /// Settlement outcome valued at (when `--at`).
+    /// Settlement outcome valued at (when a settlement is given).
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) settlement: Option<f64>,
+    pub(crate) settlement: Option<SettlementPoint>,
     /// Σ leg value at `settlement` — the P&L if it settles there.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) total_position_value: Option<f64>,
     /// total_collateral + total_position_value.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) gross_return: Option<f64>,
-    /// Per-leg valuations (when `--at`).
+    /// Per-leg valuations (when a settlement is given).
     #[serde(skip_serializing_if = "Vec::is_empty")]
     pub(crate) legs: Vec<LegValueRow>,
-    /// Forecast (when `--belief`).
+    /// Human-readable forecast/belief (family-specific), when `--belief…`.
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) belief_mean: Option<f64>,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) belief_sigma: Option<f64>,
-    /// Expected P&L under the belief (when `--belief`).
+    pub(crate) belief: Option<String>,
+    /// Expected P&L under the belief (when a belief is given).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) expected_pnl: Option<f64>,
 }
@@ -749,7 +748,7 @@ impl Render for PositionValueView {
             self.total_position_value,
             self.gross_return,
         ) {
-            r.kv("if_settles_at", &format!("x* = {x:.6}"));
+            r.kv("if_settles_at", &x.label());
             r.kv("position_value (P&L)", &format!("{pv:+.6} XP"));
             r.kv("gross_return", &format!("{gr:.6} XP (collateral + P&L)"));
             for leg in &self.legs {
@@ -769,11 +768,9 @@ impl Render for PositionValueView {
                 );
             }
         }
-        if let (Some(bm), Some(bs), Some(ev)) =
-            (self.belief_mean, self.belief_sigma, self.expected_pnl)
-        {
+        if let (Some(b), Some(ev)) = (&self.belief, self.expected_pnl) {
             println!();
-            r.kv("belief", &format!("μ={bm:.6}, σ={bs:.6}"));
+            r.kv("belief", b);
             r.kv(
                 "expected_pnl",
                 &format!("{ev:+.6} XP (E[P&L] under belief)"),
@@ -792,7 +789,7 @@ impl Render for PositionValueView {
             self.total_position_value,
             self.gross_return,
         ) {
-            writeln!(w, "settlement: {x}")?;
+            writeln!(w, "settlement: {}", x.label())?;
             writeln!(w, "total_position_value: {pv}")?;
             writeln!(w, "gross_return: {gr}")?;
             for leg in &self.legs {
@@ -803,11 +800,8 @@ impl Render for PositionValueView {
                 )?;
             }
         }
-        if let (Some(bm), Some(bs), Some(ev)) =
-            (self.belief_mean, self.belief_sigma, self.expected_pnl)
-        {
-            writeln!(w, "belief_mean: {bm}")?;
-            writeln!(w, "belief_sigma: {bs}")?;
+        if let (Some(b), Some(ev)) = (&self.belief, self.expected_pnl) {
+            writeln!(w, "belief: {b}")?;
             writeln!(w, "expected_pnl: {ev}")?;
         }
         Ok(())
