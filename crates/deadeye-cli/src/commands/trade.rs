@@ -45,7 +45,7 @@ pub(crate) async fn run(action: TradeCmd, ctx: &AppContext, confirm: bool) -> Re
 
 // ─── quote ────────────────────────────────────────────────────────────
 
-async fn quote(ctx: &AppContext, args: TradeQuoteArgs) -> Result<()> {
+pub(crate) async fn quote(ctx: &AppContext, args: TradeQuoteArgs) -> Result<()> {
     let market = parse_felt("market address", &args.market)?;
     let provider = build_provider(ctx)?;
     let client = DeadeyeClient::new(provider);
@@ -268,7 +268,7 @@ async fn quote_lognormal(
 
 // ─── execute ───────────────────────────────────────────────────────────
 
-async fn execute(ctx: &AppContext, args: TradeExecuteArgs, confirm: bool) -> Result<()> {
+pub(crate) async fn execute(ctx: &AppContext, args: TradeExecuteArgs, confirm: bool) -> Result<()> {
     let market = parse_felt("market address", &args.market)?;
     let provider = build_provider(ctx)?;
     let client = DeadeyeClient::new(provider);

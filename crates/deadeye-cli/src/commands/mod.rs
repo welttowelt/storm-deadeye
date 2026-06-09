@@ -62,7 +62,7 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
         // Onboard runs before the context's profile is required — it
         // creates that profile — so it takes the raw args, not `ctx`.
         Command::Onboard(args) => onboard::run(args, &ctx, confirm).await,
-        Command::Forecast { action } => forecast::run(action, &ctx).await,
+        Command::Forecast { action } => forecast::run(action, &ctx, confirm).await,
         Command::Doctor(args) => doctor::run(args, &ctx).await,
         Command::Feedback(args) => feedback::run(args, confirm).await,
         Command::Update(args) => update::run(args, confirm).await,

@@ -974,8 +974,72 @@ pub(crate) enum ForecastCmd {
     },
     /// Commit the curated `(mean, σ)` snapshot for the market.
     Snapshot(ForecastSnapshotArgs),
+    /// Quote a trade straight from the committed snapshot — no need to retype
+    /// `--mean`/`--variance`. Reads the snapshot `(μ, σ)` and previews the
+    /// trade. With `--budget`, the optimizer sizes the EV-max trade from the
+    /// snapshot as the belief; otherwise it quotes the snapshot distribution.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye forecast quote 0xMARKET                # quote the snapshot curve
+    /// deadeye forecast quote 0xMARKET --budget 100   # EV-max trade under budget
+    /// ```
+    Quote(ForecastQuoteArgs),
+    /// Execute a trade straight from the committed snapshot (the write sibling
+    /// of `forecast quote`). Honors `--max-collateral` and the confirm prompt.
+    Trade(ForecastTradeArgs),
     /// Run a Bayesian / aggregation routine (JSON in, JSON + rationale out).
     Bayes(ForecastBayesArgs),
+}
+
+/// `deadeye forecast quote …` — quote from the committed snapshot.
+#[derive(Debug, clap::Args)]
+pub(crate) struct ForecastQuoteArgs {
+    /// Market contract address (the snapshot workspace key).
+    #[arg(value_name = "MARKET")]
+    pub(crate) market: String,
+    /// Optimizer budget (max collateral, XP). When set, the snapshot is used
+    /// as the belief and the optimizer picks the EV-max candidate; when
+    /// omitted, the snapshot distribution is quoted directly.
+    #[arg(long)]
+    pub(crate) budget: Option<f64>,
+    /// Override the belief σ (defaults to the snapshot's σ).
+    #[arg(long)]
+    pub(crate) belief_sigma: Option<f64>,
+    /// Force a specific family (otherwise auto-detected).
+    #[arg(long, value_name = "FAMILY")]
+    pub(crate) family: Option<FamilyArg>,
+    /// Optional math-runtime override (not needed — quotes are client-side).
+    #[arg(long)]
+    pub(crate) runtime: Option<String>,
+    /// Collateral pad (XP) applied to the chain-computed amount.
+    #[arg(long, default_value_t = 0.0)]
+    pub(crate) pad: f64,
+}
+
+/// `deadeye forecast trade …` — execute the snapshot distribution.
+///
+/// Trades the committed snapshot `(μ, σ²)` as the candidate (the write
+/// sibling of `forecast quote` with no `--budget`); preview first with
+/// `forecast quote`.
+#[derive(Debug, clap::Args)]
+pub(crate) struct ForecastTradeArgs {
+    /// Market contract address (the snapshot workspace key).
+    #[arg(value_name = "MARKET")]
+    pub(crate) market: String,
+    /// Maximum collateral the caller will supply (XP) — a hard ceiling.
+    #[arg(long)]
+    pub(crate) max_collateral: f64,
+    /// Force a specific family (otherwise auto-detected).
+    #[arg(long, value_name = "FAMILY")]
+    pub(crate) family: Option<FamilyArg>,
+    /// Optional math-runtime override.
+    #[arg(long)]
+    pub(crate) runtime: Option<String>,
+    /// Journal path — appends a `Trade` entry on success.
+    #[arg(long)]
+    pub(crate) journal: Option<std::path::PathBuf>,
 }
 
 /// Stance of an evidence item (CLI shadow of `ledger::Stance`).

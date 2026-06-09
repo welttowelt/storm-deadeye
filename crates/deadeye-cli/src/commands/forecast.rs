@@ -12,7 +12,8 @@ use serde_json::{Value, json};
 use crate::{
     cli::{
         BayesRoutine, ForecastBaseRateAddArgs, ForecastBayesArgs, ForecastCmd,
-        ForecastEvidenceAddArgs, ForecastNewArgs, ForecastSnapshotArgs,
+        ForecastEvidenceAddArgs, ForecastNewArgs, ForecastQuoteArgs, ForecastSnapshotArgs,
+        ForecastTradeArgs, TradeExecuteArgs, TradeQuoteArgs,
     },
     context::AppContext,
     forecast::{
@@ -21,7 +22,7 @@ use crate::{
     },
 };
 
-pub(crate) async fn run(action: ForecastCmd, _ctx: &AppContext) -> Result<()> {
+pub(crate) async fn run(action: ForecastCmd, ctx: &AppContext, confirm: bool) -> Result<()> {
     match action {
         ForecastCmd::New(args) => new(args),
         ForecastCmd::List => list(),
@@ -30,8 +31,91 @@ pub(crate) async fn run(action: ForecastCmd, _ctx: &AppContext) -> Result<()> {
         ForecastCmd::BaseRate(args) => base_rate_add(args),
         ForecastCmd::BlendBaseRates { market } => blend_base_rates(&market),
         ForecastCmd::Snapshot(args) => snapshot(args),
+        ForecastCmd::Quote(args) => quote_from_snapshot(ctx, args).await,
+        ForecastCmd::Trade(args) => trade_from_snapshot(ctx, args, confirm).await,
         ForecastCmd::Bayes(args) => bayes_routine(args),
     }
+}
+
+/// Load a market's committed snapshot or fail with an actionable message.
+fn load_snapshot_or_bail(market: &str) -> Result<Snapshot> {
+    let ws = Workspace::resolve(market)?;
+    ws.load_snapshot()?.with_context(|| {
+        format!(
+            "no committed snapshot for {market} — create one with \
+             `deadeye forecast snapshot {market} --mean <μ> --sd <σ>`"
+        )
+    })
+}
+
+/// `forecast quote` — quote a trade from the committed snapshot.
+async fn quote_from_snapshot(ctx: &AppContext, args: ForecastQuoteArgs) -> Result<()> {
+    let snap = load_snapshot_or_bail(&args.market)?;
+    eprintln!(
+        "Using snapshot for {}: μ={:.6}, σ={:.6} (variance {:.6})",
+        args.market, snap.mean, snap.sd, snap.variance
+    );
+    let quote_args = if args.budget.is_some() {
+        // Optimizer path — snapshot is the belief.
+        TradeQuoteArgs {
+            market: args.market,
+            family: args.family,
+            mean: None,
+            variance: None,
+            rho: None,
+            mu2: None,
+            belief: Some(snap.mean),
+            budget: args.budget,
+            belief_sigma: Some(args.belief_sigma.unwrap_or(snap.sd)),
+            runtime: args.runtime,
+            pad: args.pad,
+        }
+    } else {
+        // Fixed-candidate path — quote the snapshot distribution directly.
+        TradeQuoteArgs {
+            market: args.market,
+            family: args.family,
+            mean: Some(snap.mean),
+            variance: Some(snap.variance),
+            rho: None,
+            mu2: None,
+            belief: None,
+            budget: None,
+            belief_sigma: None,
+            runtime: args.runtime,
+            pad: args.pad,
+        }
+    };
+    super::trade::quote(ctx, quote_args).await
+}
+
+/// `forecast trade` — execute a trade from the committed snapshot.
+async fn trade_from_snapshot(
+    ctx: &AppContext,
+    args: ForecastTradeArgs,
+    confirm: bool,
+) -> Result<()> {
+    let snap = load_snapshot_or_bail(&args.market)?;
+    eprintln!(
+        "Using snapshot for {}: μ={:.6}, σ={:.6} (variance {:.6})",
+        args.market, snap.mean, snap.sd, snap.variance
+    );
+    // Execute trades the snapshot distribution as a fixed candidate (the
+    // execute path is fixed-candidate; the optimizer lives in `quote`).
+    let execute_args = TradeExecuteArgs {
+        market: args.market,
+        family: args.family,
+        mean: Some(snap.mean),
+        variance: Some(snap.variance),
+        rho: None,
+        mu2: None,
+        belief: None,
+        budget: None,
+        max_collateral: args.max_collateral,
+        runtime: args.runtime,
+        journal: args.journal,
+    };
+    super::trade::execute(ctx, execute_args, confirm).await
 }
 
 fn new(args: ForecastNewArgs) -> Result<()> {
@@ -243,9 +327,9 @@ fn snapshot(args: ForecastSnapshotArgs) -> Result<()> {
         args.sd
     );
     println!(
-        "Trade it:\n  deadeye trade quote {} --mean {} --variance {variance}",
+        "Trade it (reads this snapshot):\n  deadeye forecast quote {0}\n  \
+         deadeye forecast quote {0} --budget <XP>   # EV-max sizing",
         ws.market(),
-        args.mean
     );
     Ok(())
 }
