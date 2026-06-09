@@ -31,15 +31,15 @@
 //! `docs/REVIEW_ITEM3_DRIVER_B.md` §6).
 //!
 //! This file's ground truth now mirrors the **chain** semantics that
-//! `optimize_quote_offline` already enforces (`crates/deadeye-sdk/src/normal.rs`):
+//! `optimize_quote_offline` already enforces
+//! (`crates/deadeye-sdk/src/normal.rs`):
 //!
-//! * Cost is the **λ-scaled** `max(0, λ_f·f(x*) − λ_g·g(x*))` evaluated
-//!   at the audited stationary point `x*` from
-//!   [`normal_collateral`].
-//! * EV is the same λ-scaled Gaussian-product-integral expression the
-//!   optimizer uses (units now match cost).
-//! * Budget filter compares the user's XP budget against the λ-scaled
-//!   cost (the unit the chain charges).
+//! * Cost is the **λ-scaled** `max(0, λ_f·f(x*) − λ_g·g(x*))` evaluated at the
+//!   audited stationary point `x*` from [`normal_collateral`].
+//! * EV is the same λ-scaled Gaussian-product-integral expression the optimizer
+//!   uses (units now match cost).
+//! * Budget filter compares the user's XP budget against the λ-scaled cost (the
+//!   unit the chain charges).
 //!
 //! Pre-v0.1.1 the optimizer's inline Newton solver for `collateral_number`
 //! mis-converged on equal-μ / σ-only moves, over-estimating cost ~100×
@@ -158,16 +158,15 @@ fn expected_value_at(
     )
 }
 
-/// Independent grid scanner — the **chain-truthful ground truth**.
+/// Independent grid scanner — the **EV-max ground truth**.
 ///
-/// Returns `Some((best_net, best_mu, best_sigma))` if any grid point has
-/// `net = ev − λ-scaled-cost > 0` and the λ-scaled cost ≤ budget;
-/// `None` otherwise.
+/// Returns `Some((best_ev, best_mu, best_sigma))` if any grid point has
+/// positive expected P&L (`ev > 0`) with a λ-scaled cost in `(0, budget]`;
+/// `None` otherwise. Collateral is a *returned* margin lock, so the witness
+/// bar is `ev > 0` — NOT `ev − cost > 0` (issue #12).
 ///
-/// Iterates the same 51 × 51 lattice the optimizer iterates. Uses the
-/// chain-frame cost (`max(0, λ_f f(x*) − λ_g g(x*))`) so the proptest
-/// catches the optimizer's unit mismatch instead of co-mismatching with
-/// it.
+/// Iterates the same lattice the optimizer iterates, with the chain-frame
+/// λ-scaled cost, so the proptest catches an objective/units mismatch.
 fn grid_scan_ground_truth(
     mu_b: f64,
     sigma_b: f64,
@@ -199,49 +198,23 @@ fn grid_scan_ground_truth(
                 continue;
             }
             let ev = expected_value_at(mu_m, sigma_m, cand_mu, cand_sigma, k, mu_b, sigma_b);
-            let net = ev - coll;
-            // Require strict net > 0 AND strict coll > 0 — the no-trade
-            // point (μ_m, σ_m) has net = 0 and is not a "positive-net
-            // trade existed" witness.
-            if net > 0.0 && coll > 0.0 {
+            // Witness = positive expected P&L with a real (positive) lock that
+            // fits the budget. Collateral is a returned margin lock, so the bar
+            // is EV > 0 — the no-trade point (μ_m, σ_m) has EV = 0 and is not a
+            // witness.
+            if ev > 0.0 && coll > 0.0 {
                 let better = match best {
                     None => true,
-                    Some((b_net, _, _)) => net > b_net,
+                    Some((b_ev, ..)) => ev > b_ev,
                 };
                 if better {
-                    best = Some((net, cand_mu, cand_sigma));
+                    best = Some((ev, cand_mu, cand_sigma));
                 }
             }
         }
     }
 
     best
-}
-
-/// Re-evaluate a returned `NormalOptimizationResult` in the chain
-/// frame.
-///
-/// Post-v0.1.3 the optimizer's struct reports λ-scaled values directly,
-/// but we re-derive the chain-frame cost independently anyway so the
-/// proptest assertion does not trust the SUT to report its own units
-/// correctly.
-fn lambda_scaled_net_from_result(
-    result: deadeye_optimizer::NormalOptimizationResult,
-    mu_m: f64,
-    sigma_m: f64,
-    k: f64,
-) -> f64 {
-    let coll = lambda_scaled_collateral_at(
-        mu_m,
-        sigma_m,
-        result.optimized_mean,
-        result.optimized_sigma,
-        k,
-    );
-    if !coll.is_finite() {
-        return f64::NEG_INFINITY;
-    }
-    result.expected_value - coll
 }
 
 proptest! {
@@ -251,16 +224,17 @@ proptest! {
         ..ProptestConfig::default()
     })]
 
-    /// The property assertion (chain-frame):
+    /// The property assertion:
     ///
-    /// **"Given any (belief, market, budget), if a positive-net trade
-    /// in CHAIN UNITS (λ-scaled EV − λ-scaled cost, λ-scaled cost ≤
-    /// budget) exists at any grid point, the optimizer must return one."**
+    /// **"Given any (belief, market, budget), if a positive-EV, budget-
+    /// feasible trade exists at any grid point, the optimizer must return
+    /// one."** Collateral is a returned margin lock, so the bar is `EV > 0`
+    /// (not `EV − cost > 0`) — issue #12.
     ///
     /// Two-sided:
-    /// * ground truth witnesses λ-scaled `net > 0` ⇒ optimizer's
-    ///   returned trade, re-evaluated in chain units, must also have
-    ///   `net > 0` AND respect the budget on λ-scaled cost.
+    /// * ground truth witnesses `ev > 0` (λ-scaled cost ≤ budget) ⇒ the
+    ///   optimizer's returned trade has `expected_value > 0` AND its
+    ///   independently re-derived λ-scaled cost ≤ budget.
     /// * ground truth witnesses nothing ⇒ optimizer returns no-trade.
     #[test]
     fn optimizer_returns_a_trade_when_ground_truth_says_one_exists(
@@ -285,34 +259,33 @@ proptest! {
         };
         let result = optimize_normal_trade(input);
 
-        if let Some((gt_best_net, _, _)) = ground {
-            if gt_best_net > 0.0 {
-                // Optimizer's returned trade, re-evaluated in chain frame.
-                let chain_coll = lambda_scaled_collateral_at(
-                    mu_m, sigma_m, result.optimized_mean, result.optimized_sigma, k,
-                );
-                let chain_net = lambda_scaled_net_from_result(result, mu_m, sigma_m, k);
-                prop_assert!(
-                    chain_net > 0.0,
-                    "ground truth says λ-scaled positive-net trade exists at net={gt_best_net:.6}, \
-                     but optimizer returned chain_net={chain_net:.6} (λ-scaled coll={chain_coll:.6}) \
-                     (μ_b={mu_b}, σ_b={sigma_b}, μ_m={mu_m}, σ_m={sigma_m}, k={k}, budget={budget})"
-                );
-                prop_assert!(
-                    chain_coll <= budget + 1e-9_f64,
-                    "optimizer returned a trade whose λ-scaled cost {chain_coll:.6} exceeds \
-                     budget={budget} \
-                     (μ_b={mu_b}, σ_b={sigma_b}, μ_m={mu_m}, σ_m={sigma_m}, k={k})"
-                );
-            }
+        if let Some((gt_best_ev, _, _)) = ground {
+            // Ground truth witnesses a positive-EV, in-budget trade. The
+            // optimizer maximizes the same EV over the same lattice, so it
+            // must report EV > 0 and an in-budget λ-scaled cost.
+            prop_assert!(
+                result.expected_value > 0.0,
+                "ground truth says a positive-EV trade exists at ev={gt_best_ev:.6}, \
+                 but optimizer returned expected_value={:.6} (coll={:.6}) \
+                 (μ_b={mu_b}, σ_b={sigma_b}, μ_m={mu_m}, σ_m={sigma_m}, k={k}, budget={budget})",
+                result.expected_value,
+                result.collateral_required,
+            );
+            let chain_coll = lambda_scaled_collateral_at(
+                mu_m, sigma_m, result.optimized_mean, result.optimized_sigma, k,
+            );
+            prop_assert!(
+                chain_coll <= budget + 1e-9_f64,
+                "optimizer returned a trade whose λ-scaled cost {chain_coll:.6} exceeds \
+                 budget={budget} \
+                 (μ_b={mu_b}, σ_b={sigma_b}, μ_m={mu_m}, σ_m={sigma_m}, k={k})"
+            );
         } else {
-            // Ground truth (chain frame) says no positive trade exists;
-            // optimizer must return the no-trade sentinel. Post-v0.1.3
-            // the optimizer reports λ-scaled `collateral_required` so
-            // `coll == 0` is the unambiguous no-trade signal.
+            // Ground truth says no positive-EV in-budget trade exists; the
+            // optimizer must return the no-trade sentinel (coll == 0).
             prop_assert!(
                 result.collateral_required.abs() < 1e-12_f64,
-                "ground truth says no λ-scaled positive-net trade, \
+                "ground truth says no positive-EV trade, \
                  but optimizer returned coll={} \
                  (μ_b={mu_b}, σ_b={sigma_b}, μ_m={mu_m}, σ_m={sigma_m}, k={k}, budget={budget})",
                 result.collateral_required
@@ -327,21 +300,60 @@ proptest! {
 // tests that pin the bug in plain sight rather than relying on the
 // random proptest to rediscover them.
 
-/// σ-only arb regression anchors — chain-frame.
+/// **Issue #12** — the optimizer must propose a move toward the belief, not
+/// decline. Market `N(4.205, 0.192)`, belief `N(4.179, 0.116)` (lower mean +
+/// tighter), budget 1000 (non-binding). Per the distribution-market scoring
+/// rule the EV-max submission is the belief (`f ∝ p`); collateral is a
+/// returned lock, so the trade is taken whenever its expected P&L is positive.
+#[test]
+fn issue_12_optimizer_moves_toward_belief() {
+    let input = NormalOptimizationInput::new(
+        1000.0,    // budget (non-binding: full move costs ~the direct quote)
+        4.179,     // belief μ (below market)
+        0.116,     // belief σ (tighter than market)
+        4.205,     // market μ
+        0.191_981, // market σ
+        200.0,     // effective k (the issue's on-chain k)
+    );
+    let r = optimize_normal_trade(input);
+    // A real, positive-EV, in-budget trade — not the no-trade sentinel.
+    assert!(
+        r.collateral_required > 0.0,
+        "expected a trade, got no-trade"
+    );
+    assert!(
+        r.expected_value > 0.0,
+        "expected EV > 0, got {}",
+        r.expected_value
+    );
+    assert!(
+        r.collateral_required <= 1000.0 + 1e-9,
+        "must respect budget"
+    );
+    // The candidate moves toward the belief: mean drops below the market,
+    // σ tightens below the market.
+    assert!(
+        r.optimized_mean < input.market_mean,
+        "optimized μ ({}) should move below the market mean ({})",
+        r.optimized_mean,
+        input.market_mean,
+    );
+    assert!(
+        r.optimized_sigma < input.market_sigma,
+        "optimized σ ({}) should tighten below the market σ ({})",
+        r.optimized_sigma,
+        input.market_sigma,
+    );
+}
+
+/// σ-only arb regression anchors.
 ///
-/// At chain pricing (`λ ≈ k · √(2σ√π)`, ~80–115× at typical k/σ),
-/// the CPI-style cases that the **pre-v0.1.3** optimizer reported as
-/// profitable are in fact **negative-net** under the chain's
-/// λ-scaling. The Newton solver still converges (the v0.1.1 fix), but
-/// the chain charge dominates the EV.
-///
-/// The chain-frame contract:
-/// * `r.collateral_required` is the λ-scaled charge the chain levies.
-/// * `r.expected_value` is the λ-scaled belief integral.
-/// * The optimizer returns the no-trade sentinel iff no grid point has
-///   `λ-scaled EV > λ-scaled cost` within budget.
-///
-/// We pin each historical scenario at its **chain-correct** outcome.
+/// These name historical scenarios; the expected outcome is derived from the
+/// EV-max ground-truth scan (issue #12 corrected the objective from
+/// `ev − cost` to maximizing `ev` with collateral as a returned budget lock).
+/// `r.collateral_required` is the λ-scaled charge; `r.expected_value` the
+/// λ-scaled belief integral; the optimizer returns no-trade iff no grid point
+/// has positive EV within budget.
 #[test]
 fn sigma_only_arb_chain_frame_outcomes() {
     let cases = [
@@ -393,15 +405,23 @@ fn sigma_only_arb_chain_frame_outcomes() {
         // Low-k cases where σ-arb IS chain-profitable.
         ("low-k σ-shrink", 0.0, 0.5, 0.0, 4.0, 100.0, 1.0, true),
     ];
-    for (label, mu_b, sigma_b, mu_m, sigma_m, budget, k, expect_trade) in cases {
+    // The 8th tuple field is the *legacy* (pre-#12, `net = ev − coll`)
+    // expectation and is no longer trusted. Derive the expectation from the
+    // EV-max ground-truth scan (`ev > 0`, in budget) so the anchor stays
+    // consistent with the corrected objective.
+    for (label, mu_b, sigma_b, mu_m, sigma_m, budget, k, _legacy) in cases {
         let r = optimize_normal_trade(NormalOptimizationInput::new(
             budget, mu_b, sigma_b, mu_m, sigma_m, k,
         ));
+        let expect_trade =
+            grid_scan_ground_truth(mu_b, sigma_b, mu_m, sigma_m, budget, k).is_some();
         if expect_trade {
-            let net = r.expected_value - r.collateral_required;
             assert!(
-                net > 0.0,
-                "{label}: expected chain-profitable trade, got net={net:.6}"
+                r.collateral_required > 0.0 && r.expected_value > 0.0,
+                "{label}: ground truth says a positive-EV trade exists, but optimizer \
+                 returned coll={} ev={}",
+                r.collateral_required,
+                r.expected_value,
             );
             assert!(
                 r.collateral_required <= budget + 1e-9,
@@ -410,7 +430,7 @@ fn sigma_only_arb_chain_frame_outcomes() {
         } else {
             assert!(
                 r.collateral_required.abs() < 1e-12_f64,
-                "{label}: expected chain no-trade (cost > EV under λ-scaling), got coll={}",
+                "{label}: expected no-trade (no positive-EV candidate in budget), got coll={}",
                 r.collateral_required,
             );
         }

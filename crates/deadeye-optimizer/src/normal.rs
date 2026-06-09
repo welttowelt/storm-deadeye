@@ -1,30 +1,27 @@
 //! 2D grid-search trade optimizer for normal-distribution markets.
 //!
-//! Maximises **net** expected value (`EV − collateral`) under the trader's
-//! belief, subject to `collateral ≤ budget`. Both EV and cost are
-//! reported in **chain units** — i.e. λ-scaled with `λ = k / ‖p‖₂`,
-//! matching `helpers.cairo:50-176` (`scaled_verify_minimum_with_lambda`).
+//! Maximises the trader's **expected P&L** `E_belief[position_value]` (the
+//! [`NormalOptimizationResult::expected_value`]) subject to `collateral ≤
+//! budget`. Per the distribution-market scoring rule the EV-max submission is
+//! the trader's own belief (`f ∝ p`); under a non-binding budget the optimum
+//! is the full move to `(belief_mean, belief_sigma)`.
 //!
-//! ## λ-scaling (v0.1.3)
+//! **Collateral is a returned margin lock, not a cost.** At settlement
+//! `gross_payout = collateral + position_value`, so the trader's net P&L is
+//! `position_value` and its expectation is `expected_value`. The objective is
+//! therefore `max EV s.t. collateral ≤ budget` — NOT `max (EV − collateral)`.
+//! The old `EV − collateral` objective treated the (large) returned lock as a
+//! sunk cost, so every feasible move looked net-negative and the optimizer
+//! always declined (issue #12).
 //!
-//! Pre-v0.1.3 the inner grid loop mixed units: the EV was λ-scaled
-//! (Gaussian-product integral × `λ_g`) but the cost from
-//! `normal_collateral` was the **unscaled** `−d_min`. Two bugs surfaced
-//! by Reviewer B's audit (`docs/REVIEW_ITEM3_DRIVER_B.md` §6):
+//! ## λ-scaling
 //!
-//! * **Budget filter mismatch:** `coll > input.budget` compared an
-//!   unscaled cost against the user's real-XP budget. With λ ≈ 200×–266×
-//!   at typical `(k, σ)`, the filter let trades pass that were 200× over
-//!   budget at the chain charge.
-//! * **Mixed-units candidate selection:** `best_net = ev − coll` ranked
-//!   candidates on incompatible units, so the "best" pick was wrong.
-//!
-//! v0.1.3 routes the inner cost through the same λ-scaling
-//! `optimize_quote_offline` applies (`crates/deadeye-sdk/src/normal.rs`):
-//! `chain_cost = max(0, λ_f · f(x*) − λ_g · g(x*))` evaluated at the
-//! audited stationary point from `normal_collateral`. Both the budget
-//! filter and the candidate selector run on `chain_cost`, restoring
-//! unit consistency with `expected_value`.
+//! The inner collateral cost is λ-scaled to the unit the chain charges so the
+//! **budget filter** (`collateral ≤ budget`) is apples-to-apples:
+//! `chain_cost = max(0, λ_f · f(x*) − λ_g · g(x*))` (`λ = k / ‖p‖₂`) evaluated
+//! at the audited stationary point from `normal_collateral`, matching
+//! `optimize_quote_offline` (`crates/deadeye-sdk/src/normal.rs`). This cost
+//! λ-scaling is independent of the objective fix above.
 
 use deadeye_collateral::{MinimizationPolicy, lambda, normal_collateral};
 use deadeye_core::{Distribution, NormalDistribution, Sq128};
@@ -140,7 +137,7 @@ pub struct NormalOptimizationResult {
     pub is_budget_sufficient: bool,
     /// `budget − collateral_required`.
     pub budget_surplus: f64,
-    /// Net ROI: `(EV − collateral) / collateral`.
+    /// Expected return on the locked collateral: `EV / collateral`.
     pub roi: f64,
 }
 
@@ -162,15 +159,15 @@ fn gaussian_product_integral(mu1: f64, sigma1: f64, mu2: f64, sigma2: f64) -> f6
 /// `normal_collateral` call (`crates/deadeye-sdk/src/normal.rs:442-465`):
 ///
 /// 1. Find the audited stationary point `x*` via `normal_collateral`.
-/// 2. Evaluate `max(0, λ_f · f(x*) − λ_g · g(x*))` with
-///    `λ = k / ‖p‖₂` — the **unit the chain charges**
-///    (`helpers.cairo:155-176`, `helpers.cairo:198-230`).
+/// 2. Evaluate `max(0, λ_f · f(x*) − λ_g · g(x*))` with `λ = k / ‖p‖₂` — the
+///    **unit the chain charges** (`helpers.cairo:155-176`,
+///    `helpers.cairo:198-230`).
 ///
-/// Pre-v0.1.3 this returned the unscaled `verified.collateral`, which
-/// then leaked into the inner `best_net = ev − coll` comparison
-/// (where `ev` is already λ-scaled) and the `coll > budget` filter
-/// (where the user's budget is the chain unit). Both call-sites are
-/// fixed by reporting the chain-frame cost here.
+/// Pre-v0.1.3 this returned the unscaled `verified.collateral`, which then
+/// leaked into the `collateral ≤ budget` filter (where the user's budget is
+/// the chain unit), letting trades pass that were ~200× over budget at the
+/// chain charge. Reporting the chain-frame cost here keeps the budget filter
+/// apples-to-apples with the user's budget.
 ///
 /// Returns `f64::INFINITY` on any solver failure so the grid filter
 /// in `optimize_normal_trade` rejects the candidate cleanly.
@@ -269,11 +266,21 @@ pub fn optimize_normal_trade(input: NormalOptimizationInput) -> NormalOptimizati
     };
     let max_shift = input.constraints.max_mean_sep_sigmas * input.market_sigma;
 
-    let mut best_net = f64::NEG_INFINITY;
+    // The trader maximizes **expected P&L** = `E_belief[position_value]` (the
+    // `expected_value` below) subject to the locked collateral fitting the
+    // budget. Collateral is a MARGIN LOCK that is *returned* at settlement
+    // (`gross_payout = collateral + position_value`), so it is a budget
+    // constraint — NOT a cost to subtract from EV. The old objective
+    // `net = ev − coll` treated the returned collateral as a sunk cost; since
+    // collateral (~the max loss) typically dwarfs EV, every feasible move
+    // looked net-negative and the optimizer always returned no-trade
+    // (issue #12). Per the distribution-market scoring rule, the EV-max
+    // submission is the trader's own belief (`f ∝ p`); under a non-binding
+    // budget the optimum is the full move to `(belief_mean, belief_sigma)`.
     let mut best_mu = input.market_mean;
     let mut best_sigma = input.market_sigma;
     let mut best_coll = 0.0_f64;
-    let mut best_ev = 0.0_f64;
+    let mut best_ev = 0.0_f64; // the market baseline (no move) scores EV 0
 
     for i in 0..=N_SIGMA_SAMPLES {
         let cand_sigma = f64::from(i).mul_add(sigma_step, sigma_min);
@@ -287,7 +294,7 @@ pub fn optimize_normal_trade(input: NormalOptimizationInput) -> NormalOptimizati
                 cand_sigma,
                 input.effective_k,
             );
-            if coll < 0.0 || coll > input.budget {
+            if coll <= 0.0 || coll > input.budget {
                 continue;
             }
             let ev = expected_value(
@@ -299,17 +306,17 @@ pub fn optimize_normal_trade(input: NormalOptimizationInput) -> NormalOptimizati
                 input.belief_mean,
                 input.belief_sigma,
             );
-            let net = ev - coll;
-            if net > best_net {
-                best_net = net;
+            // Maximize EV among budget-feasible candidates; on a tie prefer the
+            // cheaper lock (more capital-efficient).
+            if ev > best_ev || (ev >= best_ev && best_coll > 0.0 && coll < best_coll) {
+                best_ev = ev;
                 best_mu = cand_mu;
                 best_sigma = cand_sigma;
                 best_coll = coll;
-                best_ev = ev;
             }
         }
     }
-    if best_net <= 0.0 || best_coll <= 0.0 {
+    if best_ev <= 0.0 || best_coll <= 0.0 {
         return no_trade;
     }
 
@@ -331,7 +338,8 @@ pub fn optimize_normal_trade(input: NormalOptimizationInput) -> NormalOptimizati
         is_budget_sufficient: (best_mu - input.belief_mean).abs() < sigma_step * 0.5
             && (best_sigma - input.belief_sigma).abs() < sigma_step * 0.5,
         budget_surplus: input.budget - best_coll,
-        roi: best_net / best_coll,
+        // Expected return on the locked collateral (EV per unit locked).
+        roi: best_ev / best_coll,
     }
 }
 
@@ -365,54 +373,57 @@ mod tests {
         assert!(r.optimized_mean >= input.market_mean);
     }
 
-    /// Regression — σ-only arb (`μ_b` ≈ `μ_market`, `σ_b` ≪ `σ_market`)
-    /// must **not** crash the inner Newton solver. Pre-v0.1.1 the inline
-    /// Newton mis-converged on equal-μ moves and silently filtered out
-    /// every σ-shrink candidate; v0.1.1 fixed that by routing through
-    /// `normal_collateral`.
+    /// A tighter, slightly-shifted belief is a **positive-EV** move: a trader
+    /// more confident than the market profits when the outcome lands near
+    /// their sharper curve (where their belief puts its mass). The collateral
+    /// is a returned margin lock, not a cost — under the corrected objective
+    /// (maximize `E_belief[position_value]` s.t. collateral ≤ budget) the
+    /// optimizer proposes this trade. Pre-fix it subtracted the (large) lock
+    /// from the (small) EV and wrongly declined every σ-arb (issue #12).
     ///
-    /// v0.1.3 — both `collateral_required` and `expected_value` are
-    /// reported in **chain-frame λ-scaled** units. The live CPI scenario
-    /// is *negative-net under correct chain pricing* (cost ≈ 30 STRK,
-    /// EV ≈ 5 STRK at `k=75`, `σ_m=0.35`) — Reviewer B's audit confirmed the
-    /// same outcome on devnet (`CHAIN_ACCEPTANCE_PARITY.md` §2, "every
-    /// loose belief"). Pre-v0.1.3 the buggy unscaled-cost frame
-    /// reported coll ≈ 0.4 and made the trade look profitable; the
-    /// post-fix optimizer honestly returns no-trade. This test now pins
-    /// that no-trade behavior.
+    /// (The collateral here is still reported in chain-frame λ-scaled units —
+    /// that earlier fix is unchanged; only the trade/no-trade *decision* is
+    /// corrected.)
     #[test]
-    fn sigma_arb_with_equal_mu_returns_no_trade_under_chain_pricing() {
+    fn sigma_arb_with_tighter_belief_finds_a_trade() {
         let input = NormalOptimizationInput::new(
             50.0,   // budget (chain XP units)
             4.3274, // belief μ
-            0.2143, // belief σ
+            0.2143, // belief σ — tighter than the market
             4.2900, // market μ
             0.3500, // market σ
             75.07,  // effective k
         );
         let r = optimize_normal_trade(input);
-        // Pre-fix: returned coll ≈ 0.4 (unscaled), claiming a profitable
-        // σ-arb. Post-fix: chain-frame cost (~30 STRK) > EV (~5 STRK),
-        // so the optimizer correctly returns the no-trade sentinel.
         assert!(
-            r.collateral_required.abs() < 1e-12,
-            "expected no-trade under chain pricing, got coll={}",
-            r.collateral_required,
+            r.collateral_required > 0.0,
+            "expected a positive-EV σ-arb trade, got no-trade",
         );
+        assert!(
+            r.expected_value > 0.0,
+            "expected EV > 0, got {}",
+            r.expected_value,
+        );
+        assert!(r.collateral_required <= input.budget + 1e-9);
     }
 
-    /// Regression — pure σ-arb with exact-equal μ at chain pricing is
-    /// also negative-net for the CPI scenario. The bug-fix moves this
-    /// from "claim a profitable trade" to "correctly decline."
+    /// Pure σ-arb (exact-equal μ, tighter belief σ) is also positive-EV: the
+    /// sharper curve out-scores the market at the shared mean. The optimizer
+    /// must take it.
     #[test]
-    fn pure_sigma_arb_returns_no_trade_under_chain_pricing() {
+    fn pure_sigma_arb_finds_a_trade() {
         let input = NormalOptimizationInput::new(50.0, 4.29, 0.21, 4.29, 0.35, 75.07);
         let r = optimize_normal_trade(input);
         assert!(
-            r.collateral_required.abs() < 1e-12,
-            "expected no-trade under chain pricing, got coll={}",
-            r.collateral_required,
+            r.collateral_required > 0.0,
+            "expected a σ-arb trade, got no-trade",
         );
+        assert!(
+            r.expected_value > 0.0,
+            "expected EV > 0, got {}",
+            r.expected_value,
+        );
+        assert!(r.collateral_required <= input.budget + 1e-9);
     }
 
     /// Regression — at LOW `k` (or wide σ) the chain charge stays small
@@ -440,10 +451,9 @@ mod tests {
             r.collateral_required,
         );
         assert!(
-            r.expected_value > r.collateral_required,
-            "expected positive net (ev={} > coll={})",
+            r.expected_value > 0.0,
+            "expected positive EV (ev={})",
             r.expected_value,
-            r.collateral_required,
         );
         assert!(r.optimized_sigma < input.market_sigma * 0.9);
         assert!(r.collateral_required <= input.budget + 1e-9);
@@ -487,18 +497,22 @@ mod tests {
         // the 5 STRK budget, so the optimizer must either return
         // no-trade OR a different in-budget λ-scaled candidate.
         // Either way: any returned coll must satisfy coll ≤ budget in
-        // λ-scaled chain units.
+        // λ-scaled chain units (the load-bearing invariant here).
         assert!(
             r.collateral_required <= input.budget + 1e-9,
             "budget filter leak: returned coll={} > budget={}",
             r.collateral_required,
             input.budget,
         );
-        // Net (both λ-scaled) is non-negative — no false positive.
-        assert!(
-            r.expected_value >= r.collateral_required,
-            "filter accepted a negative-net candidate",
-        );
+        // Any returned trade has positive expected P&L (collateral is a
+        // returned lock, so the bar is EV > 0, not EV ≥ collateral).
+        if r.collateral_required > 0.0 {
+            assert!(
+                r.expected_value > 0.0,
+                "filter accepted a non-positive-EV candidate (ev={})",
+                r.expected_value,
+            );
+        }
     }
 
     /// **Bug B — candidate selection must use λ-scaled units consistently.**
@@ -524,11 +538,11 @@ mod tests {
         let r = optimize_normal_trade(NormalOptimizationInput::new(
             budget, mu_b, sigma_b, mu_m, sigma_m, k,
         ));
-        // The optimizer's reported EV/coll are already λ-scaled in v0.1.3.
-        let net = r.expected_value - r.collateral_required;
+        // The optimizer maximizes λ-scaled EV; a returned trade has EV > 0
+        // (collateral is a returned lock, not subtracted from EV — issue #12).
         assert!(
-            net >= 0.0,
-            "λ-scaled net must be non-negative (got ev={} coll={})",
+            r.expected_value > 0.0,
+            "expected positive λ-scaled EV (got ev={} coll={})",
             r.expected_value,
             r.collateral_required,
         );

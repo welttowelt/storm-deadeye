@@ -295,7 +295,12 @@ fn optimize_quote_offline_inner(
     // we have no chain verdict to surface. Callers that want a
     // human-readable "no positive-EV trade" message read off the
     // pair `(on_chain_will_accept == false, required_collateral == 0)`.
-    let has_positive_trade = collateral_f64 > 0.0 && opt.expected_value > collateral_f64;
+    //
+    // Accept whenever the move locks real collateral AND has positive expected
+    // P&L under the belief. Collateral is a returned margin lock, not a cost,
+    // so the bar is `EV > 0` — NOT `EV > collateral` (that wrongly treated the
+    // lock as sunk and rejected every feasible move — issue #12).
+    let has_positive_trade = collateral_f64 > 0.0 && opt.expected_value > 0.0;
     let rejection = None;
 
     Ok((
