@@ -10,14 +10,17 @@ use std::{collections::BTreeMap, fs, io::Write as _, path::PathBuf};
 use anyhow::{Context as _, Result};
 use serde::{Deserialize, Serialize};
 
-/// Default public Sepolia RPC endpoint.
-pub(crate) const DEFAULT_SEPOLIA_RPC: &str = "https://starknet-sepolia.drpc.org";
+/// Default public Sepolia RPC endpoint — ZAN's public node, JSON-RPC v0_10
+/// (the latest spec, matching the webapp).
+pub(crate) const DEFAULT_SEPOLIA_RPC: &str =
+    "https://api.zan.top/public/starknet-sepolia/rpc/v0_10";
 
 /// Default Sepolia indexer URL.
 pub(crate) const DEFAULT_SEPOLIA_INDEXER: &str = "https://situation-indexer.fly.dev";
 
-/// Default public mainnet RPC endpoint.
-pub(crate) const DEFAULT_MAINNET_RPC: &str = "https://starknet-mainnet.public.blastapi.io/rpc/v0_8";
+/// Default public mainnet RPC endpoint — ZAN's public node, JSON-RPC v0_10.
+pub(crate) const DEFAULT_MAINNET_RPC: &str =
+    "https://api.zan.top/public/starknet-mainnet/rpc/v0_10";
 
 /// Default mainnet indexer URL.
 pub(crate) const DEFAULT_MAINNET_INDEXER: &str = "https://178-105-210-177.sslip.io";

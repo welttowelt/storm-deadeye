@@ -20,9 +20,7 @@ use starknet_core::{
     types::{BlockId, BlockTag, Felt, FunctionCall, StarknetError},
     utils::get_selector_from_name,
 };
-use starknet_providers::{
-    JsonRpcClient, Provider as _, ProviderError, jsonrpc::HttpTransport,
-};
+use starknet_providers::{JsonRpcClient, Provider as _, ProviderError, jsonrpc::HttpTransport};
 use starknet_signers::{LocalWallet, SigningKey};
 use url::Url;
 
@@ -57,15 +55,21 @@ fn net_params(args: &OnboardArgs) -> NetParams {
         ),
     };
     NetParams {
-        profile: args.profile.clone().unwrap_or_else(|| default_profile.to_owned()),
+        profile: args
+            .profile
+            .clone()
+            .unwrap_or_else(|| default_profile.to_owned()),
         rpc_url: args.rpc_url.clone().unwrap_or_else(|| rpc.to_owned()),
-        indexer_url: args.indexer_url.clone().unwrap_or_else(|| indexer.to_owned()),
+        indexer_url: args
+            .indexer_url
+            .clone()
+            .unwrap_or_else(|| indexer.to_owned()),
         chain_id: chain.to_owned(),
     }
 }
 
 pub(crate) async fn run(args: OnboardArgs, _ctx: &AppContext, confirm: bool) -> Result<()> {
-    let net = net_params(&args);
+    let mut net = net_params(&args);
     let class_hash_hex = args
         .account_class_hash
         .clone()
@@ -75,7 +79,29 @@ pub(crate) async fn run(args: OnboardArgs, _ctx: &AppContext, confirm: bool) -> 
 
     println!("Deadeye onboarding — network: {}\n", net.profile);
 
-    // ── 1. Generate or import the wallet ──────────────────────────────
+    // ── 0. Choose the RPC endpoint (explicit flag wins; else prompt) ──
+    net.rpc_url = resolve_rpc(args.rpc_url.as_deref(), &net.rpc_url)?;
+    println!("Using RPC: {}\n", net.rpc_url);
+
+    // ── 1. Guard: never clobber an existing wallet by accident ────────
+    let existing = config::load()?.profiles.get(&net.profile).cloned();
+    let existing_key = existing.as_ref().and_then(|p| p.private_key.clone());
+    let existing_addr = existing.as_ref().and_then(|p| p.address.clone());
+    if existing_key.is_some() && !args.force && !args.import {
+        bail!(
+            "profile `{p}` already has a wallet ({a}). Generating a new one would \
+             overwrite it and you would lose access to any funds on it.\n  \
+             • resume / recover it : deadeye onboard --import\n  \
+             • make a second wallet: deadeye onboard --profile <name>\n  \
+             • overwrite anyway    : deadeye onboard --force",
+            p = net.profile,
+            a = existing_addr
+                .clone()
+                .unwrap_or_else(|| "address unknown".to_owned()),
+        );
+    }
+
+    // ── 2. Generate or import the wallet ──────────────────────────────
     let w = if args.import {
         let phrase = prompt_line("Enter your BIP-39 recovery phrase:")?;
         wallet::import(phrase.trim(), class_hash)?
@@ -88,6 +114,21 @@ pub(crate) async fn run(args: OnboardArgs, _ctx: &AppContext, confirm: bool) -> 
         println!("    {}\n", w.mnemonic);
         w
     };
+
+    // Importing over a profile that already holds a *different* wallet would
+    // clobber it too — only allow it when the phrase recovers the same key.
+    if args.import && existing_key.is_some() && !args.force {
+        let derived = format!("{:#066x}", w.address);
+        if existing_addr.as_deref() != Some(derived.as_str()) {
+            bail!(
+                "that recovery phrase derives {derived}, which differs from the wallet \
+                 already saved on profile `{p}` ({a}). Use --force to overwrite, or \
+                 --profile <name> to keep both.",
+                p = net.profile,
+                a = existing_addr.clone().unwrap_or_default(),
+            );
+        }
+    }
 
     println!("Account address : {:#066x}", w.address);
     println!("Public key      : {:#066x}", w.public_key);
@@ -103,13 +144,18 @@ pub(crate) async fn run(args: OnboardArgs, _ctx: &AppContext, confirm: bool) -> 
 
     if args.skip_deploy {
         println!("--skip-deploy set: stopping before funding/deploy.");
-        println!("Fund {:#066x} with STRK, then re-run `deadeye onboard --import`.", w.address);
+        println!(
+            "Fund {:#066x} with STRK, then re-run `deadeye onboard --import`.",
+            w.address
+        );
         return Ok(());
     }
 
-    // ── 3. Build provider, verify the account class is declared ───────
-    let url = Url::parse(&net.rpc_url).with_context(|| format!("invalid rpc_url: {}", net.rpc_url))?;
+    // ── 3. Build provider, check it answers, verify the account class ─
+    let url =
+        Url::parse(&net.rpc_url).with_context(|| format!("invalid rpc_url: {}", net.rpc_url))?;
     let provider = JsonRpcClient::new(HttpTransport::new(url));
+    verify_rpc_reachable(&provider, &net.rpc_url).await?;
     verify_class_declared(&provider, class_hash).await?;
 
     // ── 4. Wait for the address to be funded ──────────────────────────
@@ -168,12 +214,60 @@ fn mark_deployed(profile: &str) -> Result<()> {
     Ok(())
 }
 
+/// Resolve the RPC endpoint. An explicit `--rpc-url` wins; otherwise show the
+/// default and let the user paste their own, with an Alchemy suggestion for a
+/// more reliable endpoint. Non-interactive input falls back to the default.
+fn resolve_rpc(explicit: Option<&str>, default_rpc: &str) -> Result<String> {
+    if let Some(u) = explicit {
+        let u = u.trim();
+        if !u.is_empty() {
+            return Ok(u.to_owned());
+        }
+    }
+    println!("Starknet RPC endpoint");
+    println!("  Default (ZAN public node — free, rate-limited):");
+    println!("    {default_rpc}");
+    println!("  For higher reliability + rate limits, get a free Alchemy Starknet RPC key:");
+    println!("    https://www.alchemy.com/rpc/starknet");
+    println!("  (use the latest v0_10 JSON-RPC path for whatever endpoint you paste)");
+    match prompt_line("Press Enter for the default, or paste your RPC URL:") {
+        Ok(line) => {
+            let t = line.trim();
+            Ok(if t.is_empty() {
+                default_rpc.to_owned()
+            } else {
+                t.to_owned()
+            })
+        },
+        // Non-interactive (piped / EOF): accept the default.
+        Err(_) => Ok(default_rpc.to_owned()),
+    }
+}
+
+/// Confirm the RPC answers before we ask the user to fund anything.
+async fn verify_rpc_reachable(
+    provider: &JsonRpcClient<HttpTransport>,
+    rpc_url: &str,
+) -> Result<()> {
+    provider.chain_id().await.map_err(|e| {
+        anyhow::anyhow!(
+            "RPC {rpc_url} is unreachable or invalid ({e}). Re-run with `--rpc-url <url>` \
+             pointing at a working Starknet JSON-RPC v0_10 endpoint — e.g. a free Alchemy key \
+             from https://www.alchemy.com/rpc/starknet."
+        )
+    })?;
+    Ok(())
+}
+
 /// Error out early if the account class isn't declared on this network.
 async fn verify_class_declared(
     provider: &JsonRpcClient<HttpTransport>,
     class_hash: Felt,
 ) -> Result<()> {
-    match provider.get_class(BlockId::Tag(BlockTag::Latest), class_hash).await {
+    match provider
+        .get_class(BlockId::Tag(BlockTag::Latest), class_hash)
+        .await
+    {
         Ok(_) => Ok(()),
         Err(ProviderError::StarknetError(StarknetError::ClassHashNotFound)) => bail!(
             "account class {class_hash:#x} is not declared on this network — pass \
@@ -192,11 +286,11 @@ async fn wait_for_funding(
     min_base: u128,
     min_strk: f64,
 ) -> Result<()> {
-    println!(
-        "Fund the account with at least {min_strk} STRK for gas:\n\n    {holder:#066x}\n"
-    );
+    println!("Fund the account with at least {min_strk} STRK for gas:\n\n    {holder:#066x}\n");
     loop {
-        let bal = read_strk_balance(provider, token, holder).await.unwrap_or(0);
+        let bal = read_strk_balance(provider, token, holder)
+            .await
+            .unwrap_or(0);
         let bal_strk = (bal as f64) / 1e18_f64;
         if bal >= min_base {
             println!("Balance: {bal_strk:.6} STRK — sufficient. Continuing.");

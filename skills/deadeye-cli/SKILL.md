@@ -27,16 +27,32 @@ deadeye onboard --network mainnet          # generates a recovery phrase
 deadeye onboard --network mainnet --import # recover from an existing phrase
 ```
 
-The wizard prints an **account address** and waits for you to send STRK to it
-for gas. Ask the human operator to fund that address; the CLI polls the balance
-and deploys the account once it's funded. Re-running `onboard --import` resumes
-a half-finished setup.
+The wizard first asks for the **RPC endpoint** (defaults to ZAN's public node;
+it suggests getting a free Alchemy key for better reliability — pass your own
+with `--rpc-url`), then prints an **account address** and waits for you to send
+STRK to it for gas. Ask the human operator to fund that address; the CLI polls
+the balance and deploys the account once it's funded. Re-running
+`onboard --import` resumes a half-finished setup.
+
+Onboarding **never overwrites an existing wallet** by accident: re-running it on
+a profile that already holds a key is refused unless you pass `--force`
+(importing the same phrase is allowed — it's idempotent).
+
+**Multiple wallets / accounts.** Each named profile is its own wallet. Create
+more with `deadeye onboard --profile <name>` and list them so you can pick which
+account to trade from:
+
+```bash
+deadeye account list --output json    # every wallet: profile, address, network, deployed
+deadeye trade quote <MARKET> --profile alice ...   # trade from a specific wallet
+```
+
+Any command takes `--profile <name>`; omit it to use the default (marked `*`).
 
 Config lives at `~/.config/deadeye/config.toml` (override with `DEADEYE_CONFIG`).
-The active profile carries the RPC, indexer, chain id, address, and key, so
-every command below "just works" with no flags. To keep the key out of the
-file, set `DEADEYE_PRIVATE_KEY` in the environment instead — it wins over the
-stored key.
+Each profile carries the RPC, indexer, chain id, address, and key, so commands
+"just work" with no flags. To keep the key out of the file, set
+`DEADEYE_PRIVATE_KEY` in the environment instead — it wins over the stored key.
 
 Confirm the wallet and claim your starting XP:
 
@@ -133,10 +149,15 @@ deadeye trade journal --tail 20       # recent trade log
 
 ## Updating
 
-Re-run the installer to update the binary and refresh this skill:
+Keep the CLI current so you keep getting new commands, skills, and fixes:
 
 ```bash
-curl -fsSL https://project-deadeye.vercel.app/install.sh | sh
+deadeye update --check    # report whether a newer release exists
+deadeye update            # check, then update the binary + refresh skills
 ```
+
+`deadeye update` re-runs the installer under the hood; you can also do it
+manually with `curl -fsSL https://project-deadeye.vercel.app/install.sh | sh`.
+Restart your agent app after updating to pick up refreshed skills.
 
 Restart the agent app after installing or updating skills.

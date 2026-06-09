@@ -140,6 +140,15 @@ pub(crate) enum Command {
     ///   --body "After a market resolves I want `deadeye forecast score` to ..."
     /// ```
     Feedback(FeedbackArgs),
+    /// Check for a newer release and update the CLI (and skills) in place.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye update --check   # just report whether a newer version exists
+    /// deadeye update           # check, then re-run the installer to update
+    /// ```
+    Update(UpdateArgs),
     /// Inspect the active account / profile.
     Account {
         #[command(subcommand)]
@@ -231,6 +240,10 @@ pub(crate) struct OnboardArgs {
     /// Override the indexer URL (otherwise derived from `--network`).
     #[arg(long, value_name = "URL")]
     pub(crate) indexer_url: Option<String>,
+    /// Overwrite an existing saved wallet on this profile. Without it,
+    /// onboarding refuses to clobber a key you already have.
+    #[arg(long)]
+    pub(crate) force: bool,
 }
 
 // ─── Driver B argument types ─────────────────────────────────────────
@@ -623,6 +636,15 @@ pub(crate) enum AccountCmd {
     /// deadeye account show
     /// ```
     Show,
+    /// List every saved wallet profile (name, address, network, deployed),
+    /// so an agent can pick which account to trade from with `--profile`.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye account list --output json
+    /// ```
+    List,
 }
 
 #[derive(Debug, Subcommand)]
@@ -760,6 +782,19 @@ pub(crate) enum ConfigCmd {
         #[arg(value_name = "NAME")]
         name: String,
     },
+}
+
+// ─── Update (self-update) ────────────────────────────────────────────────
+
+/// `deadeye update …`
+#[derive(Debug, clap::Args)]
+pub(crate) struct UpdateArgs {
+    /// Only check whether a newer release exists; don't install anything.
+    #[arg(long)]
+    pub(crate) check: bool,
+    /// Installer URL to run when updating. Defaults to the branded endpoint.
+    #[arg(long, value_name = "URL")]
+    pub(crate) url: Option<String>,
 }
 
 // ─── Feedback (GitHub issue submission) ──────────────────────────────────

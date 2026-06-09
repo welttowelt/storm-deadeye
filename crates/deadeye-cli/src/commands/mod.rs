@@ -30,6 +30,7 @@ pub(crate) mod position;
 pub(crate) mod render_helpers;
 pub(crate) mod runtime_resolver;
 pub(crate) mod trade;
+pub(crate) mod update;
 pub(crate) mod watch;
 
 /// Interactive y/N prompt — returns Ok if accepted, an error on rejection.
@@ -62,6 +63,7 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
         Command::Onboard(args) => onboard::run(args, &ctx, confirm).await,
         Command::Forecast { action } => forecast::run(action, &ctx).await,
         Command::Feedback(args) => feedback::run(args, confirm).await,
+        Command::Update(args) => update::run(args, confirm).await,
         Command::Account { action } => account::run(action, &ctx).await,
         Command::Markets { action } => markets::run(action, &ctx).await,
         Command::Position { action } => position::run(action, &ctx, confirm).await,

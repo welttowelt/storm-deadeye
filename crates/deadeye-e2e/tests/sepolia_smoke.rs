@@ -44,7 +44,7 @@
 //!
 //! ```bash
 //! export DEADEYE_RUN_SEPOLIA=1
-//! export DEADEYE_SEPOLIA_RPC="https://starknet-sepolia.public.blastapi.io/rpc/v0_7"
+//! export DEADEYE_SEPOLIA_RPC="https://api.zan.top/public/starknet-sepolia/rpc/v0_10"
 //! # A known-live Sepolia normal-family market. The deadeye indexer at
 //! # https://situation-indexer.fly.dev/api/markets is the canonical
 //! # source — pick any market with `marketType: "normal"`.
@@ -85,7 +85,7 @@ const SEPOLIA_CHAIN_ID_HEX: &str = "0x534e5f5345504f4c4941";
 
 /// Default public Sepolia RPC endpoint. Used when
 /// `DEADEYE_SEPOLIA_RPC` is unset.
-const DEFAULT_SEPOLIA_RPC: &str = "https://starknet-sepolia.public.blastapi.io/rpc/v0_7";
+const DEFAULT_SEPOLIA_RPC: &str = "https://api.zan.top/public/starknet-sepolia/rpc/v0_10";
 
 fn run_enabled() -> bool {
     env::var("DEADEYE_RUN_SEPOLIA").is_ok()
