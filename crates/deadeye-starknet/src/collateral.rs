@@ -355,6 +355,57 @@ where
     }
 }
 
+/// Build a standalone ERC-20 `approve(spender, amount)` [`Call`] for `token`
+/// (no signer needed).
+///
+/// `amount` is the allowance in the token's base units, encoded as a Cairo
+/// `u256` (calldata `[spender, low, high]`). Used to bundle a collateral
+/// approval into a trade multicall so the AMM's `transfer_from` of the
+/// trader's collateral succeeds atomically.
+#[must_use]
+pub fn build_erc20_approve_call(token: Felt, spender: Felt, amount: U256) -> Call {
+    let mut calldata = Vec::with_capacity(3);
+    calldata.push(spender);
+    U256Value(amount).encode(&mut calldata);
+    Call {
+        to: token,
+        selector: selectors::approve(),
+        calldata,
+    }
+}
+
+/// Scale a human collateral amount (e.g. `133.26` XP) to the token's base
+/// units (`× 10^decimals`) plus a `buffer_pct%` margin, rounded up, for an
+/// ERC-20 allowance.
+///
+/// Over-approving by the buffer mirrors the webapp and absorbs any
+/// quote/settlement rounding so `transfer_from` never reverts on a short
+/// allowance. Returns `0` for non-positive input; saturates to `u128::MAX`
+/// on overflow.
+#[must_use]
+pub fn collateral_allowance_base_units(human_amount: f64, decimals: u8, buffer_pct: u32) -> U256 {
+    if !human_amount.is_finite() || human_amount <= 0.0 {
+        return U256::from_words(0, 0);
+    }
+    let buffered = human_amount * f64::from(buffer_pct).mul_add(0.01, 1.0);
+    let scale = 10f64.powi(i32::from(decimals));
+    let base = (buffered * scale).ceil();
+    #[expect(clippy::cast_precision_loss, reason = "upper-bound comparison only")]
+    let max = u128::MAX as f64;
+    let amount = if base.is_finite() && base >= 0.0 && base < max {
+        #[expect(
+            clippy::cast_possible_truncation,
+            clippy::cast_sign_loss,
+            reason = "bounded to [0, u128::MAX) by the guard above"
+        )]
+        let v = base as u128;
+        v
+    } else {
+        u128::MAX
+    };
+    U256::from_words(amount, 0)
+}
+
 #[cfg(test)]
 #[expect(clippy::unwrap_used, reason = "tests panic on construction failure")]
 mod tests {
@@ -420,5 +471,56 @@ mod tests {
             selectors::has_claimed_initial_grant()
         );
         assert_ne!(selectors::approve(), selectors::balance_of());
+    }
+
+    #[test]
+    fn build_erc20_approve_call_targets_token_with_spender_then_amount() {
+        // The standalone approve Call must hit the *token* (not the market),
+        // call `approve`, and carry [spender, low, high] — the shape the trade
+        // multicall prepends to fix the transfer_from revert (#13).
+        let token = Felt::from_hex("0x1d77ce77").unwrap();
+        let spender = Felt::from_hex("0xba9a4b3").unwrap();
+        let amount = U256::from_words(42_u128, 0);
+        let call = build_erc20_approve_call(token, spender, amount);
+        assert_eq!(call.to, token, "approve must target the token contract");
+        assert_eq!(call.selector, selectors::approve());
+        assert_eq!(call.calldata, vec![spender, Felt::from(42_u64), Felt::ZERO]);
+    }
+
+    #[test]
+    fn collateral_allowance_scales_to_base_units_with_buffer() {
+        // 133.26 XP at 18 decimals + 5% buffer ⇒ ≈ 139.92e18 base units,
+        // strictly above the un-buffered 133.26e18 (so transfer_from of the
+        // exact collateral can never exceed the allowance).
+        let a = collateral_allowance_base_units(133.26, 18, 5);
+        assert_eq!(a.high(), 0, "133 XP fits the low limb");
+        let low = a.low();
+        let exact = 133_260_000_000_000_000_000_u128; // 133.26 × 1e18
+        assert!(
+            low > exact,
+            "allowance {low} must exceed the exact collateral {exact}",
+        );
+        // ~5% buffer, not wildly more.
+        let upper = 141_000_000_000_000_000_000_u128; // 141 × 1e18
+        assert!(
+            low < upper,
+            "allowance {low} unexpectedly large (> {upper})"
+        );
+    }
+
+    #[test]
+    fn collateral_allowance_is_zero_for_non_positive() {
+        assert_eq!(
+            collateral_allowance_base_units(0.0, 18, 5),
+            U256::from_words(0, 0)
+        );
+        assert_eq!(
+            collateral_allowance_base_units(-5.0, 18, 5),
+            U256::from_words(0, 0)
+        );
+        assert_eq!(
+            collateral_allowance_base_units(f64::NAN, 18, 5),
+            U256::from_words(0, 0)
+        );
     }
 }

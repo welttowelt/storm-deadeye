@@ -9,9 +9,9 @@
 //!    integers, and `bool`.
 //! 2. **Entry-point selectors** — pre-computed [`starknet_core::types::Felt`]
 //!    constants for every AMM and Factory function we call.
-//! 3. **View-call clients** — typed wrappers around an arbitrary
-//!    [`Provider`] (the trait abstracts over
-//!    `starknet-providers::JsonRpcClient`, mocks, multi-RPC racers, etc.).
+//! 3. **View-call clients** — typed wrappers around an arbitrary [`Provider`]
+//!    (the trait abstracts over `starknet-providers::JsonRpcClient`, mocks,
+//!    multi-RPC racers, etc.).
 //!
 //! Write-paths (transactions, signatures) live in `deadeye-sdk`; this
 //! crate is deliberately read-only so
@@ -53,6 +53,7 @@ pub use bivariate_amm::{BivariateMarketReader, BivariateMarketWriter, BivariateT
 pub use cairo_serde::{CairoSerde, CairoSerdeError};
 pub use collateral::{
     CollateralTokenReader, CollateralTokenWriter, MAINNET_XP_TOKEN_ADDRESS, U256Value,
+    build_erc20_approve_call, collateral_allowance_base_units,
 };
 pub use error::{
     ContractError, ContractResult, TradeError, TradeRejectionReason, TradeResult,
@@ -76,7 +77,6 @@ pub use provider::Provider;
 pub use signer::{
     DeadeyeSigner, LocalSigner, RemoteSigner, RemoteSignerConfig, SignerAdapter, SignerError,
 };
+pub use starknet_core::types::Felt;
 #[cfg(feature = "account")]
 pub use wallet_pool::{PoolSelector, WalletLease, WalletPool, WalletPoolError};
-
-pub use starknet_core::types::Felt;

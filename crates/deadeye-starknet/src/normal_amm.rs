@@ -683,14 +683,32 @@ where
                 },
             });
         }
-        let call = self.build_trade_call(TradeInput {
+        // Bundle an ERC-20 `approve` of the collateral token to the market
+        // into the SAME atomic multicall as the trade, so the AMM's
+        // `transfer_from` of the trader's collateral succeeds (issue #13).
+        // The approve is sized to the padded collateral + a margin.
+        let config = self
+            .reader
+            .config()
+            .await
+            .map_err(TradeError::from_contract)?;
+        let human = deadeye_core::Sq128::from_raw(quote.padded_collateral).to_f64();
+        // 5% allowance margin (matches the webapp's approve buffer).
+        let amount =
+            crate::collateral::collateral_allowance_base_units(human, config.token_decimals, 5);
+        let approve = crate::collateral::build_erc20_approve_call(
+            config.collateral_token,
+            self.reader.address(),
+            amount,
+        );
+        let trade = self.build_trade_call(TradeInput {
             candidate: quote.candidate,
             x_star: quote.x_star,
             supplied_collateral: quote.padded_collateral,
             candidate_hints: quote.candidate_hints,
         });
         self.account
-            .execute(vec![call])
+            .execute(vec![approve, trade])
             .await
             .map_err(TradeError::from_contract)
     }
@@ -898,6 +916,106 @@ mod tests {
         // calldata = 5 felts/Sq128Raw * 3 distribution + 5 + 5 + 2*5 hints = 15 + 5 + 5
         // + 10 = 35
         assert_eq!(call.calldata.len(), 35);
+    }
+
+    /// Captures the `Vec<Call>` submitted to `execute` so a test can inspect
+    /// the multicall the writer builds.
+    struct RecordingAccount {
+        recorded: std::sync::Arc<std::sync::Mutex<Vec<Call>>>,
+    }
+    #[async_trait]
+    impl Account for RecordingAccount {
+        fn address(&self) -> Felt {
+            Felt::from(0xab_u64)
+        }
+        async fn execute(&self, calls: Vec<Call>) -> ContractResult<ExecutionReceipt> {
+            *self.recorded.lock().unwrap() = calls;
+            Ok(ExecutionReceipt::new(Felt::from(0x7a_u64), 2))
+        }
+    }
+
+    /// #13 — `execute_quote` must submit an atomic `[approve, trade]`
+    /// multicall: an ERC-20 `approve` of the collateral token to the market
+    /// (so the AMM's `transfer_from` succeeds) followed by the trade. Without
+    /// the leading approve, the trade reverts with `Result::unwrap failed`.
+    #[tokio::test]
+    async fn execute_quote_bundles_collateral_approve_before_trade() {
+        use crate::types::common::{AmmConfigRaw, AmmParamsRaw};
+        fn sq(n: u64) -> Sq128Raw {
+            Sq128Raw {
+                limb0: 0,
+                limb1: 0,
+                limb2: n,
+                limb3: 0,
+                neg: false,
+            }
+        }
+        let token = Felt::from(0x1d77_u64);
+        let market = Felt::from(0x1234_u64);
+        // Canned `get_config`: collateral token + 18 decimals.
+        let config = AmmConfigRaw {
+            collateral_token: token,
+            token_decimals: 18,
+            internal_decimals: 6,
+            decimal_shift: 12,
+            params: AmmParamsRaw {
+                k: sq(200),
+                backing: sq(1000),
+                tolerance: sq(1),
+                min_trade_collateral: sq(1),
+            },
+        };
+        let provider = CannedProvider {
+            responses: Mutex::new(vec![config.to_calldata()]),
+        };
+        let reader = NormalMarketReader::new(provider, market);
+        let recorded = std::sync::Arc::new(std::sync::Mutex::new(Vec::<Call>::new()));
+        let writer = NormalMarketWriter::new(reader, RecordingAccount {
+            recorded: std::sync::Arc::clone(&recorded),
+        });
+        let quote = NormalTradeQuote {
+            candidate: NormalDistributionRaw {
+                mean: sq(4),
+                variance: sq(1),
+                sigma: sq(1),
+            },
+            candidate_hints: NormalSqrtHintsRaw {
+                l2_norm_denom: sq(1),
+                backing_denom: sq(1),
+            },
+            x_star: sq(4),
+            required_collateral: sq(5),
+            padded_collateral: sq(5),
+            on_chain_will_accept: true,
+            rejection: None,
+        };
+        writer.execute_quote(quote).await.unwrap();
+
+        let calls = recorded.lock().unwrap().clone();
+        assert_eq!(
+            calls.len(),
+            2,
+            "expected an [approve, trade] multicall, got {} call(s)",
+            calls.len()
+        );
+        // call[0] = approve(market, amount) on the collateral token.
+        assert_eq!(
+            calls[0].to, token,
+            "approve must target the collateral token"
+        );
+        assert_eq!(
+            calls[0].selector,
+            starknet_core::utils::get_selector_from_name("approve").unwrap(),
+        );
+        assert_eq!(calls[0].calldata[0], market, "spender must be the market");
+        assert_ne!(
+            calls[0].calldata[1],
+            Felt::ZERO,
+            "approve amount must be > 0"
+        );
+        // call[1] = the trade on the market.
+        assert_eq!(calls[1].to, market, "trade must target the market");
+        assert_eq!(calls[1].selector, amm::execute_trade());
     }
 
     // ─── Pricing primitives (Wave 2 Item 8) ─────────────────────────

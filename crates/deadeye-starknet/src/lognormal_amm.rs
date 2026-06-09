@@ -571,6 +571,22 @@ where
                 },
             });
         }
+        // Bundle the ERC-20 collateral `approve` into the same atomic
+        // multicall as the trade so `transfer_from` succeeds (issue #13).
+        let config = self
+            .reader
+            .config()
+            .await
+            .map_err(TradeError::from_contract)?;
+        let human = deadeye_core::Sq128::from_raw(quote.padded_collateral).to_f64();
+        // 5% allowance margin (matches the webapp's approve buffer).
+        let amount =
+            crate::collateral::collateral_allowance_base_units(human, config.token_decimals, 5);
+        let approve = crate::collateral::build_erc20_approve_call(
+            config.collateral_token,
+            self.reader.address(),
+            amount,
+        );
         let input = LognormalTradeInput {
             candidate: quote.candidate,
             x_star: quote.x_star,
@@ -578,7 +594,7 @@ where
             candidate_hints: quote.candidate_hints,
         };
         self.account
-            .execute(vec![self.build_trade_call(input)])
+            .execute(vec![approve, self.build_trade_call(input)])
             .await
             .map_err(TradeError::from_contract)
     }
