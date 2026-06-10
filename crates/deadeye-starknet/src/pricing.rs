@@ -532,8 +532,10 @@ fn payout_at_lognormal_or_zero(dist: &LognormalDistribution, k: f64, x_star: f64
 ///
 /// You can *simulate* a spread by:
 ///
-/// 1. Solving "what `μ_g` makes `collateral = ε` for current `μ_f` long"  → `μ_ask`
-/// 2. Solving "what `μ_g` makes `collateral = ε` for current `μ_f` short" → `μ_bid`
+/// 1. Solving "what `μ_g` makes `collateral = ε` for current `μ_f` long"  →
+///    `μ_ask`
+/// 2. Solving "what `μ_g` makes `collateral = ε` for current `μ_f` short" →
+///    `μ_bid`
 /// 3. Reporting `μ_ask − μ_bid`.
 ///
 /// But this requires **inverting** the solver, which the on-chain math

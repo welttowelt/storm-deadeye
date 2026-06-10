@@ -118,7 +118,8 @@ impl CairoSerde for LognormalTradeInput {
     }
 }
 
-/// Lognormal trade check + lambdas (lognormal runtime returns extra lambda projections).
+/// Lognormal trade check + lambdas (lognormal runtime returns extra lambda
+/// projections).
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Hash)]
 pub struct LognormalTradeCheckWithLambdasRaw {
     /// Embedded standard trade check.

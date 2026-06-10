@@ -15,7 +15,7 @@
 use deadeye_core::{
     bivariate::{
         BivariateNormalDistributionCoreRaw, BivariateNormalDistributionRaw,
-        BivariateNormalSqrtHintsRaw,
+        BivariateNormalSqrtHintsRaw, BivariatePointRaw,
     },
     categorical::{CategoricalDistributionRaw, CategoricalL2HintRaw},
     distribution::{LognormalDistributionRaw, NormalDistributionRaw, NormalSqrtHintsRaw},
@@ -25,8 +25,6 @@ use starknet_core::{
     types::{Felt, FunctionCall},
     utils::get_selector_from_name,
 };
-
-use deadeye_core::bivariate::BivariatePointRaw;
 
 use crate::{
     cairo_serde::CairoSerde,
@@ -201,7 +199,8 @@ pub async fn compute_multinoulli_hint<P: Provider + Sync>(
     })
 }
 
-/// Calls `expand_distribution_core_view(core_dist)` on a bivariate math runtime.
+/// Calls `expand_distribution_core_view(core_dist)` on a bivariate math
+/// runtime.
 ///
 /// The core dist's `sigma_i`, `inv_one_minus_rho_sq` and `normalization`
 /// fields must come from the chain (Sq128 derivations) or the

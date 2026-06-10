@@ -462,14 +462,20 @@ async fn execute_normal(
     // gross supply and its one-shot initial grant is unclaimed, bundle
     // `claim_initial_grant()` into the same atomic multicall so a brand-new
     // agent wallet can claim + approve + trade in a single transaction.
-    let leading = bootstrap_grant_calls(
-        &writer_provider,
-        writer.reader(),
-        deadeye_starknet::Account::address(writer.account()),
-        Sq128::from_raw(quote.padded_collateral).to_f64(),
-        ctx,
-    )
-    .await;
+    let leading = match writer.reader().config().await {
+        Ok(config) => {
+            bootstrap_grant_calls(
+                &writer_provider,
+                config.collateral_token,
+                config.token_decimals,
+                deadeye_starknet::Account::address(writer.account()),
+                Sq128::from_raw(quote.padded_collateral).to_f64(),
+                ctx,
+            )
+            .await
+        },
+        Err(_) => Vec::new(),
+    };
 
     if !args.dry_run
         && !confirm
@@ -526,7 +532,8 @@ async fn execute_normal(
 /// remains the safety net).
 async fn bootstrap_grant_calls<P>(
     provider: &P,
-    reader: &deadeye_starknet::NormalMarketReader<&P>,
+    collateral_token: Felt,
+    token_decimals: u8,
     trader: Felt,
     gross_supply: f64,
     ctx: &AppContext,
@@ -534,10 +541,7 @@ async fn bootstrap_grant_calls<P>(
 where
     P: deadeye_starknet::Provider + Sync,
 {
-    let Ok(config) = reader.config().await else {
-        return Vec::new();
-    };
-    let token = deadeye_starknet::CollateralTokenReader::new(provider, config.collateral_token);
+    let token = deadeye_starknet::CollateralTokenReader::new(provider, collateral_token);
     let (Ok(balance), Ok(claimed)) = (
         token.balance_of(trader).await,
         token.has_claimed_initial_grant(trader).await,
@@ -545,7 +549,7 @@ where
         return Vec::new();
     };
     #[expect(clippy::cast_precision_loss, reason = "balance compare is approximate")]
-    let balance_xp = balance.low() as f64 / 10f64.powi(i32::from(config.token_decimals));
+    let balance_xp = balance.low() as f64 / 10f64.powi(i32::from(token_decimals));
     if balance.high() > 0 || balance_xp >= gross_supply || claimed {
         return Vec::new();
     }
@@ -556,7 +560,7 @@ where
         );
     }
     vec![deadeye_starknet::build_claim_initial_grant_call(
-        config.collateral_token,
+        collateral_token,
     )]
 }
 
@@ -568,7 +572,11 @@ async fn execute_lognormal(
     confirm: bool,
     label: &'static str,
 ) -> Result<()> {
-    let runtime = resolve_runtime(args.runtime.as_deref(), Family::Lognormal)?;
+    // A math-runtime address is optional: with one, the legacy chain-preflight
+    // quote path runs; without one (the out-of-box default — no runtime
+    // instance is deployed on mainnet), the quote is drafted off-chain and the
+    // chain probe below makes it submittable.
+    let runtime = resolve_runtime_opt(args.runtime.as_deref(), Family::Lognormal)?;
     let reader = LognormalMarketReader::new(client.provider(), market);
 
     let mean = args.mean.context("--mean required for lognormal execute")?;
@@ -582,33 +590,59 @@ async fn execute_lognormal(
         sigma: Sq128::from_f64(sigma)?.to_raw(),
     };
     let supplied = Sq128::from_f64(args.max_collateral)?.to_raw();
-    let quote = reader
-        .quote_trade(runtime, candidate, candidate.mu, supplied, supplied)
-        .await
-        .map_err(|e| anyhow::anyhow!("preflight quote_trade: {e}"))?;
 
-    if !quote.on_chain_will_accept {
-        let rejection = quote.rejection.as_ref().map(pretty_rejection);
-        let result = SubmissionResult {
-            action: "trade",
-            market: format!("{market:#x}"),
-            tx_hash: None,
-            call_count: None,
-            accepted: false,
-            rejection,
-            note: Some("preflight rejected — fix the cause and re-quote before retrying".into()),
-        };
-        return ctx.renderer.print(&result);
-    }
-
-    if !args.dry_run
-        && !confirm
-        && std::io::IsTerminal::is_terminal(&std::io::stdin())
-        && ctx.renderer.mode() != OutputMode::Json
-    {
-        eprintln!("About to submit {label}-market trade for {market:#x}.");
-        super::confirm_or_bail("Continue?")?;
-    }
+    let mut quote = if let Some(rt) = runtime {
+        let q = reader
+            .quote_trade(rt, candidate, candidate.mu, supplied, supplied)
+            .await
+            .map_err(|e| anyhow::anyhow!("preflight quote_trade: {e}"))?;
+        if !q.on_chain_will_accept {
+            let rejection = q.rejection.as_ref().map(pretty_rejection);
+            let result = SubmissionResult {
+                action: "trade",
+                market: format!("{market:#x}"),
+                tx_hash: None,
+                call_count: None,
+                accepted: false,
+                rejection,
+                note: Some(
+                    "preflight rejected — fix the cause and re-quote before retrying".into(),
+                ),
+            };
+            return ctx.renderer.print(&result);
+        }
+        q
+    } else {
+        // Off-chain draft: solve x* with the f64 lognormal minimiser; the
+        // hints + chain-exact x*/collateral come from the probe below.
+        let current = reader
+            .distribution()
+            .await
+            .map_err(|e| anyhow::anyhow!("reading market distribution: {e}"))?;
+        let cand_dist = deadeye_core::LognormalDistribution::from_variance(
+            Sq128::from_f64(mean)?,
+            Sq128::from_f64(variance)?,
+        )?;
+        let solved = deadeye_sdk::collateral::lognormal_collateral(
+            &current,
+            &cand_dist,
+            deadeye_sdk::collateral::LognormalOptions::default(),
+        )
+        .map_err(|e| anyhow::anyhow!("off-chain lognormal solver: {e}"))?;
+        deadeye_starknet::LognormalTradeQuote {
+            candidate,
+            // Placeholder — replaced by the probe's chain-computed hints.
+            candidate_hints: deadeye_starknet::types::lognormal::LognormalSqrtHintsRaw {
+                l2_norm_denom: Sq128::ZERO.to_raw(),
+                backing_denom: Sq128::ZERO.to_raw(),
+            },
+            x_star: Sq128::from_f64(solved.x_star)?.to_raw(),
+            required_collateral: Sq128::from_f64(solved.collateral)?.to_raw(),
+            padded_collateral: supplied,
+            on_chain_will_accept: true,
+            rejection: None,
+        }
+    };
 
     let account = build_owned_account(ctx)?;
     let writer_provider = build_provider(ctx)?;
@@ -617,17 +651,119 @@ async fn execute_lognormal(
         account,
     );
 
-    // `--dry-run`: simulate the [approve, trade] multicall gas-free and stop.
-    if args.dry_run {
-        let calls = writer
-            .build_trade_calls(&quote)
+    // Chain-probe x* refinement (issue #13 root cause — same fixed-point
+    // stationarity drift as normal markets). For the offline path this is
+    // MANDATORY: it also supplies the chain-computed candidate hints, without
+    // which `execute_trade` rejects the calldata.
+    match deadeye_starknet::chain_probe::refine_lognormal_quote(
+        writer.account(),
+        writer.reader(),
+        &quote,
+    )
+    .await
+    {
+        Ok(Some(outcome)) => {
+            let chain_required = Sq128::from_raw(outcome.computed_collateral).to_f64();
+            let gross_needed = chain_required / outcome.net_rate;
+            let buffered = gross_needed * 1.002;
+            if buffered > args.max_collateral {
+                anyhow::bail!(
+                    "chain-verified collateral is {chain_required:.4} XP net (≈{buffered:.4} XP \
+                     gross incl. deposit fees), which exceeds --max-collateral {:.4}; raise the \
+                     ceiling",
+                    args.max_collateral,
+                );
+            }
+            quote.x_star = outcome.x_star;
+            quote.candidate_hints = outcome.candidate_hints;
+            quote.required_collateral = outcome.computed_collateral;
+            quote.padded_collateral = Sq128::from_f64(buffered)?.to_raw();
+            if ctx.renderer.mode() != OutputMode::Json {
+                eprintln!(
+                    "chain probe: certified x* (offset {:+.3e}, {} round(s)); collateral \
+                     {chain_required:.4} XP net → supplying {buffered:.4} XP gross (fees {:.2}%)",
+                    outcome.offset,
+                    outcome.rounds,
+                    (1.0 - outcome.net_rate) * 100.0,
+                );
+            }
+        },
+        Ok(None) if runtime.is_none() => {
+            anyhow::bail!(
+                "the chain probe could not certify an x* for this candidate (and the offline \
+                 path cannot construct chain-exact hints without it) — adjust the candidate \
+                 (e.g. a smaller move) and retry"
+            );
+        },
+        Err(e) if runtime.is_none() => {
+            anyhow::bail!(
+                "chain probe unavailable ({e}) — the offline lognormal path needs it to \
+                 construct chain-exact hints; retry, or pass --runtime with a deployed \
+                 math-runtime address"
+            );
+        },
+        Ok(None) | Err(_) => {
+            ctx.renderer.warning(
+                "chain probe could not certify an x*; submitting the runtime-preflighted quote \
+                 (the pre-submit simulation still blocks a reverting trade before any gas is \
+                 spent)",
+            );
+        },
+    }
+
+    // Fresh-wallet bootstrap (see execute_normal).
+    let leading = match writer.reader().config().await {
+        Ok(config) => {
+            bootstrap_grant_calls(
+                &writer_provider,
+                config.collateral_token,
+                config.token_decimals,
+                deadeye_starknet::Account::address(writer.account()),
+                Sq128::from_raw(quote.padded_collateral).to_f64(),
+                ctx,
+            )
             .await
-            .map_err(|e| anyhow::anyhow!("build trade calls: {e}"))?;
+        },
+        Err(_) => Vec::new(),
+    };
+
+    if !args.dry_run
+        && !confirm
+        && std::io::IsTerminal::is_terminal(&std::io::stdin())
+        && ctx.renderer.mode() != OutputMode::Json
+    {
+        eprintln!("About to submit {label}-market trade:");
+        eprintln!("  market:    {market:#x}");
+        eprintln!(
+            "  candidate: μ_log={:.4}, σ²_log={:.4}",
+            Sq128::from_raw(quote.candidate.mu).to_f64(),
+            Sq128::from_raw(quote.candidate.variance).to_f64()
+        );
+        eprintln!(
+            "  required collateral: ~{:.4} XP",
+            Sq128::from_raw(quote.required_collateral).to_f64()
+        );
+        eprintln!(
+            "  supplied:  {:.4} XP",
+            Sq128::from_raw(quote.padded_collateral).to_f64()
+        );
+        super::confirm_or_bail("Continue?")?;
+    }
+
+    // `--dry-run`: simulate the full multicall gas-free and stop.
+    if args.dry_run {
+        let mut calls = leading.clone();
+        calls.extend(
+            writer
+                .build_trade_calls(&quote)
+                .await
+                .map_err(|e| anyhow::anyhow!("build trade calls: {e}"))?,
+        );
         let result = dry_run_render(market, writer.account(), &calls).await;
         return ctx.renderer.print(&result);
     }
 
-    let result = match writer.execute_quote(quote).await {
+    let result = match writer.execute_quote_bundled(quote, leading).await {
         Ok(receipt) => submission_from_receipt("trade", format!("{market:#x}"), receipt),
         Err(e) => submission_from_trade_error("trade", format!("{market:#x}"), &e),
     };

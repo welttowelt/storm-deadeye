@@ -90,6 +90,27 @@ where
             .await
     }
 
+    /// Reads the chain's canonical sqrt hints for the *current* distribution
+    /// (`get_distribution_hints`) — the byte-exact values the verifier uses.
+    #[instrument(skip(self), fields(market = %self.address))]
+    pub async fn distribution_hints(&self) -> ContractResult<LognormalSqrtHintsRaw> {
+        self.call_view::<LognormalSqrtHintsRaw>(
+            "get_distribution_hints",
+            amm::get_distribution_hints(),
+            &[],
+        )
+        .await
+    }
+
+    /// Reads the class hash of the math runtime this market library-calls
+    /// (`get_runtime_class_hash`) — the class the chain-probe refinement
+    /// deploys inside a gas-free simulation.
+    #[instrument(skip(self), fields(market = %self.address))]
+    pub async fn runtime_class_hash(&self) -> ContractResult<Felt> {
+        self.call_view::<Felt>("get_runtime_class_hash", amm::get_runtime_class_hash(), &[])
+            .await
+    }
+
     /// Reads a trader's position summary (shape shared with normal AMM).
     pub async fn position_summary(&self, trader: Felt) -> ContractResult<PositionSummaryRaw> {
         self.call_view::<PositionSummaryRaw>(
@@ -599,7 +620,21 @@ where
     /// [`LognormalMarketReader::quote_trade`].
     #[instrument(skip(self, quote), fields(market = %self.reader.address(), family = "lognormal", kind = "trade", accepts = quote.on_chain_will_accept))]
     pub async fn execute_quote(&self, quote: LognormalTradeQuote) -> TradeResult<ExecutionReceipt> {
-        let calls = self.build_trade_calls(&quote).await?;
+        self.execute_quote_bundled(quote, Vec::new()).await
+    }
+
+    /// [`Self::execute_quote`] with extra `leading` calls prepended to the
+    /// `[approve, trade]` multicall — e.g. a `claim_initial_grant()` that
+    /// bootstraps a fresh wallet atomically with its first trade. The same
+    /// simulate-before-submit gate applies to the full bundle.
+    #[instrument(skip(self, quote, leading), fields(market = %self.reader.address(), family = "lognormal", kind = "trade", leading = leading.len()))]
+    pub async fn execute_quote_bundled(
+        &self,
+        quote: LognormalTradeQuote,
+        leading: Vec<Call>,
+    ) -> TradeResult<ExecutionReceipt> {
+        let mut calls = leading;
+        calls.extend(self.build_trade_calls(&quote).await?);
         // Gas-free pre-flight: catch a reverting trade before it burns a fee.
         if let Some(sim) = self
             .account

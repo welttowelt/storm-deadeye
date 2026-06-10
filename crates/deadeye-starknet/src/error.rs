@@ -306,9 +306,9 @@ pub fn parse_revert_reason(err: &ContractError) -> Option<TradeRejectionReason> 
 /// without round-tripping a [`ContractError`].
 #[must_use]
 fn classify_revert_text(msg: &str) -> Option<TradeRejectionReason> {
-    // 1) Walk every `0x...` run, try to parse each as a felt + decode
-    //    as a Cairo short string. The chain stringifies revert short
-    //    strings as 0x-prefixed felts, so this is the canonical path.
+    // 1) Walk every `0x...` run, try to parse each as a felt + decode as a Cairo
+    //    short string. The chain stringifies revert short strings as 0x-prefixed
+    //    felts, so this is the canonical path.
     let mut idx = 0_usize;
     while let Some(rel) = msg.get(idx..).and_then(|t| t.find("0x")) {
         let start = idx + rel + 2;
@@ -328,9 +328,9 @@ fn classify_revert_text(msg: &str) -> Option<TradeRejectionReason> {
             break;
         }
     }
-    // 2) Fallback: some providers stringify the short-string directly
-    //    (e.g. Foundry-style devnets in verbose mode), so also do a
-    //    case-sensitive substring search.
+    // 2) Fallback: some providers stringify the short-string directly (e.g.
+    //    Foundry-style devnets in verbose mode), so also do a case-sensitive
+    //    substring search.
     classify_short_string(msg)
 }
 
@@ -361,12 +361,9 @@ fn classify_short_string(haystack: &str) -> Option<TradeRejectionReason> {
         ("BACKING_FAIL", TradeRejectionReason::BackingFail),
         ("SIGMA_TOO_LOW", TradeRejectionReason::SigmaTooLow),
         ("LOW_COLLATERAL", TradeRejectionReason::LowCollateral),
-        (
-            "SIDE_INVALID",
-            TradeRejectionReason::VerificationFailed {
-                sub_reason: Some(VerificationSubReason::SideInvalid),
-            },
-        ),
+        ("SIDE_INVALID", TradeRejectionReason::VerificationFailed {
+            sub_reason: Some(VerificationSubReason::SideInvalid),
+        }),
         (
             "STATIONARY_INVALID",
             TradeRejectionReason::VerificationFailed {
@@ -395,10 +392,9 @@ fn classify_short_string(haystack: &str) -> Option<TradeRejectionReason> {
             "VERIFICATION_FAILED",
             TradeRejectionReason::VerificationFailed { sub_reason: None },
         ),
-        (
-            "STALE_STATE",
-            TradeRejectionReason::StaleState { field: "guard" },
-        ),
+        ("STALE_STATE", TradeRejectionReason::StaleState {
+            field: "guard",
+        }),
         ("market is settled", TradeRejectionReason::MarketSettled),
         ("market settled", TradeRejectionReason::MarketSettled),
         ("market is paused", TradeRejectionReason::MarketPaused),
@@ -498,12 +494,9 @@ mod tests {
         let msg = "VERIFICATION_FAILED CURVATURE_INVALID";
         // First-matching wins; refined guards are listed first.
         let r = classify_short_string(msg).expect("classified");
-        assert!(matches!(
-            r,
-            TradeRejectionReason::VerificationFailed {
-                sub_reason: Some(VerificationSubReason::CurvatureInvalid)
-            }
-        ));
+        assert!(matches!(r, TradeRejectionReason::VerificationFailed {
+            sub_reason: Some(VerificationSubReason::CurvatureInvalid)
+        }));
     }
 
     #[test]

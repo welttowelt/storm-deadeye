@@ -8,12 +8,11 @@
 //!
 //! ## Concrete implementations
 //!
-//! * [`LocalSigner`] — wraps a `starknet_signers::LocalWallet`. The
-//!   default for devnet, testnet, and any deployment willing to hold the
-//!   key in process memory.
-//! * [`RemoteSigner`] — POSTs a Stark hash to an HTTP endpoint and parses
-//!   the returned `(r, s)`. Drop-in for HSM gateways or hosted-key
-//!   services.
+//! * [`LocalSigner`] — wraps a `starknet_signers::LocalWallet`. The default for
+//!   devnet, testnet, and any deployment willing to hold the key in process
+//!   memory.
+//! * [`RemoteSigner`] — POSTs a Stark hash to an HTTP endpoint and parses the
+//!   returned `(r, s)`. Drop-in for HSM gateways or hosted-key services.
 //!
 //! ## Wiring into [`crate::OwnedAccount`]
 //!
@@ -84,7 +83,8 @@ pub enum SignerError {
     Config(String),
 }
 
-// ─── LocalSigner ──────────────────────────────────────────────────────────────
+// ─── LocalSigner
+// ──────────────────────────────────────────────────────────────
 
 /// In-process signer backed by `starknet_signers::LocalWallet`.
 ///
@@ -146,7 +146,8 @@ impl DeadeyeSigner for LocalSigner {
     }
 }
 
-// ─── RemoteSigner ─────────────────────────────────────────────────────────────
+// ─── RemoteSigner
+// ─────────────────────────────────────────────────────────────
 
 /// Tunables for [`RemoteSigner`].
 #[derive(Debug, Clone)]
@@ -319,7 +320,8 @@ fn hex_to_felt(s: &str) -> Result<Felt, SignerError> {
     Felt::from_hex(s).map_err(|e| SignerError::Decode(format!("hex {s:?}: {e}")))
 }
 
-// ─── Adapter to starknet_signers::Signer ──────────────────────────────────────
+// ─── Adapter to starknet_signers::Signer
+// ──────────────────────────────────────
 
 /// Adapter that wraps a `DeadeyeSigner` and implements
 /// `starknet_signers::Signer` so it can be used by

@@ -54,7 +54,9 @@ pub use account::{
 pub use bivariate_amm::{BivariateMarketReader, BivariateMarketWriter, BivariateTradeQuote};
 pub use cairo_serde::{CairoSerde, CairoSerdeError};
 #[cfg(feature = "account")]
-pub use chain_probe::{ProbeOutcome, refine_normal_quote};
+pub use chain_probe::{
+    LognormalProbeOutcome, ProbeOutcome, refine_lognormal_quote, refine_normal_quote,
+};
 pub use collateral::{
     CollateralTokenReader, CollateralTokenWriter, MAINNET_XP_TOKEN_ADDRESS, U256Value,
     build_claim_initial_grant_call, build_erc20_approve_call, collateral_allowance_base_units,

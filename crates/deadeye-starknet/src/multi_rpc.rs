@@ -12,15 +12,14 @@
 //!
 //! 1. Picks the least-loaded *healthy* endpoint.
 //! 2. Issues the request with a per-call timeout.
-//! 3. On a **transient** error (timeout, connection refused, 5xx,
-//!    network), bumps that endpoint's failure counter, exponentially
-//!    backs off, and tries the next healthy endpoint.
-//! 4. On a **non-transient** Starknet error (reverts, bad requests),
-//!    returns immediately — those are deterministic and retrying just
-//!    burns latency.
-//! 5. Once an endpoint hits `circuit_breaker_threshold` consecutive
-//!    failures it is marked **down**; after `circuit_breaker_cooldown`
-//!    it enters **half-open** and the next probe call decides.
+//! 3. On a **transient** error (timeout, connection refused, 5xx, network),
+//!    bumps that endpoint's failure counter, exponentially backs off, and tries
+//!    the next healthy endpoint.
+//! 4. On a **non-transient** Starknet error (reverts, bad requests), returns
+//!    immediately — those are deterministic and retrying just burns latency.
+//! 5. Once an endpoint hits `circuit_breaker_threshold` consecutive failures it
+//!    is marked **down**; after `circuit_breaker_cooldown` it enters
+//!    **half-open** and the next probe call decides.
 //!
 //! The whole thing uses `tokio::sync::Mutex` so it can be shared across
 //! threads via `Arc<MultiRpcProvider>`.
@@ -54,7 +53,8 @@ use tokio::sync::Mutex;
 use tracing::{debug, warn};
 use url::Url;
 
-// ─── Config + Health state ────────────────────────────────────────────────────
+// ─── Config + Health state
+// ────────────────────────────────────────────────────
 
 /// Tunables for [`MultiRpcProvider`].
 ///
@@ -113,7 +113,8 @@ pub enum EndpointHealthState {
     HalfOpen,
 }
 
-/// Per-endpoint health snapshot returned by [`MultiRpcProvider::endpoint_health`].
+/// Per-endpoint health snapshot returned by
+/// [`MultiRpcProvider::endpoint_health`].
 #[derive(Debug, Clone, Copy)]
 pub struct EndpointHealth {
     /// Current state.
@@ -154,7 +155,8 @@ struct Endpoint {
     health: Mutex<EndpointState>,
 }
 
-// ─── MultiRpcProvider ─────────────────────────────────────────────────────────
+// ─── MultiRpcProvider
+// ─────────────────────────────────────────────────────────
 
 /// Multi-endpoint JSON-RPC provider with circuit-breaker + retry.
 ///
@@ -218,15 +220,12 @@ impl MultiRpcProvider {
         let mut out = Vec::with_capacity(self.endpoints.len());
         for ep in &self.endpoints {
             let h = ep.health.lock().await;
-            out.push((
-                ep.url.clone(),
-                EndpointHealth {
-                    state: h.state,
-                    failures: h.failures,
-                    successes: h.successes,
-                    total_failures: h.total_failures,
-                },
-            ));
+            out.push((ep.url.clone(), EndpointHealth {
+                state: h.state,
+                failures: h.failures,
+                successes: h.successes,
+                total_failures: h.total_failures,
+            }));
         }
         out
     }
@@ -441,7 +440,8 @@ impl starknet_providers::ProviderImplError for NoHealthyEndpointError {
     }
 }
 
-// ─── starknet_providers::Provider impl ────────────────────────────────────────
+// ─── starknet_providers::Provider impl
+// ────────────────────────────────────────
 
 #[async_trait]
 impl StarknetProvider for MultiRpcProvider {
@@ -873,7 +873,8 @@ impl StarknetProvider for MultiRpcProvider {
     }
 }
 
-// ─── crate::Provider impl ─────────────────────────────────────────────────────
+// ─── crate::Provider impl
+// ─────────────────────────────────────────────────────
 
 #[async_trait]
 impl crate::Provider for MultiRpcProvider {

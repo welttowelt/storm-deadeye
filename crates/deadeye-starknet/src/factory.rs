@@ -11,20 +11,24 @@
 //! ## Worked example — deploy + settle + collect fees
 //!
 //! ```no_run
-//! use deadeye_starknet::{
-//!     FactoryReader, FactoryWriter, Felt, JsonRpcProvider, OwnedAccount,
-//! };
 //! use deadeye_core::sq128::Sq128Raw;
+//! use deadeye_starknet::{FactoryReader, FactoryWriter, Felt, JsonRpcProvider, OwnedAccount};
 //! use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let rpc = JsonRpcClient::new(HttpTransport::new("http://localhost:5050".parse::<url::Url>()?));
+//! let rpc = JsonRpcClient::new(HttpTransport::new(
+//!     "http://localhost:5050".parse::<url::Url>()?,
+//! ));
 //! let provider = JsonRpcProvider::new(rpc);
 //! let (factory, market): (Felt, Felt) = (Felt::ZERO, Felt::ZERO);
 //!
 //! let admin = OwnedAccount::from_signing_key(
-//!     JsonRpcClient::new(HttpTransport::new("http://localhost:5050".parse::<url::Url>()?)),
-//!     Felt::ZERO, Felt::ZERO, Felt::ZERO,
+//!     JsonRpcClient::new(HttpTransport::new(
+//!         "http://localhost:5050".parse::<url::Url>()?,
+//!     )),
+//!     Felt::ZERO,
+//!     Felt::ZERO,
+//!     Felt::ZERO,
 //! );
 //! let writer = FactoryWriter::new(FactoryReader::new(provider, factory), admin);
 //!
@@ -38,7 +42,9 @@
 //! writer.settle_normal_market(market, x_star).await?;
 //!
 //! // 4) Collect accrued protocol fees into the factory treasury.
-//! writer.collect_protocol_fees(market, /*recipient=*/Felt::ZERO).await?;
+//! writer
+//!     .collect_protocol_fees(market, /* recipient= */ Felt::ZERO)
+//!     .await?;
 //! # Ok(()) }
 //! ```
 
