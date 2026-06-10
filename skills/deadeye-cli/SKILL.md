@@ -195,6 +195,55 @@ deadeye position list                 # all open positions
 deadeye trade journal --tail 20       # recent trade log
 ```
 
+## RPC etiquette (read this before trading)
+
+The RPC endpoint is a **shared resource**. The optimizer/EV math is local —
+state can be fetched once and reused, so a polite session costs a handful of
+calls, not dozens:
+
+```bash
+deadeye markets snapshot <MARKET> --output json > state.json   # ONE state read
+deadeye trade quote <MARKET> --from-state state.json --belief 4.18 --budget 100
+deadeye trade quote <MARKET> --from-state state.json --belief 4.16 --budget 100
+# … explore as many candidates as you like — ZERO further RPC …
+deadeye trade execute <MARKET> --belief 4.18 --budget 100 --dry-run   # one check
+deadeye trade execute <MARKET> --belief 4.18 --budget 100             # one submit
+```
+
+- **Fetch once, compute locally.** Don't re-run plain `quote` in a loop while
+  you think — snapshot once and iterate with `--from-state`.
+- **An empty/parse-error response means rate-limited.** `expected value at
+  line 1 column 1` is serde choking on an empty body — the endpoint is
+  throttling you. The CLI now backs off and retries internally (with jitter,
+  bounded attempts) and will say "likely rate-limited" when it gives up. The
+  correct reaction is to **wait**, not to retry harder; if it persists, stop
+  and report.
+- **One dry-run, one execute.** Never wrap `execute` in a retry loop — a
+  failed submit needs a fresh quote against fresh state, not a hammer.
+- Re-reads of `position` / `markets` are cheap but not free; batch your
+  decision-making so each loop iteration costs at most one read.
+
+## Settlement & claims lifecycle
+
+How a market ends, and where your collateral goes:
+
+1. **Settlement.** After the real-world value is known, the market owner/oracle
+   calls settle with the `settlement_value` (visible afterwards in
+   `markets show` → `status.settlement_value` and `markets info`). Trading
+   stops; every open trade lot is now worth
+   `max(0, collateral + value(settlement_value))` — the floor is per **lot**,
+   and by the AMM's collateral invariant the floor only binds in degenerate
+   cases (your lot's value is bounded below by −collateral).
+2. **Claiming.** `deadeye claim <MARKET>` (or the market page in the webapp)
+   settles your lots and pays out; a settlement fee (bps **on profit**, see
+   `markets show` fee_config) is deducted from gains, never from returned
+   collateral. Until you claim, `position show` reports your settled-lot
+   status; after claiming, the lots are consumed on-chain.
+3. **Scoring.** Close your forecast loop: `deadeye forecast score <MARKET>`
+   compares the settlement value against your committed (μ, σ) — CRPS and
+   z-score — and feeds `deadeye forecast calibration`, your cross-market track
+   record. Do this every time; it is what makes the next σ honest.
+
 ## Notes and safety
 
 - **XP is non-transferable and worthless off-platform.** It cannot be drained;
@@ -215,7 +264,7 @@ deadeye update            # check, then update the binary + refresh skills
 ```
 
 `deadeye update` re-runs the installer under the hood; you can also do it
-manually with `curl -fsSL https://project-deadeye.vercel.app/install.sh | sh`.
+manually with `curl -fsSL https://deadeye.wtf/install.sh | sh`.
 Restart your agent app after updating to pick up refreshed skills.
 
 Restart the agent app after installing or updating skills.

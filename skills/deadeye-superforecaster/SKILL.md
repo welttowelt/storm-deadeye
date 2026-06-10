@@ -25,7 +25,7 @@ can re-run it, defend it, and score it after resolution.
 ## The loop
 
 ```
-parse → base-rate → evidence → weight → decompose → aggregate → commit → trade → monitor → score
+parse → base-rate → evidence → weight → decompose → aggregate → commit → size → trade → monitor → score
 ```
 
 ### 1. Parse the market (outcome space)
@@ -52,6 +52,16 @@ deadeye forecast base-rate <MARKET> --name "Cleveland Fed nowcast"   --rate 3.0 
 The CLI blends them in **value space** into a prior `mean ± sd`. This is your
 starting distribution before any inside-view evidence.
 
+**Efficient-market prior + edge gate.** Before researching, classify the
+market: backing/liquidity, number of independent traders, time to resolution,
+and whether an external consensus or another market prices the same question.
+For a liquid market resolving imminently, **default your prior to the de-vigged
+market** and ask the gate question out loud: *"What do I know that the market
+plausibly doesn't?"* If the honest answer is "nothing," set belief ≈ market and
+size near zero — beating next-day consensus is rare, and the record should say
+why you think this time is different (a recorded, differential piece of
+evidence — not vibes).
+
 ### 3. Gather + record evidence
 
 Use the **evidence-ledger** skill for the source taxonomy and scoring. Record
@@ -75,12 +85,32 @@ deadeye forecast bayes evidence-weight --input '{"reliability":0.9,"relevance":0
 deadeye forecast bayes effective-count --input '{"n":4,"rho":0.7}'   # 4 correlated takes ≈ ? independent
 ```
 
-### 5. Decompose into components
+### 5. Decompose the QUANTITY into structural components
 
-Express your belief as a few independent component `(μ, σ)` estimates — e.g.
-the base-rate prior, an inside-view mechanism, and the **de-vigged market
-itself** as one component (never ignore the market; it's information). Give each
-a weight and a side (long/short).
+Two different operations hide under "decompose" — do both, separately:
+
+**(a) Build the number from parts (structural).** Split the target quantity
+into additive components, each with its own central estimate and σ, and let the
+component σ's *build* the total σ — never set the total σ by feel. Worked CPI
+example (YoY contributions, percentage points):
+
+| component        | contribution | σ    |
+|------------------|-------------:|------|
+| shelter          |         1.6  | 0.10 |
+| energy           |        −0.3  | 0.15 |
+| food             |         0.3  | 0.05 |
+| core goods       |         0.2  | 0.10 |
+| core services ex |         1.4  | 0.12 |
+
+Total: μ = Σ contributions = 3.2; σ = √(Σ σᵢ² + 2·Σρᵢⱼσᵢσⱼ) — with mildly
+correlated components this lands near 0.25, an *honest* σ derived from parts.
+
+**(b) Blend independent estimators of the final number.** Separately, you may
+hold several whole-number estimates (base-rate prior, structural build from
+(a), inside-view model, the **de-vigged market itself** — never ignore it).
+Blend those with `aggregate-normal` in step 6. **Warning:** estimators sharing
+a source are correlated — consensus ⊂ market ⊂ prediction-market is one signal,
+not three confirmations; collapse them or raise `rho` accordingly.
 
 ### 6. Aggregate into a calibrated (mean, σ)
 
@@ -100,6 +130,19 @@ deadeye forecast bayes aggregate-normal --input '{
 name a credible path for the tail mass, don't fabricate spread, but don't
 collapse it either.
 
+**Shrink to the market.** When the edge gate (step 2) found only weak
+differential information, shrink your posterior toward the market before
+committing: `deadeye forecast bayes shrink-to-market --my-mu <μ> --my-sigma <σ>
+--market-mu <μ_mkt> --market-sigma <σ_mkt> --edge-strength <0..1>` — edge 0
+returns the market, edge 1 returns you; pick the factor from market quality and
+how differential your recorded evidence really is.
+
+**σ-floor from the surprise history.** Look up how much this quantity has
+historically deviated from the day-before consensus (the *surprise* std, not
+the level std) and **floor your σ at it**. Committing a σ below the historical
+surprise std — or below the market σ — without a recorded justification is the
+canonical overconfidence failure.
+
 ### 7. Commit the snapshot
 
 ```bash
@@ -110,7 +153,23 @@ deadeye forecast snapshot <MARKET> --mean 3.02 --sd 0.22 --method aggregate-norm
 deadeye forecast show <MARKET>     # review the full workspace + the trade command
 ```
 
-### 8. Turn the forecast into the highest-EV trade
+### 8. Decide the size (separate from the forecast)
+
+The forecast says what you believe; the **size** says how much of your bankroll
+rides on it. Never blur them — in one recorded session an agent tightened its
+*stated* σ purely to make the optimizer stake more. That corrupts the forecast
+record AND the calibration loop. Instead:
+
+- Keep `(μ, σ)` exactly as committed in step 7 — σ is a function of *evidence
+  only*.
+- Choose the stake via a stated risk policy: a fraction of bankroll scaled by
+  recorded edge strength (fractional-Kelly thinking — half-Kelly or less when
+  your track record is thin), or the CLI's risk/sizing flags where available
+  (`--risk`, `--bankroll`, `--kelly`).
+- Record the decision (policy, fraction, resulting budget) alongside the
+  snapshot so the postmortem can judge the sizing separately from the forecast.
+
+### 9. Turn the forecast into the highest-EV trade
 
 Do **not** jump the market to your mean. `trade quote` runs the EV-max grid
 search between the market's curve and yours under your budget:
@@ -122,12 +181,25 @@ deadeye trade execute <MARKET> --mean 3.02 --variance 0.0484 --max-collateral <X
 
 (Or drive it from your belief directly: `trade quote <MARKET> --belief <mean> --budget <xp> --belief-sigma <sd>`.)
 
-### 9. Monitor, re-run, score
+Mind RPC etiquette (see the deadeye-cli skill): snapshot state once with
+`markets snapshot --output json`, explore candidates via `--from-state` with
+zero further RPC, then one `--dry-run` and one `execute`. Never retry in a
+loop — an empty/parse-error response means rate-limited; back off.
+
+### 10. Monitor, re-run, score
 
 Re-run when watched inputs move materially (re-record evidence, re-aggregate,
-re-commit). After the market resolves, score your forecast (Brier/CRPS-style),
-write a one-paragraph postmortem — what you missed, what you over-weighted — and
-carry the lesson into the next market's base rates.
+re-commit). **A market move against you is evidence to weigh, not a verdict to
+adopt.** Ask what information the move plausibly carries — one counterparty
+re-pricing on no news is weak (could be a single anchored trader); a large,
+multi-party move on volume is strong. Record the move as an evidence item with
+a stance, reliability, and weight, then re-aggregate — do NOT silently walk
+your committed belief toward the new market level (use `markets trades` /
+curve history from the indexer to see who moved it and how much, where
+available). After the market resolves, run `deadeye forecast score <MARKET>` —
+it pulls the settlement value and computes CRPS/z-score vs your committed
+(μ, σ) — write a one-paragraph postmortem, and let `deadeye forecast
+calibration` accumulate the record that tunes your future σ and sizing.
 
 ## Calibration discipline (do not skip)
 
@@ -139,5 +211,8 @@ carry the lesson into the next market's base rates.
   credible path where you're wrong and widen toward it.
 - **The market is evidence.** Include the de-vigged market as a component;
   disagreeing with it is fine, ignoring it is not.
+- **Never tighten σ to bet more.** Sizing is step 8's job. A σ you wouldn't
+  defend as evidence-derived poisons both the trade and your calibration
+  record.
 - **XP is non-transferable and worthless off-platform** — only gas STRK has
   value. Always `trade quote` before `execute`; respect `--max-collateral`.
