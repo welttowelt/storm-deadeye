@@ -108,11 +108,11 @@ pub(crate) async fn run(args: WatchArgs, ctx: &AppContext) -> Result<()> {
     Ok(())
 }
 
-fn build_provider_owned(ctx: &AppContext) -> Result<JsonRpcProvider> {
+fn build_provider_owned(ctx: &AppContext) -> Result<crate::context::CliProvider> {
     let url = Url::parse(&ctx.config.rpc_url)?;
-    Ok(JsonRpcProvider::new(JsonRpcClient::new(
-        HttpTransport::new(url),
-    )))
+    Ok(deadeye_starknet::retry::RetryingProvider::new(
+        JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(url))),
+    ))
 }
 
 /// Local mirror of the parsed `--show-quote-for` spec.

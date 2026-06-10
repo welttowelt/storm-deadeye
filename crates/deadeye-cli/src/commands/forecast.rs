@@ -58,6 +58,7 @@ async fn quote_from_snapshot(ctx: &AppContext, args: ForecastQuoteArgs) -> Resul
     let quote_args = if args.budget.is_some() {
         // Optimizer path — snapshot is the belief.
         TradeQuoteArgs {
+            from_state: None,
             market: args.market,
             family: args.family,
             mean: None,
@@ -73,6 +74,7 @@ async fn quote_from_snapshot(ctx: &AppContext, args: ForecastQuoteArgs) -> Resul
     } else {
         // Fixed-candidate path — quote the snapshot distribution directly.
         TradeQuoteArgs {
+            from_state: None,
             market: args.market,
             family: args.family,
             mean: Some(snap.mean),

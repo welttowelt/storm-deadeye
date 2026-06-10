@@ -21,6 +21,7 @@ use serde_json::json;
 
 use crate::{
     cli::{TradeCmd, TradeExecuteArgs, TradeJournalArgs, TradeQuoteArgs},
+    context::CliProvider,
     commands::{
         render_helpers::{
             QuoteResult, SubmissionResult, pretty_rejection, submission_from_receipt,
@@ -54,6 +55,12 @@ pub(crate) async fn run(action: TradeCmd, ctx: &AppContext, confirm: bool) -> Re
 // ─── quote ────────────────────────────────────────────────────────────
 
 pub(crate) async fn quote(ctx: &AppContext, args: TradeQuoteArgs) -> Result<()> {
+    // Fetch-once path (issue #14): a saved snapshot makes the quote PURE —
+    // zero RPC, so exploring N candidates costs one read total.
+    if let Some(path) = &args.from_state {
+        let result = quote_normal_from_state(path, &args)?;
+        return ctx.renderer.print(&result);
+    }
     let market = parse_felt("market address", &args.market)?;
     let provider = build_provider(ctx)?;
     let client = DeadeyeClient::new(provider);
@@ -72,8 +79,82 @@ pub(crate) async fn quote(ctx: &AppContext, args: TradeQuoteArgs) -> Result<()> 
     ctx.renderer.print(&result)
 }
 
+/// Pure quote from a saved snapshot (issue #14): zero RPC. Mirrors the
+/// offline branches of `quote_normal`, sourcing state from the JSON that
+/// `deadeye markets snapshot` produced instead of three live view calls.
+fn quote_normal_from_state(
+    path: &std::path::Path,
+    args: &TradeQuoteArgs,
+) -> Result<QuoteResult> {
+    use deadeye_sdk::normal::{
+        NormalMarketStateSnapshot, optimize_quote_from_state, quote_candidate_from_state,
+    };
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("reading state snapshot {}", path.display()))?;
+    let snapshot: NormalMarketStateSnapshot = serde_json::from_str(&raw)
+        .context("parsing state snapshot (expected `deadeye markets snapshot` JSON)")?;
+    let market_mean = snapshot.mean;
+    let market_sigma = snapshot.sigma;
+
+    let (quote, belief, budget, expected_value) =
+        if let (Some(belief_mean), Some(budget)) = (args.belief, args.budget) {
+            let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
+            let (q, ev) = optimize_quote_from_state(&snapshot, belief_mean, belief_sigma, budget)
+                .map_err(|e| anyhow::anyhow!("optimize_quote_from_state: {e}"))?;
+            (q, Some((belief_mean, belief_sigma)), Some(budget), Some(ev))
+        } else {
+            let mean = args
+                .mean
+                .context("`--mean` is required (or pair --belief / --budget)")?;
+            let variance = args
+                .variance
+                .context("`--variance` is required (or pair --belief / --budget)")?;
+            let q = quote_candidate_from_state(&snapshot, mean, variance)
+                .map_err(|e| anyhow::anyhow!("quote_candidate_from_state: {e}"))?;
+            (q, None, None, None)
+        };
+
+    let market_hex = snapshot.market.clone();
+    let cand_mean = Sq128::from_raw(quote.candidate.mean).to_f64();
+    let cand_sigma = Sq128::from_raw(quote.candidate.sigma).to_f64();
+    let cand_variance = Sq128::from_raw(quote.candidate.variance).to_f64();
+    let req_collat = Sq128::from_raw(quote.required_collateral).to_f64();
+    let execute_hint = format!(
+        "deadeye trade execute {} --family normal --mean {:.6} --variance {:.6} --max-collateral {:.6}",
+        market_hex,
+        cand_mean,
+        cand_variance,
+        req_collat * 1.10
+    );
+    Ok(QuoteResult {
+        family: "normal",
+        market: market_hex,
+        candidate_mean: Some(cand_mean),
+        candidate_variance: Some(cand_variance),
+        candidate_sigma: Some(cand_sigma),
+        candidate_mu1: None,
+        candidate_mu2: None,
+        candidate_rho: None,
+        x_star: Some(Sq128::from_raw(quote.x_star).to_f64()),
+        required_collateral: Some(req_collat),
+        padded_collateral: Some(Sq128::from_raw(quote.padded_collateral).to_f64()),
+        // The snapshot has no live backing read; floor gating is offline-only
+        // here and the execute path still chain-verifies.
+        sigma_floor: None,
+        market_mean: Some(market_mean),
+        market_sigma: Some(market_sigma),
+        belief_mean: belief.map(|(m, _)| m),
+        belief_sigma: belief.map(|(_, s)| s),
+        expected_value,
+        budget,
+        on_chain_will_accept: quote.on_chain_will_accept,
+        rejection: quote.rejection.as_ref().map(pretty_rejection),
+        execute_hint,
+    })
+}
+
 async fn quote_normal(
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
     family: Family,
     args: &TradeQuoteArgs,
@@ -207,7 +288,7 @@ async fn quote_normal(
 }
 
 async fn quote_lognormal(
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
     family: Family,
     args: &TradeQuoteArgs,
@@ -296,7 +377,7 @@ pub(crate) async fn execute(ctx: &AppContext, args: TradeExecuteArgs, confirm: b
 
 async fn execute_normal(
     ctx: &AppContext,
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
     args: TradeExecuteArgs,
     confirm: bool,
@@ -566,7 +647,7 @@ where
 
 async fn execute_lognormal(
     ctx: &AppContext,
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
     args: TradeExecuteArgs,
     confirm: bool,

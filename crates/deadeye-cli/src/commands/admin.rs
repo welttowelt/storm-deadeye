@@ -314,6 +314,7 @@ async fn deploy_math_runtime(ctx: &AppContext, args: AdminDeployMathRuntimeArgs)
         let provider = build_provider(ctx)?;
         let on_chain = provider
             .inner()
+            .inner()
             .get_class_hash_at(BlockId::Tag(BlockTag::Latest), cached_addr)
             .await
             .ok();
@@ -401,12 +402,13 @@ async fn deploy_math_runtime(ctx: &AppContext, args: AdminDeployMathRuntimeArgs)
     for _ in 0..30_u32 {
         if let Ok(h) = provider
             .inner()
+            .inner()
             .get_class_hash_at(BlockId::Tag(BlockTag::PreConfirmed), actual_address)
             .await
             && h == class_hash
         {
             verified = true;
-            deployed_block = provider.inner().block_number().await.ok();
+            deployed_block = provider.inner().inner().block_number().await.ok();
             break;
         }
         tokio::time::sleep(std::time::Duration::from_millis(500)).await;
@@ -481,6 +483,7 @@ async fn deploy_math_runtime_status(ctx: &AppContext, chain: ChainKey) -> Result
             let addr = parse_felt("address", &entry.address)?;
             let expected_class = parse_felt("class_hash", &entry.class_hash)?;
             let on_chain = provider
+                .inner()
                 .inner()
                 .get_class_hash_at(BlockId::Tag(BlockTag::Latest), addr)
                 .await

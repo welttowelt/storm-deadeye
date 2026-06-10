@@ -12,7 +12,7 @@ use serde_json::json;
 
 use crate::{
     cli::{FamilyArg, MarketsCmd},
-    context::{AppContext, parse_address},
+    context::{AppContext, CliProvider, parse_address},
     render::{
         MarketFeeConfigView, MarketInfoView, MarketLpInfoView, MarketParamsView, MarketRow,
         MarketShowView, MarketStatusView,
@@ -21,9 +21,51 @@ use crate::{
 
 pub(crate) async fn run(action: MarketsCmd, ctx: &AppContext) -> Result<()> {
     match action {
+        MarketsCmd::Snapshot { address } => snapshot(ctx, &address).await,
         MarketsCmd::List { family, limit } => list(ctx, family, limit).await,
         MarketsCmd::Show { address, family } => show(ctx, &address, family).await,
         MarketsCmd::Info { address } => info(ctx, &address).await,
+    }
+}
+
+/// One-shot quote state snapshot for `trade quote --from-state` (issue #14):
+/// fetch the three views a quote depends on ONCE, emit them bit-exactly.
+async fn snapshot(ctx: &AppContext, address: &str) -> Result<()> {
+    let market = parse_address(address)?;
+    let client = ctx.deadeye_client()?;
+    let snapshot = client
+        .normal_market(market)
+        .state_snapshot()
+        .await
+        .map_err(|e| anyhow::anyhow!("state_snapshot: {e}"))?;
+    ctx.renderer.print(&SnapshotView(snapshot))
+}
+
+/// Render wrapper: pretty/plain output shows the human mirrors; `--output
+/// json` serializes the full bit-exact snapshot for `--from-state`.
+struct SnapshotView(deadeye_sdk::normal::NormalMarketStateSnapshot);
+
+impl serde::Serialize for SnapshotView {
+    fn serialize<S: serde::Serializer>(&self, serializer: S) -> Result<S::Ok, S::Error> {
+        self.0.serialize(serializer)
+    }
+}
+
+impl crate::output::Render for SnapshotView {
+    fn render_pretty(&self, r: &crate::output::Renderer) {
+        r.kv("market", &self.0.market);
+        r.kv("mean", &format!("{:.6}", self.0.mean));
+        r.kv("sigma", &format!("{:.6}", self.0.sigma));
+        r.kv("effective_k", &format!("{:.6}", self.0.effective_k));
+        r.kv("pool_backing_xp", &format!("{:.6}", self.0.pool_backing_xp));
+    }
+
+    fn render_plain(&self, w: &mut dyn std::io::Write) -> std::io::Result<()> {
+        writeln!(w, "market: {}", self.0.market)?;
+        writeln!(w, "mean: {:.6}", self.0.mean)?;
+        writeln!(w, "sigma: {:.6}", self.0.sigma)?;
+        writeln!(w, "effective_k: {:.6}", self.0.effective_k)?;
+        writeln!(w, "pool_backing_xp: {:.6}", self.0.pool_backing_xp)
     }
 }
 
@@ -79,7 +121,7 @@ async fn info(ctx: &AppContext, address: &str) -> Result<()> {
 
 /// Probe each family's `params()` call until one succeeds.
 pub(crate) async fn detect_family(
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
 ) -> Result<Family> {
     // Try in the order most commonly observed in the indexer.
@@ -140,7 +182,7 @@ fn fee_view(fee: FeeConfigRaw) -> MarketFeeConfigView {
 }
 
 async fn show_normal(
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
     address: &str,
 ) -> Result<MarketShowView> {
@@ -195,7 +237,7 @@ async fn show_normal(
 }
 
 async fn show_lognormal(
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
     address: &str,
 ) -> Result<MarketShowView> {
@@ -227,7 +269,7 @@ async fn show_lognormal(
 }
 
 async fn show_multinoulli(
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
     address: &str,
 ) -> Result<MarketShowView> {
@@ -258,7 +300,7 @@ async fn show_multinoulli(
 }
 
 async fn show_bivariate(
-    client: &DeadeyeClient<JsonRpcProvider>,
+    client: &DeadeyeClient<CliProvider>,
     market: Felt,
     address: &str,
 ) -> Result<MarketShowView> {

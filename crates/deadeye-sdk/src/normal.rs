@@ -200,6 +200,122 @@ fn live_effective_k(params_k: Sq128, pool_backing: Sq128, initial_backing: Sq128
 /// Extracted as a free function (rather than an associated function on
 /// `NormalMarket<P>`) so it isn't monomorphized per `Provider` impl —
 /// the body is entirely f64 + Sq128 math, with no `P`-dependence.
+
+// ─── Fetch-once state snapshot (issue #14) ──────────────────────────────────
+
+/// Serde mirror of [`Sq128Raw`] (limb decomposition + sign) so snapshots
+/// round-trip the chain's fixed-point values bit-exactly through JSON.
+#[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
+pub struct Sq128RawWire {
+    pub limb0: u64,
+    pub limb1: u64,
+    pub limb2: u64,
+    pub limb3: u64,
+    pub neg: bool,
+}
+
+impl From<Sq128Raw> for Sq128RawWire {
+    fn from(raw: Sq128Raw) -> Self {
+        Self { limb0: raw.limb0, limb1: raw.limb1, limb2: raw.limb2, limb3: raw.limb3, neg: raw.neg }
+    }
+}
+
+impl From<Sq128RawWire> for Sq128Raw {
+    fn from(wire: Sq128RawWire) -> Self {
+        Self { limb0: wire.limb0, limb1: wire.limb1, limb2: wire.limb2, limb3: wire.limb3, neg: wire.neg }
+    }
+}
+
+/// One-fetch snapshot of everything a normal-market quote depends on.
+///
+/// Produced by [`NormalMarket::state_snapshot`] (3 view calls, once);
+/// consumed by [`optimize_quote_from_state`] / [`quote_candidate_from_state`]
+/// which are **pure** — exploring N candidates costs zero further RPC
+/// (issue #14: fetch once, compute candidates offline).
+///
+/// Raw Sq128 limbs preserve chain-bit parity; the f64 mirrors are for humans
+/// and are NOT used in the math.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+pub struct NormalMarketStateSnapshot {
+    /// Market contract address (hex).
+    pub market: String,
+    pub mean_raw: Sq128RawWire,
+    pub variance_raw: Sq128RawWire,
+    pub sigma_raw: Sq128RawWire,
+    pub base_k_raw: Sq128RawWire,
+    pub initial_backing_raw: Sq128RawWire,
+    pub pool_backing_raw: Sq128RawWire,
+    /// Human mirrors (display only).
+    pub mean: f64,
+    pub sigma: f64,
+    pub effective_k: f64,
+    pub pool_backing_xp: f64,
+}
+
+impl NormalMarketStateSnapshot {
+    /// Rebuild the bit-exact current distribution.
+    ///
+    /// # Errors
+    /// Returns [`SdkError::Core`] if the stored variance is negative.
+    pub fn distribution(&self) -> SdkResult<NormalDistribution> {
+        Ok(NormalDistribution::from_variance(
+            Sq128::from_raw(self.mean_raw.into()),
+            Sq128::from_raw(self.variance_raw.into()),
+        )?)
+    }
+
+    /// Effective k derived from the stored raw pool figures (bit-exact).
+    #[must_use]
+    pub fn effective_k_exact(&self) -> f64 {
+        let base_k = Sq128::from_raw(self.base_k_raw.into());
+        let pool = Sq128::from_raw(self.pool_backing_raw.into());
+        let initial = Sq128::from_raw(self.initial_backing_raw.into());
+        live_effective_k(base_k, pool, initial).to_f64()
+    }
+}
+
+/// Pure optimizer quote from a snapshot — zero RPC. See
+/// [`NormalMarketStateSnapshot`].
+///
+/// # Errors
+/// Same failure modes as `optimize_quote_offline_ev` minus the provider:
+/// invalid snapshot values or an optimizer that finds no admissible candidate.
+pub fn optimize_quote_from_state(
+    snapshot: &NormalMarketStateSnapshot,
+    belief_mean: f64,
+    belief_sigma: f64,
+    budget_xp: f64,
+) -> SdkResult<(NormalTradeQuote, f64)> {
+    let current = snapshot.distribution()?;
+    optimize_quote_offline_inner(
+        &current,
+        belief_mean,
+        belief_sigma,
+        budget_xp,
+        snapshot.effective_k_exact(),
+    )
+}
+
+/// Pure fixed-candidate quote from a snapshot — zero RPC.
+///
+/// # Errors
+/// Same failure modes as `quote_candidate_offline` minus the provider.
+pub fn quote_candidate_from_state(
+    snapshot: &NormalMarketStateSnapshot,
+    candidate_mean: f64,
+    candidate_variance: f64,
+) -> SdkResult<NormalTradeQuote> {
+    let current = snapshot.distribution()?;
+    let pool = Sq128::from_raw(snapshot.pool_backing_raw.into());
+    quote_candidate_offline_inner(
+        &current,
+        candidate_mean,
+        candidate_variance,
+        snapshot.effective_k_exact(),
+        pool.to_f64(),
+    )
+}
+
 fn optimize_quote_offline_inner(
     current: &NormalDistribution,
     belief_mean: f64,
@@ -806,6 +922,37 @@ where
     /// locally. This is the zero-config path the CLI uses for
     /// `trade quote --mean --variance` so a read-only quote never needs a
     /// runtime address or an on-chain transaction.
+    /// Fetch the one-shot state snapshot every quote depends on (3 view
+    /// calls). Pair with [`optimize_quote_from_state`] /
+    /// [`quote_candidate_from_state`] to explore candidates with ZERO further
+    /// RPC (issue #14).
+    ///
+    /// # Errors
+    /// Propagates provider/read failures from the three views.
+    #[instrument(skip(self), fields(market = %self.reader.address()))]
+    pub async fn state_snapshot(&self) -> SdkResult<NormalMarketStateSnapshot> {
+        let current = self.distribution().await?;
+        let params = self.reader.params().await?;
+        let lp_info = self.reader.lp_info().await?;
+        let base_k = Sq128::from_raw(params.k);
+        let pool_backing = Sq128::from_raw(lp_info.total_backing_deposited);
+        let initial_backing = Sq128::from_raw(params.backing);
+        let effective_k = live_effective_k(base_k, pool_backing, initial_backing).to_f64();
+        Ok(NormalMarketStateSnapshot {
+            market: format!("{:#x}", self.reader.address()),
+            mean_raw: current.mean().to_raw().into(),
+            variance_raw: current.variance().to_raw().into(),
+            sigma_raw: current.sigma().to_raw().into(),
+            base_k_raw: params.k.into(),
+            initial_backing_raw: params.backing.into(),
+            pool_backing_raw: lp_info.total_backing_deposited.into(),
+            mean: current.mean().to_f64(),
+            sigma: current.sigma().to_f64(),
+            effective_k,
+            pool_backing_xp: pool_backing.to_f64(),
+        })
+    }
+
     #[instrument(skip(self), fields(market = %self.reader.address()))]
     pub async fn quote_candidate_offline(
         &self,

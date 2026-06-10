@@ -293,6 +293,11 @@ pub(crate) struct TradeQuoteArgs {
     /// Force a specific family (otherwise auto-detected).
     #[arg(long, value_name = "FAMILY")]
     pub(crate) family: Option<FamilyArg>,
+    /// Quote from a saved state snapshot (zero RPC). Produce one with
+    /// `deadeye markets snapshot <ADDRESS> --output json > state.json`.
+    /// Normal-family only.
+    #[arg(long, value_name = "PATH")]
+    pub(crate) from_state: Option<std::path::PathBuf>,
     /// Candidate mean μ.
     #[arg(long)]
     pub(crate) mean: Option<f64>,
@@ -684,6 +689,20 @@ pub(crate) enum AccountCmd {
 
 #[derive(Debug, Subcommand)]
 pub(crate) enum MarketsCmd {
+    /// Print a one-shot quote state snapshot (3 view calls). Feed the JSON to
+    /// `trade quote --from-state` to explore candidates with zero further RPC.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye markets snapshot 0x123… --output json > state.json
+    /// deadeye trade quote 0x123… --from-state state.json --belief 4.18 --budget 100
+    /// ```
+    Snapshot {
+        /// Market contract address.
+        #[arg(value_name = "ADDRESS")]
+        address: String,
+    },
     /// List markets from the indexer.
     ///
     /// # Example

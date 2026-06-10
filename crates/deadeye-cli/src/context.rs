@@ -3,6 +3,11 @@
 use anyhow::{Context as _, Result};
 use deadeye_indexer::IndexerClient;
 use deadeye_sdk::{DeadeyeClient, starknet::JsonRpcProvider};
+use deadeye_starknet::retry::RetryingProvider;
+
+/// Provider stack the CLI talks through: JSON-RPC wrapped in bounded
+/// exponential backoff so throttled endpoints degrade gracefully (issue #14).
+pub(crate) type CliProvider = RetryingProvider<JsonRpcProvider>;
 use starknet_core::types::Felt;
 use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 use url::Url;
@@ -42,12 +47,12 @@ impl AppContext {
     /// Build a fresh `DeadeyeClient` over the configured RPC URL. Each
     /// call constructs a new HTTP client so callers can fork concurrent
     /// tasks without sharing a connection pool footgun.
-    pub(crate) fn deadeye_client(&self) -> Result<DeadeyeClient<JsonRpcProvider>> {
+    pub(crate) fn deadeye_client(&self) -> Result<DeadeyeClient<CliProvider>> {
         let url = Url::parse(&self.config.rpc_url)
             .with_context(|| format!("rpc_url is not a valid URL: {}", self.config.rpc_url))?;
         tracing::debug!(target: "deadeye::rpc", rpc_url = %url, "resolved RPC endpoint");
         let rpc = JsonRpcClient::new(HttpTransport::new(url));
-        let provider = JsonRpcProvider::new(rpc);
+        let provider = RetryingProvider::new(JsonRpcProvider::new(rpc));
         Ok(DeadeyeClient::new(provider))
     }
 

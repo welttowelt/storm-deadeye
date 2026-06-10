@@ -38,6 +38,7 @@ pub mod normal_amm;
 pub mod oracle;
 pub mod pricing;
 pub mod provider;
+pub mod retry;
 pub mod runtime;
 pub mod selectors;
 #[cfg(feature = "account")]
