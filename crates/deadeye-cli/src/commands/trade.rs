@@ -79,6 +79,82 @@ pub(crate) async fn quote(ctx: &AppContext, args: TradeQuoteArgs) -> Result<()> 
     ctx.renderer.print(&result)
 }
 
+/// Risk/sizing/lint block shared by the live and `--from-state` quote paths
+/// (issues #15 + #24). Pure f64 display math — never touches the verified
+/// collateral path.
+struct RiskExtras {
+    downside_at_market_mean: Option<f64>,
+    cvar_5pct: Option<f64>,
+    stress_ev: Option<f64>,
+    sizing: Option<super::risk::SizingAdvice>,
+    warnings: Vec<String>,
+}
+
+#[expect(clippy::too_many_arguments, reason = "plain display-math inputs")]
+fn compute_risk_extras(
+    args: &TradeQuoteArgs,
+    market_mean: f64,
+    market_sigma: f64,
+    effective_k: f64,
+    cand_mean: f64,
+    cand_sigma: f64,
+    expected_value: Option<f64>,
+    required_collateral: f64,
+    sigma_floor: Option<f64>,
+    belief: Option<(f64, f64)>,
+    budget: Option<f64>,
+) -> RiskExtras {
+    use super::risk;
+    let downside = Some(risk::pnl_at(
+        market_mean, market_sigma, cand_mean, cand_sigma, effective_k, market_mean,
+    ));
+    let (cvar, stress) = belief.map_or((None, None), |(bm, bs)| {
+        let cvar = risk::cvar_under_belief(
+            market_mean, market_sigma, cand_mean, cand_sigma, effective_k, bm, bs, 0.05,
+        );
+        let stress = risk::expected_pnl(
+            market_mean, market_sigma, cand_mean, cand_sigma, effective_k, bm, bs * 1.5,
+        );
+        (cvar.is_finite().then_some(cvar), Some(stress))
+    });
+    let kelly_multiplier = args.kelly.or_else(|| {
+        args.risk.as_deref().and_then(risk::preset_fraction)
+    });
+    if let Some(preset) = args.risk.as_deref()
+        && risk::preset_fraction(preset).is_none()
+    {
+        tracing::warn!(target: "deadeye::risk", preset, "unknown --risk preset; expected conservative|balanced|aggressive");
+    }
+    let ev_for_sizing = expected_value.or_else(|| {
+        belief.map(|(bm, bs)| {
+            risk::expected_pnl(market_mean, market_sigma, cand_mean, cand_sigma, effective_k, bm, bs)
+        })
+    });
+    let sizing = match (args.bankroll, kelly_multiplier, ev_for_sizing) {
+        (Some(bankroll), mult, Some(ev)) => {
+            risk::sizing_advice(ev, required_collateral, bankroll, mult.unwrap_or(0.5))
+        },
+        _ => None,
+    };
+    let warnings = risk::lint_quote(
+        belief,
+        market_mean,
+        market_sigma,
+        cand_mean,
+        cand_sigma,
+        sigma_floor,
+        budget,
+        sizing.as_ref(),
+    );
+    RiskExtras {
+        downside_at_market_mean: downside,
+        cvar_5pct: cvar,
+        stress_ev: stress,
+        sizing,
+        warnings,
+    }
+}
+
 /// Pure quote from a saved snapshot (issue #14): zero RPC. Mirrors the
 /// offline branches of `quote_normal`, sourcing state from the JSON that
 /// `deadeye markets snapshot` produced instead of three live view calls.
@@ -119,6 +195,19 @@ fn quote_normal_from_state(
     let cand_sigma = Sq128::from_raw(quote.candidate.sigma).to_f64();
     let cand_variance = Sq128::from_raw(quote.candidate.variance).to_f64();
     let req_collat = Sq128::from_raw(quote.required_collateral).to_f64();
+    let extras = compute_risk_extras(
+        args,
+        market_mean,
+        market_sigma,
+        snapshot.effective_k,
+        cand_mean,
+        cand_sigma,
+        expected_value,
+        req_collat,
+        None,
+        belief,
+        budget,
+    );
     let execute_hint = format!(
         "deadeye trade execute {} --family normal --mean {:.6} --variance {:.6} --max-collateral {:.6}",
         market_hex,
@@ -149,6 +238,11 @@ fn quote_normal_from_state(
         budget,
         on_chain_will_accept: quote.on_chain_will_accept,
         rejection: quote.rejection.as_ref().map(pretty_rejection),
+        downside_at_market_mean: extras.downside_at_market_mean,
+        cvar_5pct: extras.cvar_5pct,
+        stress_ev: extras.stress_ev,
+        sizing: extras.sizing,
+        warnings: extras.warnings,
         execute_hint,
     })
 }
@@ -165,15 +259,22 @@ async fn quote_normal(
     // override, never required for a read-only quote (issue #4).
     let runtime = resolve_runtime_opt(args.runtime.as_deref(), family)?;
 
-    // Read the live curve once — for surfacing and the belief_sigma default.
-    let current = market_handle
-        .distribution()
+    // ONE state fetch (issue #14): distribution + params + lp_info in a
+    // single snapshot; σ-floor and effective-k derive locally from it.
+    let snapshot = market_handle
+        .state_snapshot()
         .await
-        .context("reading current market distribution")?;
-    let market_mean = current.mean().to_f64();
-    let market_sigma = current.sigma().to_f64();
-    // Backing-derived σ-floor (issue: surface σ-min). Best-effort.
-    let sigma_floor = market_handle.sigma_floor().await.ok();
+        .context("reading market state snapshot")?;
+    let current = snapshot
+        .distribution()
+        .context("reconstructing market distribution")?;
+    let market_mean = snapshot.mean;
+    let market_sigma = snapshot.sigma;
+    let effective_k = snapshot.effective_k;
+    let sigma_floor = Some(deadeye_sdk::normal::normal_sigma_floor(
+        effective_k,
+        snapshot.pool_backing_xp,
+    ));
 
     let (quote, belief, budget, expected_value) =
         if let (Some(belief_mean), Some(budget)) = (args.belief, args.budget) {
@@ -187,9 +288,10 @@ async fn quote_normal(
                 (q, None)
             } else {
                 // Offline path returns the optimizer's expected value (XP).
-                let (q, ev) = market_handle
-                    .optimize_quote_offline_ev(belief_mean, belief_sigma, budget)
-                    .await
+                // Reuses the snapshot — no params/lp re-read (issue #14).
+                let (q, ev) = deadeye_sdk::normal::optimize_quote_from_state(
+                    &snapshot, belief_mean, belief_sigma, budget,
+                )
                     .context("optimize_quote_offline")?;
                 (q, Some(ev))
             };
@@ -228,10 +330,8 @@ async fn quote_normal(
                     .map_err(|e| anyhow::anyhow!("quote_trade: {e}"))?
             } else {
                 // Default: fully client-side quote (no runtime, no tx, no gas).
-                market_handle
-                    .quote_candidate_offline(mean, variance)
-                    .await
-                    .context("quote_candidate_offline")?
+                deadeye_sdk::normal::quote_candidate_from_state(&snapshot, mean, variance)
+                    .context("quote_candidate_from_state")?
             };
             // Fixed-candidate quote has no belief → no expected value.
             (q, None, None, None)
@@ -262,6 +362,20 @@ async fn quote_normal(
         req_collat * 1.10
     );
 
+    let extras = compute_risk_extras(
+        args,
+        market_mean,
+        market_sigma,
+        effective_k,
+        cand_mean,
+        cand_sigma,
+        expected_value,
+        req_collat,
+        sigma_floor,
+        belief,
+        budget,
+    );
+
     Ok(QuoteResult {
         family: family_label(family),
         market: format!("{market:#x}"),
@@ -283,6 +397,11 @@ async fn quote_normal(
         budget,
         on_chain_will_accept: accept,
         rejection,
+        downside_at_market_mean: extras.downside_at_market_mean,
+        cvar_5pct: extras.cvar_5pct,
+        stress_ev: extras.stress_ev,
+        sizing: extras.sizing,
+        warnings: extras.warnings,
         execute_hint,
     })
 }
@@ -330,7 +449,14 @@ async fn quote_lognormal(
         quote.rejection.as_ref().map(pretty_rejection)
     };
 
+    // Risk extras are normal-family math for now (issue #15) — lognormal
+    // quotes render without them.
     Ok(QuoteResult {
+        downside_at_market_mean: None,
+        cvar_5pct: None,
+        stress_ev: None,
+        sizing: None,
+        warnings: Vec::new(),
         family: family_label(family),
         market: format!("{market:#x}"),
         candidate_mean: Some(cand_mu),

@@ -61,7 +61,8 @@ use deadeye_collateral::{MinimizationPolicy, lambda as collateral_lambda, normal
 // pub-use at the bottom of this module.
 use deadeye_core::Distribution as _CollateralPdf;
 use deadeye_core::{NormalDistribution, Sq128, distribution::NormalSqrtHintsRaw, sq128::Sq128Raw};
-use deadeye_optimizer::{NormalOptimizationInput, normal_sigma_floor, optimize_normal_trade};
+use deadeye_optimizer::{NormalOptimizationInput, optimize_normal_trade};
+pub use deadeye_optimizer::normal_sigma_floor;
 use deadeye_starknet::{
     Account, ExecutionReceipt, Felt, NormalMarketReader, NormalMarketWriter, NormalTradeQuote,
     Provider, TradeRejectionReason, types::normal::TradeInput,
@@ -188,19 +189,6 @@ fn live_effective_k(params_k: Sq128, pool_backing: Sq128, initial_backing: Sq128
     }
 }
 
-/// Pure off-chain implementation behind
-/// [`NormalMarket::optimize_quote_offline`] and
-/// [`NormalMarket::optimize_quote_offline_with_override`].
-///
-/// Given the live market distribution and a fixed `effective_k`, runs
-/// the optimizer + λ-scaled collateral solver and produces a
-/// chain-bit-exact `NormalTradeQuote`. Does **not** touch the chain —
-/// the caller is responsible for sourcing `current` and `effective_k`.
-///
-/// Extracted as a free function (rather than an associated function on
-/// `NormalMarket<P>`) so it isn't monomorphized per `Provider` impl —
-/// the body is entirely f64 + Sq128 math, with no `P`-dependence.
-
 // ─── Fetch-once state snapshot (issue #14) ──────────────────────────────────
 
 /// Serde mirror of [`Sq128Raw`] (limb decomposition + sign) so snapshots
@@ -316,6 +304,18 @@ pub fn quote_candidate_from_state(
     )
 }
 
+/// Pure off-chain implementation behind
+/// [`NormalMarket::optimize_quote_offline`] and
+/// [`NormalMarket::optimize_quote_offline_with_override`].
+///
+/// Given the live market distribution and a fixed `effective_k`, runs
+/// the optimizer + λ-scaled collateral solver and produces a
+/// chain-bit-exact `NormalTradeQuote`. Does **not** touch the chain —
+/// the caller is responsible for sourcing `current` and `effective_k`.
+///
+/// Extracted as a free function (rather than an associated function on
+/// `NormalMarket<P>`) so it isn't monomorphized per `Provider` impl —
+/// the body is entirely f64 + Sq128 math, with no `P`-dependence.
 fn optimize_quote_offline_inner(
     current: &NormalDistribution,
     belief_mean: f64,

@@ -306,6 +306,18 @@ pub(crate) struct QuoteResult {
     pub(crate) budget: Option<f64>,
     pub(crate) on_chain_will_accept: bool,
     pub(crate) rejection: Option<RejectionExplanation>,
+    /// P&L if the market settles exactly at today's market mean (XP) —
+    /// the plain-terms cost of being wrong (issue #24).
+    pub(crate) downside_at_market_mean: Option<f64>,
+    /// Expected shortfall over the worst 5% of belief-weighted outcomes (XP).
+    pub(crate) cvar_5pct: Option<f64>,
+    /// EV re-computed with belief σ widened 1.5× — "EV if you're 1σ
+    /// overconfident" (issue #24).
+    pub(crate) stress_ev: Option<f64>,
+    /// Kelly/bankroll sizing recommendation (issue #15).
+    pub(crate) sizing: Option<crate::commands::risk::SizingAdvice>,
+    /// Pre-trade lint findings — warnings, never blocks (issue #24).
+    pub(crate) warnings: Vec<String>,
     pub(crate) execute_hint: String,
 }
 
@@ -350,6 +362,33 @@ impl Render for QuoteResult {
                 "sigma_floor",
                 &format!("{sf:.6}  (candidate σ must be ≥ this, else SIGMA_TOO_LOW)"),
             );
+        }
+        if let Some(d) = self.downside_at_market_mean {
+            r.kv(
+                "if_settles_at_market_mean",
+                &format!("{}{d:.4} XP", if d >= 0.0 { "+" } else { "" }),
+            );
+        }
+        if let Some(c) = self.cvar_5pct {
+            r.kv("cvar_5pct", &format!("{c:.4} XP  (avg of worst 5% outcomes under your belief)"));
+        }
+        if let Some(sev) = self.stress_ev {
+            r.kv("stress_ev", &format!("{sev:.4} XP  (EV if your σ is 1.5× too tight)"));
+        }
+        if let Some(sz) = &self.sizing {
+            r.kv(
+                "sizing",
+                &format!(
+                    "recommend {:.2} XP  (edge {:.3}/XP, full-Kelly {:.1}%, applied {:.0}% Kelly)",
+                    sz.recommended_stake_xp,
+                    sz.edge_per_xp,
+                    sz.full_kelly_fraction * 100.0,
+                    sz.kelly_multiplier * 100.0,
+                ),
+            );
+        }
+        for warning in &self.warnings {
+            r.warning(warning);
         }
         if let Some(rej) = &self.rejection {
             r.kv(
@@ -417,6 +456,23 @@ impl Render for QuoteResult {
         }
         if let Some(bs) = self.belief_sigma {
             writeln!(w, "belief_sigma: {bs}")?;
+        }
+        if let Some(d) = self.downside_at_market_mean {
+            writeln!(w, "downside_at_market_mean: {d}")?;
+        }
+        if let Some(c) = self.cvar_5pct {
+            writeln!(w, "cvar_5pct: {c}")?;
+        }
+        if let Some(sev) = self.stress_ev {
+            writeln!(w, "stress_ev: {sev}")?;
+        }
+        if let Some(sz) = &self.sizing {
+            writeln!(w, "recommended_stake_xp: {}", sz.recommended_stake_xp)?;
+            writeln!(w, "edge_per_xp: {}", sz.edge_per_xp)?;
+            writeln!(w, "kelly_multiplier: {}", sz.kelly_multiplier)?;
+        }
+        for warning in &self.warnings {
+            writeln!(w, "warning: {warning}")?;
         }
         if let Some(b) = self.budget {
             writeln!(w, "budget: {b}")?;

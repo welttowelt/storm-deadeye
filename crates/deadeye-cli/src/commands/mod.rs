@@ -28,6 +28,7 @@ pub(crate) mod lp;
 pub(crate) mod markets;
 pub(crate) mod onboard;
 pub(crate) mod position;
+pub(crate) mod risk;
 pub(crate) mod render_helpers;
 pub(crate) mod runtime_resolver;
 pub(crate) mod trade;

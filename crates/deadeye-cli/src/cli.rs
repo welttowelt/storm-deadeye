@@ -293,6 +293,16 @@ pub(crate) struct TradeQuoteArgs {
     /// Force a specific family (otherwise auto-detected).
     #[arg(long, value_name = "FAMILY")]
     pub(crate) family: Option<FamilyArg>,
+    /// Risk preset mapping to a Kelly multiplier:
+    /// conservative=0.25, balanced=0.5, aggressive=1.0.
+    #[arg(long, value_name = "PRESET")]
+    pub(crate) risk: Option<String>,
+    /// Bankroll (XP) for Kelly sizing — pairs with --kelly or --risk.
+    #[arg(long, value_name = "XP")]
+    pub(crate) bankroll: Option<f64>,
+    /// Explicit Kelly multiplier (e.g. 0.5 = half-Kelly). Overrides --risk.
+    #[arg(long, value_name = "FRAC")]
+    pub(crate) kelly: Option<f64>,
     /// Quote from a saved state snapshot (zero RPC). Produce one with
     /// `deadeye markets snapshot <ADDRESS> --output json > state.json`.
     /// Normal-family only.
