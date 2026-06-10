@@ -23,6 +23,8 @@
 pub mod account;
 pub mod bivariate_amm;
 pub mod cairo_serde;
+#[cfg(feature = "account")]
+pub mod chain_probe;
 pub mod collateral;
 pub mod error;
 pub mod execution;
@@ -51,15 +53,17 @@ pub use account::{
 };
 pub use bivariate_amm::{BivariateMarketReader, BivariateMarketWriter, BivariateTradeQuote};
 pub use cairo_serde::{CairoSerde, CairoSerdeError};
+#[cfg(feature = "account")]
+pub use chain_probe::{ProbeOutcome, refine_normal_quote};
 pub use collateral::{
     CollateralTokenReader, CollateralTokenWriter, MAINNET_XP_TOKEN_ADDRESS, U256Value,
-    build_erc20_approve_call, collateral_allowance_base_units,
+    build_claim_initial_grant_call, build_erc20_approve_call, collateral_allowance_base_units,
 };
 pub use error::{
     ContractError, ContractResult, TradeError, TradeRejectionReason, TradeResult,
     VerificationSubReason, parse_revert_reason,
 };
-pub use execution::{Call, ExecutionReceipt};
+pub use execution::{Call, ExecutionReceipt, SimOutcome};
 pub use factory::{FactoryReader, FactoryWriter};
 pub use lognormal_amm::{LognormalMarketReader, LognormalMarketWriter, LognormalTradeQuote};
 #[cfg(feature = "provider")]

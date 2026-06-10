@@ -14,7 +14,7 @@ use deadeye_sdk::{
     starknet::JsonRpcProvider,
 };
 use deadeye_starknet::{
-    Account, Felt, LognormalMarketReader, LognormalMarketWriter, NormalMarketReader,
+    Account, Call, Felt, LognormalMarketReader, LognormalMarketWriter, NormalMarketReader,
     NormalMarketWriter, TradeRejectionReason,
 };
 use serde_json::json;
@@ -34,6 +34,14 @@ use crate::{
     context::AppContext,
     output::OutputMode,
 };
+
+/// Multiplier applied to the offline-computed required collateral when sizing
+/// the amount the trade actually supplies. Collateral is a *returned* margin
+/// lock (not a cost), so over-supplying is free; a margin is required because
+/// the on-chain Q128.128 `collateral_sufficient` check rejects a supply that
+/// equals the f64 estimate on any rounding gap. 5% comfortably covers the
+/// fixed-point delta while staying close to the webapp's buffered collateral.
+const COLLATERAL_BUFFER: f64 = 1.05;
 
 pub(crate) async fn run(action: TradeCmd, ctx: &AppContext, confirm: bool) -> Result<()> {
     match action {
@@ -305,7 +313,7 @@ async fn execute_normal(
         .variance
         .context("--variance required for normal execute")?;
 
-    let quote = if let Some(rt) = runtime {
+    let mut quote = if let Some(rt) = runtime {
         let candidate = deadeye_core::distribution::NormalDistributionRaw {
             mean: Sq128::from_f64(mean)?.to_raw(),
             variance: Sq128::from_f64(variance)?.to_raw(),
@@ -336,6 +344,41 @@ async fn execute_normal(
             .context("quote_candidate_offline preflight")?
     };
 
+    // Size the *supplied* collateral the trade locks. The offline quote's
+    // `padded_collateral` defaults to the bare f64-computed required amount
+    // with **no margin** — which the on-chain Q128.128 `collateral_sufficient`
+    // check rejects (`VERIFICATION_FAILED`) on the slightest rounding gap.
+    // Supply a buffered amount instead (collateral is a *returned* margin lock,
+    // not a cost), capped by the trader's `--max-collateral` ceiling. This
+    // mirrors `trade quote`'s `execute_hint` and the webapp's buffered trade
+    // collateral. Skipped for the `--runtime` path, which already supplies
+    // `--max-collateral` and was validated by `check_trade_view`.
+    if runtime.is_none() && quote.on_chain_will_accept {
+        let required = Sq128::from_raw(quote.required_collateral).to_f64();
+        let target = required * COLLATERAL_BUFFER;
+        let supplied = if args.max_collateral >= target {
+            target
+        } else if args.max_collateral >= required {
+            args.max_collateral
+        } else {
+            anyhow::bail!(
+                "--max-collateral {:.4} is below the required collateral {:.4}; \
+                 raise it to at least ~{:.4} (required × {COLLATERAL_BUFFER}) so the \
+                 on-chain collateral check clears",
+                args.max_collateral,
+                required,
+                target,
+            );
+        };
+        quote.padded_collateral = Sq128::from_f64(supplied)?.to_raw();
+    }
+
+    // Diagnostic override of x* (collateral point) to probe the on-chain
+    // verifier's stationary check.
+    if let Some(xs) = args.x_star {
+        quote.x_star = Sq128::from_f64(xs)?.to_raw();
+    }
+
     if !quote.on_chain_will_accept {
         let rejection = quote.rejection.as_ref().map(pretty_rejection);
         let result = SubmissionResult {
@@ -350,7 +393,86 @@ async fn execute_normal(
         return ctx.renderer.print(&result);
     }
 
-    if !confirm
+    let account = build_owned_account(ctx)?;
+    let writer_provider = build_provider(ctx)?;
+    let writer =
+        NormalMarketWriter::new(NormalMarketReader::new(&writer_provider, market), account);
+
+    // Chain-probe `x*` refinement (issue #13 root cause). The AMM verifies
+    // stationarity of the λ-scaled PDF difference in its own fixed-point
+    // arithmetic, whose acceptance window (≈1e-7 wide in x) sits slightly off
+    // the f64 root the off-chain solver finds — so a mathematically-perfect
+    // x* still reverts with VERIFICATION_FAILED. Probe `check_trade_view`
+    // (gas-free, simulated against the market's own runtime class) around the
+    // f64 root and adopt the x* + collateral the chain itself certifies.
+    if args.x_star.is_none() {
+        match deadeye_starknet::chain_probe::refine_normal_quote(
+            writer.account(),
+            writer.reader(),
+            &quote,
+        )
+        .await
+        {
+            Ok(Some(outcome)) => {
+                let chain_required = Sq128::from_raw(outcome.computed_collateral).to_f64();
+                // `execute_trade` deducts deposit fees from the supplied
+                // amount and verifies the NET against the requirement —
+                // gross up by the measured net rate, plus a thin margin.
+                let gross_needed = chain_required / outcome.net_rate;
+                let buffered = gross_needed * 1.002;
+                if buffered > args.max_collateral {
+                    anyhow::bail!(
+                        "chain-verified collateral is {chain_required:.4} XP net \
+                         (≈{buffered:.4} XP gross incl. deposit fees), which exceeds \
+                         --max-collateral {:.4}; raise the ceiling",
+                        args.max_collateral,
+                    );
+                }
+                quote.x_star = outcome.x_star;
+                quote.required_collateral = outcome.computed_collateral;
+                quote.padded_collateral = Sq128::from_f64(buffered)?.to_raw();
+                if ctx.renderer.mode() != OutputMode::Json {
+                    eprintln!(
+                        "chain probe: certified x* (offset {:+.3e}, {} round(s)); \
+                         collateral {chain_required:.4} XP net → supplying {buffered:.4} \
+                         XP gross (fees {:.2}%)",
+                        outcome.offset,
+                        outcome.rounds,
+                        (1.0 - outcome.net_rate) * 100.0,
+                    );
+                }
+            },
+            Ok(None) => {
+                ctx.renderer.warning(
+                    "chain probe could not certify an x* near the off-chain solution; \
+                     submitting unrefined (the pre-submit simulation still blocks a \
+                     reverting trade before any gas is spent)",
+                );
+            },
+            Err(e) => {
+                ctx.renderer.warning(&format!(
+                    "chain probe unavailable ({e}); submitting unrefined (the pre-submit \
+                     simulation still blocks a reverting trade before any gas is spent)"
+                ));
+            },
+        }
+    }
+
+    // Fresh-wallet bootstrap: if the wallet's XP balance can't cover the
+    // gross supply and its one-shot initial grant is unclaimed, bundle
+    // `claim_initial_grant()` into the same atomic multicall so a brand-new
+    // agent wallet can claim + approve + trade in a single transaction.
+    let leading = bootstrap_grant_calls(
+        &writer_provider,
+        writer.reader(),
+        deadeye_starknet::Account::address(writer.account()),
+        Sq128::from_raw(quote.padded_collateral).to_f64(),
+        ctx,
+    )
+    .await;
+
+    if !args.dry_run
+        && !confirm
         && std::io::IsTerminal::is_terminal(&std::io::stdin())
         && ctx.renderer.mode() != OutputMode::Json
     {
@@ -362,19 +484,30 @@ async fn execute_normal(
             Sq128::from_raw(quote.candidate.variance).to_f64()
         );
         eprintln!(
-            "  required collateral: ~{:.4} STRK",
+            "  required collateral: ~{:.4} XP",
             Sq128::from_raw(quote.required_collateral).to_f64()
         );
-        eprintln!("  supplied:  {:.4} STRK", args.max_collateral);
+        eprintln!(
+            "  supplied:  {:.4} XP",
+            Sq128::from_raw(quote.padded_collateral).to_f64()
+        );
         super::confirm_or_bail("Continue?")?;
     }
 
-    let account = build_owned_account(ctx)?;
-    let writer_provider = build_provider(ctx)?;
-    let writer =
-        NormalMarketWriter::new(NormalMarketReader::new(&writer_provider, market), account);
+    // `--dry-run`: simulate the full multicall gas-free and stop.
+    if args.dry_run {
+        let mut calls = leading.clone();
+        calls.extend(
+            writer
+                .build_trade_calls(&quote)
+                .await
+                .map_err(|e| anyhow::anyhow!("build trade calls: {e}"))?,
+        );
+        let result = dry_run_render(market, writer.account(), &calls).await;
+        return ctx.renderer.print(&result);
+    }
 
-    let result = match writer.execute_quote(quote).await {
+    let result = match writer.execute_quote_bundled(quote, leading).await {
         Ok(receipt) => {
             if let Some(path) = &args.journal {
                 let _ = append_normal_journal(path, market, &writer, &quote, receipt);
@@ -384,6 +517,47 @@ async fn execute_normal(
         Err(e) => submission_from_trade_error("trade", format!("{market:#x}"), &e),
     };
     ctx.renderer.print(&result)
+}
+
+/// Decide whether the trade multicall needs a leading `claim_initial_grant()`
+/// to bootstrap a fresh wallet: returns `[claim]` when the trader's XP
+/// balance cannot cover `gross_supply` AND the one-shot grant is unclaimed,
+/// `[]` otherwise (including on read failures — the pre-submit simulation
+/// remains the safety net).
+async fn bootstrap_grant_calls<P>(
+    provider: &P,
+    reader: &deadeye_starknet::NormalMarketReader<&P>,
+    trader: Felt,
+    gross_supply: f64,
+    ctx: &AppContext,
+) -> Vec<deadeye_starknet::Call>
+where
+    P: deadeye_starknet::Provider + Sync,
+{
+    let Ok(config) = reader.config().await else {
+        return Vec::new();
+    };
+    let token = deadeye_starknet::CollateralTokenReader::new(provider, config.collateral_token);
+    let (Ok(balance), Ok(claimed)) = (
+        token.balance_of(trader).await,
+        token.has_claimed_initial_grant(trader).await,
+    ) else {
+        return Vec::new();
+    };
+    #[expect(clippy::cast_precision_loss, reason = "balance compare is approximate")]
+    let balance_xp = balance.low() as f64 / 10f64.powi(i32::from(config.token_decimals));
+    if balance.high() > 0 || balance_xp >= gross_supply || claimed {
+        return Vec::new();
+    }
+    if ctx.renderer.mode() != OutputMode::Json {
+        eprintln!(
+            "fresh wallet: balance {balance_xp:.4} XP < supply {gross_supply:.4} XP and the \
+             initial grant is unclaimed — bundling claim_initial_grant() into the multicall"
+        );
+    }
+    vec![deadeye_starknet::build_claim_initial_grant_call(
+        config.collateral_token,
+    )]
 }
 
 async fn execute_lognormal(
@@ -427,7 +601,8 @@ async fn execute_lognormal(
         return ctx.renderer.print(&result);
     }
 
-    if !confirm
+    if !args.dry_run
+        && !confirm
         && std::io::IsTerminal::is_terminal(&std::io::stdin())
         && ctx.renderer.mode() != OutputMode::Json
     {
@@ -441,6 +616,16 @@ async fn execute_lognormal(
         LognormalMarketReader::new(&writer_provider, market),
         account,
     );
+
+    // `--dry-run`: simulate the [approve, trade] multicall gas-free and stop.
+    if args.dry_run {
+        let calls = writer
+            .build_trade_calls(&quote)
+            .await
+            .map_err(|e| anyhow::anyhow!("build trade calls: {e}"))?;
+        let result = dry_run_render(market, writer.account(), &calls).await;
+        return ctx.renderer.print(&result);
+    }
 
     let result = match writer.execute_quote(quote).await {
         Ok(receipt) => submission_from_receipt("trade", format!("{market:#x}"), receipt),
@@ -494,6 +679,52 @@ fn journal_cmd(ctx: &AppContext, args: TradeJournalArgs) -> Result<()> {
         },
     }
     Ok(())
+}
+
+/// Convert a fee in FRI (10⁻¹⁸ STRK) to a human STRK amount for display.
+fn fri_to_strk(fri: u128) -> f64 {
+    #[expect(clippy::cast_precision_loss, reason = "fee is for display only")]
+    let strk = fri as f64 / 1e18_f64;
+    strk
+}
+
+/// Run a **gas-free** chain simulation of the `[approve, trade]` multicall and
+/// render the verdict — the `--dry-run` path. Never submits.
+async fn dry_run_render<A: Account>(market: Felt, account: &A, calls: &[Call]) -> SubmissionResult {
+    let market_s = format!("{market:#x}");
+    let base = |accepted: bool, note: String| SubmissionResult {
+        action: "trade(dry-run)",
+        market: market_s.clone(),
+        tx_hash: None,
+        call_count: Some(calls.len()),
+        accepted,
+        rejection: None,
+        note: Some(note),
+    };
+    match account.simulate(calls).await {
+        Ok(Some(sim)) => match sim.revert_reason {
+            Some(reason) => base(
+                false,
+                format!(
+                    "DRY RUN — multicall WOULD REVERT on-chain: {reason}. \
+                     No transaction submitted, no gas spent."
+                ),
+            ),
+            None => base(
+                true,
+                format!(
+                    "DRY RUN — simulation OK (≈{:.6} STRK est. fee). \
+                     Re-run without --dry-run to submit.",
+                    fri_to_strk(sim.estimated_fee)
+                ),
+            ),
+        },
+        Ok(None) => base(
+            false,
+            "DRY RUN — this account type cannot simulate (no provider-backed signer).".into(),
+        ),
+        Err(e) => base(false, format!("DRY RUN — simulation call failed: {e}")),
+    }
 }
 
 fn default_journal_path() -> Result<std::path::PathBuf> {

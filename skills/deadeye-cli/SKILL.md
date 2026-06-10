@@ -162,6 +162,31 @@ confirmation (skip with the global `--confirm`), submits the trade, and appends
 to the journal on success. `--max-collateral` is a hard ceiling in XP — the
 trade aborts if the fresh quote exceeds it. Keep it ≤ your budget.
 
+Under the hood, execute is **verified against the chain before any gas is
+spent**:
+
+1. **Chain probe** — the AMM verifies `x*` in its own fixed-point arithmetic,
+   whose acceptance window sits slightly off the mathematically-true point.
+   Execute runs a gas-free simulation against the market's own math-runtime
+   class and Newton-refines `x*` until the chain itself certifies it, then
+   sizes the collateral from the chain's exact requirement (grossed up for the
+   deposit fee).
+2. **Fresh-wallet bootstrap** — if your XP balance can't cover the trade and
+   your one-shot initial grant is unclaimed, `claim_initial_grant()` is bundled
+   into the same atomic multicall (claim → approve → trade).
+3. **Simulation gate** — the final multicall is simulated first; a
+   would-revert trade is rejected with the raw on-chain reason and **zero gas
+   spent**.
+
+Add `--dry-run` to stop after step 3 and print the verdict (estimated fee on
+success, exact revert reason on failure) **without submitting anything** — no
+gas, no signature needed:
+
+```bash
+deadeye trade execute <MARKET_ADDR> --mean <MU'> --variance <VAR'> \
+    --max-collateral <XP_CAP> --dry-run
+```
+
 Afterwards:
 
 ```bash

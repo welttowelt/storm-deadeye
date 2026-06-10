@@ -114,6 +114,8 @@ async fn trade_from_snapshot(
         max_collateral: args.max_collateral,
         runtime: args.runtime,
         journal: args.journal,
+        dry_run: args.dry_run,
+        x_star: None,
     };
     super::trade::execute(ctx, execute_args, confirm).await
 }

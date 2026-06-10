@@ -91,6 +91,35 @@ where
             .await
     }
 
+    /// Reads the chain's **canonical** sqrt hints for the *current* market
+    /// distribution (`get_distribution_hints`).
+    ///
+    /// These are the byte-exact `(l2_norm_denom, backing_denom)` the on-chain
+    /// verifier derives for the live σ. Comparing them against the off-chain
+    /// [`crate::runtime::compute_normal_hints`] / SDK offline hints is the
+    /// ground-truth parity check for a `VERIFICATION_FAILED` trade revert.
+    #[instrument(skip(self), fields(market = %self.address))]
+    pub async fn distribution_hints(&self) -> ContractResult<NormalSqrtHintsRaw> {
+        self.call_view::<NormalSqrtHintsRaw>(
+            "get_distribution_hints",
+            amm::get_distribution_hints(),
+            &[],
+        )
+        .await
+    }
+
+    /// Reads the class hash of the math runtime this market library-calls for
+    /// trade verification (`get_runtime_class_hash`).
+    ///
+    /// The chain-probe refinement deploys exactly this class inside a gas-free
+    /// simulation so the `check_trade_view` verdicts it reads are guaranteed to
+    /// match what `execute_trade` will enforce.
+    #[instrument(skip(self), fields(market = %self.address))]
+    pub async fn runtime_class_hash(&self) -> ContractResult<Felt> {
+        self.call_view::<Felt>("get_runtime_class_hash", amm::get_runtime_class_hash(), &[])
+            .await
+    }
+
     /// Reads the LP pool info (total shares + total backing).
     #[instrument(skip(self), fields(market = %self.address))]
     pub async fn lp_info(&self) -> ContractResult<LpInfoRaw> {
@@ -670,8 +699,16 @@ where
     /// (`on_chain_will_accept = false`) or if the on-chain call reverts;
     /// reverts get promoted into a typed [`TradeError::Rejected`] arm so
     /// callers can branch on `TradeRejectionReason`.
-    #[instrument(skip(self, quote), fields(market = %self.reader.address(), family = "normal", kind = "trade", accepts = quote.on_chain_will_accept))]
-    pub async fn execute_quote(&self, quote: NormalTradeQuote) -> TradeResult<ExecutionReceipt> {
+    /// Build the atomic `[approve, trade]` multicall a quote submits, without
+    /// sending it.
+    ///
+    /// Reads the market's collateral config (token address + decimals) to size
+    /// an ERC-20 `approve` of the collateral token to the market — the leading
+    /// call that lets the AMM's `transfer_from` of the trader's collateral
+    /// succeed (issue #13) — then appends the `execute_trade` call. Exposed so
+    /// callers can **simulate** the calls gas-free (e.g. a `--dry-run`) before
+    /// deciding to submit.
+    pub async fn build_trade_calls(&self, quote: &NormalTradeQuote) -> TradeResult<Vec<Call>> {
         if !quote.on_chain_will_accept {
             return Err(TradeError::Rejected {
                 reason: quote.rejection.unwrap_or(TradeRejectionReason::Other {
@@ -683,10 +720,6 @@ where
                 },
             });
         }
-        // Bundle an ERC-20 `approve` of the collateral token to the market
-        // into the SAME atomic multicall as the trade, so the AMM's
-        // `transfer_from` of the trader's collateral succeeds (issue #13).
-        // The approve is sized to the padded collateral + a margin.
         let config = self
             .reader
             .config()
@@ -707,8 +740,56 @@ where
             supplied_collateral: quote.padded_collateral,
             candidate_hints: quote.candidate_hints,
         });
+        Ok(vec![approve, trade])
+    }
+
+    /// Submit a quote previously prepared by
+    /// [`NormalMarketReader::quote_trade`].
+    ///
+    /// Builds the `[approve, trade]` multicall, runs a **gas-free** chain
+    /// simulation first, and refuses to submit if the sequencer reports the
+    /// call would revert — surfacing the raw Cairo reason as a typed rejection
+    /// instead of burning a fee on a reverted transaction (issue #13).
+    #[instrument(skip(self, quote), fields(market = %self.reader.address(), family = "normal", kind = "trade", accepts = quote.on_chain_will_accept))]
+    pub async fn execute_quote(&self, quote: NormalTradeQuote) -> TradeResult<ExecutionReceipt> {
+        self.execute_quote_bundled(quote, Vec::new()).await
+    }
+
+    /// [`Self::execute_quote`] with extra `leading` calls prepended to the
+    /// `[approve, trade]` multicall — e.g. a `claim_initial_grant()` that
+    /// bootstraps a fresh wallet's collateral atomically with its first trade.
+    /// The same simulate-before-submit gate applies to the full bundle.
+    #[instrument(skip(self, quote, leading), fields(market = %self.reader.address(), family = "normal", kind = "trade", leading = leading.len()))]
+    pub async fn execute_quote_bundled(
+        &self,
+        quote: NormalTradeQuote,
+        leading: Vec<Call>,
+    ) -> TradeResult<ExecutionReceipt> {
+        let mut calls = leading;
+        calls.extend(self.build_trade_calls(&quote).await?);
+        // Gas-free pre-flight: refuse a doomed submission *before* it burns a
+        // fee. If the account can simulate and the sequencer says the multicall
+        // reverts, surface the raw Cairo reason as a typed rejection instead of
+        // letting an on-chain `Result::unwrap failed` cost the trader gas.
+        if let Some(sim) = self
+            .account
+            .simulate(&calls)
+            .await
+            .map_err(TradeError::from_contract)?
+            && let Some(reason) = sim.revert_reason
+        {
+            return Err(TradeError::Rejected {
+                reason: TradeRejectionReason::Other {
+                    raw: "on-chain simulation reverted",
+                },
+                source: ContractError::InvalidResponse {
+                    call: "execute_trade(simulated)",
+                    message: reason,
+                },
+            });
+        }
         self.account
-            .execute(vec![approve, trade])
+            .execute(calls)
             .await
             .map_err(TradeError::from_contract)
     }
@@ -1088,5 +1169,312 @@ mod tests {
         assert!(s.d_payout_d_sigma.is_finite());
         // At x* = 0.5 > μ = 0, raising μ moves it closer to x*, raising payout.
         assert!(s.d_payout_d_mu > 0.0, "got {s:?}");
+    }
+
+    /// DIAGNOSTIC: deploy a normal-math-runtime instance inside a simulation
+    /// and call `check_trade_view` for the live CPI market to read the exact
+    /// `TradeCheckRaw` sub-flags (no gas, no real signature). Run with:
+    /// `DEADEYE_LIVE_SIM=1 cargo test -p deadeye-starknet --all-features \
+    ///   live_check_trade_flags -- --ignored --nocapture`
+    #[tokio::test]
+    #[ignore = "live mainnet simulation — run manually with DEADEYE_LIVE_SIM=1"]
+    #[expect(
+        clippy::print_stderr,
+        clippy::panic,
+        clippy::suboptimal_flops,
+        reason = "diagnostic tool"
+    )]
+    async fn live_check_trade_flags() {
+        use deadeye_core::{Distribution as _, Sq128};
+        use starknet_accounts::{Account as _, ExecutionEncoding, SingleOwnerAccount};
+        use starknet_core::{
+            types::{
+                BlockId, BlockTag, Call, ExecuteInvocation, FunctionInvocation, TransactionTrace,
+            },
+            utils::{UdcUniqueness, get_selector_from_name, get_udc_deployed_address},
+        };
+        use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
+        use starknet_signers::{LocalWallet, SigningKey};
+
+        fn env_f64(key: &str, default: f64) -> f64 {
+            std::env::var(key)
+                .ok()
+                .and_then(|v| v.parse().ok())
+                .unwrap_or(default)
+        }
+        if std::env::var("DEADEYE_LIVE_SIM").is_err() {
+            eprintln!("skipped (set DEADEYE_LIVE_SIM=1)");
+            return;
+        }
+        let rpc = "https://api.zan.top/public/starknet-mainnet/rpc/v0_10";
+        let market =
+            Felt::from_hex("0x00ba9a4b3eee835820fa0d0a5470876068a9fd423d2fe2ac9b1ff7b1e6d6c1ff")
+                .unwrap();
+        let runtime_class =
+            Felt::from_hex("0x112f893233ffdfcd3ed8e41af8e3d08c901362a8deef80983fe4d36e3cd824f")
+                .unwrap();
+        let udc =
+            Felt::from_hex("0x041a78e741e5af2fec34b695679bc6891742439f7afb8484ecd7766661ad02bf")
+                .unwrap();
+        let deployer =
+            Felt::from_hex("0x77b277249a962ad47b04cc60bda09625c1258bbcc3dbab613d23a68833d8f0")
+                .unwrap();
+        let url = url::Url::parse(rpc).unwrap();
+        let read_provider =
+            crate::JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(url.clone())));
+        let reader = NormalMarketReader::new(&read_provider, market);
+        let current = reader.distribution().await.unwrap().to_raw();
+        let params = reader.params().await.unwrap();
+        let current_hints = reader.distribution_hints().await.unwrap();
+
+        // Candidate σ-tighten + offline hints.
+        let cand_dist = deadeye_core::NormalDistribution::from_variance(
+            Sq128::from_f64(env_f64("DEADEYE_CAND_MU", 4.174)).unwrap(),
+            Sq128::from_f64(env_f64("DEADEYE_CAND_VAR", 0.0144)).unwrap(),
+        )
+        .unwrap();
+        let candidate = cand_dist.to_raw();
+        let sigma_g = cand_dist.sigma().to_f64();
+        let sqrt_pi = core::f64::consts::PI.sqrt();
+        let candidate_hints = NormalSqrtHintsRaw {
+            l2_norm_denom: Sq128::from_f64((2.0 * sigma_g * sqrt_pi).sqrt())
+                .unwrap()
+                .to_raw(),
+            backing_denom: Sq128::from_f64((sigma_g * sqrt_pi).sqrt())
+                .unwrap()
+                .to_raw(),
+        };
+        let x_star_f64 = env_f64("DEADEYE_XSTAR", 4.405_769_206_389_262);
+        let x_star = Sq128::from_f64(x_star_f64).unwrap().to_raw();
+        let supplied = Sq128::from_f64(500.0).unwrap().to_raw();
+
+        // Encode check_trade_view(current, candidate, x_star, supplied, k, backing,
+        // tolerance, min_trade_collateral, current_hints, candidate_hints).
+        let mut cd = Vec::new();
+        current.encode(&mut cd);
+        candidate.encode(&mut cd);
+        x_star.encode(&mut cd);
+        supplied.encode(&mut cd);
+        params.k.encode(&mut cd);
+        params.backing.encode(&mut cd);
+        params.tolerance.encode(&mut cd);
+        params.min_trade_collateral.encode(&mut cd);
+        current_hints.encode(&mut cd);
+        candidate_hints.encode(&mut cd);
+
+        let salt = Felt::from(987_654_321_u64);
+        let deployed =
+            get_udc_deployed_address(salt, runtime_class, &UdcUniqueness::NotUnique, &[]);
+        let deploy_call = Call {
+            to: udc,
+            selector: get_selector_from_name("deployContract").unwrap(),
+            calldata: vec![runtime_class, salt, Felt::ZERO, Felt::ZERO],
+        };
+        let check_sel = get_selector_from_name("check_trade_view").unwrap();
+        let lambda_sel = get_selector_from_name("compute_lambda_view").unwrap();
+        let mut lam_cd_f = Vec::new();
+        current.encode(&mut lam_cd_f);
+        params.k.encode(&mut lam_cd_f);
+        let mut lam_cd_g = Vec::new();
+        candidate.encode(&mut lam_cd_g);
+        params.k.encode(&mut lam_cd_g);
+
+        // x* sweep offsets around the f64 solver's value.
+        let base_x = x_star_f64;
+        let off_env = std::env::var("DEADEYE_SWEEP").unwrap_or_default();
+        let offsets: Vec<f64> = if off_env == "pos" {
+            vec![5e-8, 1e-7, 2e-7, 4e-7, 6e-7, 8e-7, 1.2e-6]
+        } else if off_env == "neg" {
+            vec![-1.2e-6, -8e-7, -6e-7, -4e-7, -2e-7, -1e-7, -5e-8]
+        } else if off_env == "pos2" {
+            vec![2e-6, 4e-6, 8e-6, 2e-5, 6e-5, 2e-4, 6e-4]
+        } else {
+            vec![-1e-2, -1e-3, -3e-7, -1e-7, 0.0, 1e-7, 3e-7, 1e-3, 1e-2]
+        };
+        // pdf oracle: a lot with from_λ=0, to_λ=1 makes
+        // compute_trade_lot_value_view(lot, x) return the chain's pdf_to(x).
+        let lot_sel = get_selector_from_name("compute_trade_lot_value_view").unwrap();
+        let one = Sq128::from_i128(1).to_raw();
+        let zero = Sq128::ZERO.to_raw();
+        let pdf_probe = |dist: &NormalDistributionRaw, x: Sq128Raw| -> Call {
+            let mut c = Vec::with_capacity(53);
+            c.push(Felt::ZERO); // lot_id: u64
+            c.push(Felt::ZERO); // trader
+            zero.encode(&mut c); // collateral_locked
+            dist.mean.encode(&mut c); // from_* (λ=0 ⇒ ignored value-wise)
+            dist.variance.encode(&mut c);
+            dist.sigma.encode(&mut c);
+            zero.encode(&mut c); // from_lambda = 0
+            dist.mean.encode(&mut c); // to_*
+            dist.variance.encode(&mut c);
+            dist.sigma.encode(&mut c);
+            one.encode(&mut c); // to_lambda = 1
+            c.push(Felt::ONE); // flags: u8 = NORMAL_LOT_FLAG_EXISTS
+            x.encode(&mut c);
+            Call {
+                to: deployed,
+                selector: lot_sel,
+                calldata: c,
+            }
+        };
+        let x0_raw = Sq128::from_f64(base_x).unwrap().to_raw();
+        let mut calls = vec![
+            deploy_call,
+            Call {
+                to: deployed,
+                selector: lambda_sel,
+                calldata: lam_cd_f,
+            },
+            Call {
+                to: deployed,
+                selector: lambda_sel,
+                calldata: lam_cd_g,
+            },
+            pdf_probe(&current, x0_raw),
+            pdf_probe(&candidate, x0_raw),
+        ];
+        for off in &offsets {
+            let xs = Sq128::from_f64(base_x + off).unwrap().to_raw();
+            let mut c = Vec::new();
+            current.encode(&mut c);
+            candidate.encode(&mut c);
+            xs.encode(&mut c);
+            supplied.encode(&mut c);
+            params.k.encode(&mut c);
+            params.backing.encode(&mut c);
+            params.tolerance.encode(&mut c);
+            params.min_trade_collateral.encode(&mut c);
+            current_hints.encode(&mut c);
+            candidate_hints.encode(&mut c);
+            calls.push(Call {
+                to: deployed,
+                selector: check_sel,
+                calldata: c,
+            });
+        }
+        let _ = cd;
+
+        let acct_provider = JsonRpcClient::new(HttpTransport::new(url));
+        let signer = LocalWallet::from(SigningKey::from_secret_scalar(Felt::from(2_u32)));
+        let chain_id = Felt::from_hex("0x534e5f4d41494e").unwrap();
+        let mut account = SingleOwnerAccount::new(
+            acct_provider,
+            signer,
+            deployer,
+            chain_id,
+            ExecutionEncoding::New,
+        );
+        account.set_block_id(BlockId::Tag(BlockTag::PreConfirmed));
+
+        let sim = account
+            .execute_v3(calls)
+            .simulate(true, true)
+            .await
+            .expect("simulate");
+        let TransactionTrace::Invoke(inv) = sim.transaction_trace else {
+            panic!("not an invoke trace");
+        };
+        let top = match inv.execute_invocation {
+            ExecuteInvocation::Success(f) => f,
+            ExecuteInvocation::Reverted(r) => panic!("execute reverted: {}", r.revert_reason),
+        };
+        // top.calls are the multicall entries in order: [deploy, λf, λg, check×N].
+        let inner: Vec<&FunctionInvocation> = top.calls.iter().collect();
+        let decode_lambda = |li: &FunctionInvocation| -> f64 {
+            // Option<Sq128Raw> → [0]=Some tag (0), then Sq128.
+            let r = &li.result;
+            if r.first() == Some(&Felt::ZERO) {
+                let (sq, _) = deadeye_core::sq128::Sq128Raw::decode(&r[1..]).unwrap();
+                Sq128::from_raw(sq).to_f64()
+            } else {
+                f64::NAN
+            }
+        };
+        let dl = |s: f64| -> f64 { 200.0 * (2.0 * s * core::f64::consts::PI.sqrt()).sqrt() };
+        eprintln!(
+            "market mu       = {:.17}",
+            Sq128::from_raw(current.mean).to_f64()
+        );
+        eprintln!(
+            "market sigma    = {:.17}",
+            Sq128::from_raw(current.sigma).to_f64()
+        );
+        eprintln!(
+            "market variance = {:.17}",
+            Sq128::from_raw(current.variance).to_f64()
+        );
+        eprintln!(
+            "tolerance       = {:.10e}",
+            Sq128::from_raw(params.tolerance).to_f64()
+        );
+        eprintln!(
+            "cand mu={:.6} var={:.8} sigma={:.12}",
+            Sq128::from_raw(candidate.mean).to_f64(),
+            Sq128::from_raw(candidate.variance).to_f64(),
+            sigma_g
+        );
+        let lambda_f = decode_lambda(inner[1]);
+        let lambda_g = decode_lambda(inner[2]);
+        eprintln!("chain lambda_f = {lambda_f:.8}");
+        eprintln!("chain lambda_g = {lambda_g:.8}");
+        eprintln!(
+            "deadeye lambda_f = {:.8}",
+            dl(Sq128::from_raw(current.sigma).to_f64())
+        );
+        eprintln!("deadeye lambda_g = {:.8}", dl(sigma_g));
+        // pdf parity: chain pdf via the lot-value oracle vs true (f64) pdf.
+        let decode_sq = |li: &FunctionInvocation| -> f64 {
+            // Option<Sq128Raw>: first felt is the Some(0)/None(1) tag.
+            assert_eq!(
+                li.result.first(),
+                Some(&Felt::ZERO),
+                "lot view returned None"
+            );
+            let (sq, _) = deadeye_core::sq128::Sq128Raw::decode(&li.result[1..]).unwrap();
+            Sq128::from_raw(sq).to_f64()
+        };
+        let chain_pdf_f = decode_sq(inner[3]);
+        let chain_pdf_g = decode_sq(inner[4]);
+        let true_pdf = |mu: f64, s: f64, x: f64| -> f64 {
+            let z = (x - mu) / s;
+            (-0.5 * z * z).exp() / (s * (2.0 * core::f64::consts::PI).sqrt())
+        };
+        let mu_f = Sq128::from_raw(current.mean).to_f64();
+        let s_f = Sq128::from_raw(current.sigma).to_f64();
+        let mu_g = Sq128::from_raw(candidate.mean).to_f64();
+        let tf = true_pdf(mu_f, s_f, base_x);
+        let tg = true_pdf(mu_g, sigma_g, base_x);
+        eprintln!(
+            "pdf_f  chain={chain_pdf_f:.17}  true={tf:.17}  rel_err={:.3e}",
+            (chain_pdf_f - tf) / tf
+        );
+        eprintln!(
+            "pdf_g  chain={chain_pdf_g:.17}  true={tg:.17}  rel_err={:.3e}",
+            (chain_pdf_g - tg) / tg
+        );
+        // Reconstruct the chain's d'(x0) from its own pdf values:
+        // d' = λg·(-(x-μg)/σg²)·pdf_g − λf·(-(x-μf)/σf²)·pdf_f
+        let var_f = Sq128::from_raw(current.variance).to_f64();
+        let var_g = Sq128::from_raw(candidate.variance).to_f64();
+        let chain_dprime = lambda_g * (-(base_x - mu_g) / var_g) * chain_pdf_g
+            - lambda_f * (-(base_x - mu_f) / var_f) * chain_pdf_f;
+        let true_dprime =
+            lambda_g * (-(base_x - mu_g) / var_g) * tg - lambda_f * (-(base_x - mu_f) / var_f) * tf;
+        eprintln!(
+            "chain d'(x0) ≈ {chain_dprime:.6e}   true d'(x0) = {true_dprime:.6e}   (tol 1e-3)"
+        );
+        eprintln!("--- stationary sweep around x*={base_x:.12} ---");
+        for (i, off) in offsets.iter().enumerate() {
+            let r = &inner[5 + i].result;
+            let (check, _) = crate::types::normal::TradeCheckRaw::decode(r).unwrap();
+            eprintln!(
+                "off={off:+.1e}  stationary={}  side={}  curv={}  collat_suff={}  computed_collat={:.4}",
+                check.verification.stationary_valid,
+                check.verification.side_valid,
+                check.verification.curvature_valid,
+                check.verification.collateral_sufficient,
+                Sq128::from_raw(check.verification.computed_collateral).to_f64(),
+            );
+        }
     }
 }

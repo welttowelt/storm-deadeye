@@ -157,6 +157,22 @@ async fn show_normal(
     let lp = wrap("lp_info", lp_r)?;
     let fees = wrap("fee_config", fees_r)?;
     let status = status_r.ok();
+    // Hint parity: the chain's canonical sqrt hints for the live σ vs the
+    // off-chain closed form. A divergence here is the systemic cause of a
+    // `VERIFICATION_FAILED` trade revert.
+    let chain_hints = reader.distribution_hints().await.ok();
+    let sigma = dist.sigma().to_f64();
+    let sqrt_pi = core::f64::consts::PI.sqrt();
+    let l2_offline = (2.0 * sigma * sqrt_pi).sqrt();
+    let backing_offline = (sigma * sqrt_pi).sqrt();
+    let hints_json = chain_hints.map(|h| {
+        json!({
+            "chain_l2_norm_denom": Sq128::from_raw(h.l2_norm_denom).to_f64(),
+            "chain_backing_denom": Sq128::from_raw(h.backing_denom).to_f64(),
+            "offline_l2_norm_denom": l2_offline,
+            "offline_backing_denom": backing_offline,
+        })
+    });
     Ok(MarketShowView {
         address: address.to_owned(),
         family: "normal".to_owned(),
@@ -164,6 +180,7 @@ async fn show_normal(
             "mu": dist.mean().to_f64(),
             "sigma": dist.sigma().to_f64(),
             "variance": dist.variance().to_f64(),
+            "hints": hints_json,
         }),
         params: params_view(params),
         lp_info: lp_view(lp),

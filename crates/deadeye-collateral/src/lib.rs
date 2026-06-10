@@ -311,12 +311,12 @@ pub fn normal_collateral(
     // the chain's bare `μ_f ± 2σ_f` initial guess for two scenarios that
     // the chain accepts but a naïve Newton struggles with:
     //
-    //   * Equal-σ μ-shift: the minimum sits a fraction of σ inside μ_f
-    //     on the side opposite to g; `μ_f ± 2σ_f` lands in a region
-    //     where `d̃''<0` so Newton diverges further into the tail.
-    //   * Same-μ σ-shrink: `d̃` has a local *maximum* at μ_f and twin
-    //     symmetric minima in the tails (≈ √(2 ln(σ_f/σ_g))·σ_f σ_g /
-    //     √(σ_f² − σ_g²) units out). A grid scan finds these reliably.
+    //   * Equal-σ μ-shift: the minimum sits a fraction of σ inside μ_f on the side
+    //     opposite to g; `μ_f ± 2σ_f` lands in a region where `d̃''<0` so Newton
+    //     diverges further into the tail.
+    //   * Same-μ σ-shrink: `d̃` has a local *maximum* at μ_f and twin symmetric
+    //     minima in the tails (≈ √(2 ln(σ_f/σ_g))·σ_f σ_g / √(σ_f² − σ_g²) units
+    //     out). A grid scan finds these reliably.
     //
     // The grid spans ±6 of the larger σ (matching the chain's implicit
     // numerical envelope for normals) and uses 96 samples — overkill for
@@ -409,13 +409,13 @@ fn find_grid_seed(
 /// `packages/newton/src/lib.cairo:173-233`.
 ///
 /// Key safeguards (matching Cairo):
-/// 1. Step clamp: `|step| ≤ 0.5 · max(1, |x|)` per iteration. Without this
-///    the iteration can jump wildly when far from the minimum (this was the
-///    root cause of the `NewtonDidNotConverge` failures for `N(42,64) →
-///    N(43,64)`-style trades — `μ_f − 2σ_f = 26` has `d''<0` and the raw
-///    Newton step shoots tens of σ deep into the tail).
-/// 2. Convergence: `|d'(x)| < tolerance · scale`, NOT `|Δx| < tolerance`.
-///    The scale factor `max(λ_f, λ_g, 1)` accounts for lambda-scaling.
+/// 1. Step clamp: `|step| ≤ 0.5 · max(1, |x|)` per iteration. Without this the
+///    iteration can jump wildly when far from the minimum (this was the root
+///    cause of the `NewtonDidNotConverge` failures for `N(42,64) →
+///    N(43,64)`-style trades — `μ_f − 2σ_f = 26` has `d''<0` and the raw Newton
+///    step shoots tens of σ deep into the tail).
+/// 2. Convergence: `|d'(x)| < tolerance · scale`, NOT `|Δx| < tolerance`. The
+///    scale factor `max(λ_f, λ_g, 1)` accounts for lambda-scaling.
 /// 3. Minimum second-derivative gate at ≈ 2⁻⁶⁰.
 fn newton_minimise_scaled(
     f: &NormalDistribution,
@@ -661,5 +661,56 @@ mod tests {
         let g = nd(45.0, 49.0); // σ=7
         let result = normal_collateral(&f, &g, MinimizationPolicy::standard()).unwrap();
         assert!(result.collateral >= 0.0, "{result:?}");
+    }
+
+    #[test]
+    #[ignore = "diagnostic probe — run with --ignored --nocapture"]
+    #[expect(clippy::print_stderr, reason = "diagnostic")]
+    fn probe_scaled_stationary_at_offline_xstar() {
+        use deadeye_core::Distribution as _;
+        let sf = 0.191_981_067_900_659_27_f64;
+        let sg = 0.12_f64;
+        let k = 200.0_f64;
+        let f = NormalDistribution::from_sigma(
+            Sq128::from_f64(4.205).unwrap(),
+            Sq128::from_f64(sf).unwrap(),
+        )
+        .unwrap();
+        let g = NormalDistribution::from_variance(
+            Sq128::from_f64(4.174).unwrap(),
+            Sq128::from_f64(0.0144).unwrap(),
+        )
+        .unwrap();
+        let lf = Sq128::from_f64(lambda(sf, k)).unwrap();
+        let lg = Sq128::from_f64(lambda(sg, k)).unwrap();
+        let solved = normal_collateral(&f, &g, MinimizationPolicy::standard()).unwrap();
+        eprintln!("solver x_min = {:.15}", solved.x_min);
+        for (label, xf) in [("solver", solved.x_min), ("hard", 4.405_769_206_389_262)] {
+            let x = Sq128::from_f64(xf).unwrap();
+            let fd = f.pdf_derivative(x).unwrap();
+            let gd = g.pdf_derivative(x).unwrap();
+            let dprime = lg
+                .checked_mul(gd)
+                .unwrap()
+                .checked_sub(lf.checked_mul(fd).unwrap())
+                .unwrap();
+            let fp = f.pdf(x).unwrap();
+            let gp = g.pdf(x).unwrap();
+            let dval = lg
+                .checked_mul(gp)
+                .unwrap()
+                .checked_sub(lf.checked_mul(fp).unwrap())
+                .unwrap();
+            eprintln!(
+                "[{label}] x*={xf:.12}  scaled d'={:.4e}  scaled d(=-collat)={:.4}  (tol=1e-3)",
+                dprime.to_f64(),
+                dval.to_f64(),
+            );
+        }
+        eprintln!(
+            "lambda_f={:.6} lambda_g={:.6}",
+            lambda(sf, k),
+            lambda(sg, k)
+        );
     }
 }

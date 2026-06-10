@@ -271,6 +271,9 @@ pub struct CollateralVerificationRaw {
     pub collateral_sufficient: bool,
     /// Whether the overall computation succeeded.
     pub computation_valid: bool,
+    /// Whether `d(x*) < 0` — the universal argmin-value guard added in the
+    /// v0.13 contracts (the scaled difference at `x*` must be a genuine loss).
+    pub argmin_value_valid: bool,
 }
 
 impl CairoSerde for CollateralVerificationRaw {
@@ -281,6 +284,7 @@ impl CairoSerde for CollateralVerificationRaw {
         self.computed_collateral.encode(out);
         self.collateral_sufficient.encode(out);
         self.computation_valid.encode(out);
+        self.argmin_value_valid.encode(out);
     }
     fn decode(slice: &[Felt]) -> Result<(Self, &[Felt]), CairoSerdeError> {
         let (side_valid, slice) = bool::decode(slice)?;
@@ -289,6 +293,7 @@ impl CairoSerde for CollateralVerificationRaw {
         let (computed_collateral, slice) = Sq128Raw::decode(slice)?;
         let (collateral_sufficient, slice) = bool::decode(slice)?;
         let (computation_valid, slice) = bool::decode(slice)?;
+        let (argmin_value_valid, slice) = bool::decode(slice)?;
         Ok((
             Self {
                 side_valid,
@@ -297,6 +302,7 @@ impl CairoSerde for CollateralVerificationRaw {
                 computed_collateral,
                 collateral_sufficient,
                 computation_valid,
+                argmin_value_valid,
             },
             slice,
         ))

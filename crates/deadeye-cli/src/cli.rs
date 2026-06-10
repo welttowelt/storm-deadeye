@@ -358,6 +358,16 @@ pub(crate) struct TradeExecuteArgs {
     /// Journal path — appends a `Trade` entry on success.
     #[arg(long)]
     pub(crate) journal: Option<std::path::PathBuf>,
+    /// Simulate the `[approve, trade]` multicall on-chain and print the verdict
+    /// **without submitting** (no gas spent, no valid signature required). Use
+    /// it to confirm a trade would land before paying a fee.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
+    /// ADVANCED/DIAGNOSTIC: override the off-chain-computed `x*` (collateral
+    /// point) with an explicit value. Used to probe the on-chain verifier's
+    /// stationary check. Offline path only.
+    #[arg(long, hide = true)]
+    pub(crate) x_star: Option<f64>,
 }
 
 #[derive(Debug, clap::Args)]
@@ -1085,6 +1095,9 @@ pub(crate) struct ForecastTradeArgs {
     /// Journal path — appends a `Trade` entry on success.
     #[arg(long)]
     pub(crate) journal: Option<std::path::PathBuf>,
+    /// Simulate the trade gas-free and print the verdict without submitting.
+    #[arg(long)]
+    pub(crate) dry_run: bool,
 }
 
 /// Stance of an evidence item (CLI shadow of `ledger::Stance`).

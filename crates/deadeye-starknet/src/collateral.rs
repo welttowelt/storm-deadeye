@@ -355,6 +355,24 @@ where
     }
 }
 
+/// Build a standalone `claim_initial_grant()` [`Call`] for `token` (no signer
+/// needed).
+///
+/// Used to bootstrap a fresh wallet inside a trade multicall: when the
+/// trader's XP balance cannot cover the collateral and the one-shot grant is
+/// still unclaimed, the CLI prepends this call so
+/// `[claim, approve, trade]` lands atomically. Reverts on chain if the caller
+/// has already claimed — pre-flight with
+/// [`CollateralTokenReader::has_claimed_initial_grant`].
+#[must_use]
+pub fn build_claim_initial_grant_call(token: Felt) -> Call {
+    Call {
+        to: token,
+        selector: selectors::claim_initial_grant(),
+        calldata: Vec::new(),
+    }
+}
+
 /// Build a standalone ERC-20 `approve(spender, amount)` [`Call`] for `token`
 /// (no signer needed).
 ///

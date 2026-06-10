@@ -7,19 +7,19 @@
 //!
 //! ## Design
 //!
-//! * The trait is intentionally narrow — `address()` and `execute(calls)`.
-//!   This keeps it implementable by mock signers, multi-sig services, MPC
-//!   relayers, etc. without dragging in the upstream `Account` super-trait
-//!   surface (which is sized + tied to `ExecutionEncoder`).
-//! * Returned [`ExecutionReceipt`] carries the transaction hash only; we
-//!   do not block on inclusion. Callers that need a confirmed receipt
-//!   poll via the [`Provider`](crate::Provider).
+//! * The trait is intentionally narrow — `address()` and `execute(calls)`. This
+//!   keeps it implementable by mock signers, multi-sig services, MPC relayers,
+//!   etc. without dragging in the upstream `Account` super-trait surface (which
+//!   is sized + tied to `ExecutionEncoder`).
+//! * Returned [`ExecutionReceipt`] carries the transaction hash only; we do not
+//!   block on inclusion. Callers that need a confirmed receipt poll via the
+//!   [`Provider`](crate::Provider).
 
 use async_trait::async_trait;
 
 use crate::{
     error::ContractResult,
-    execution::{Call, ExecutionReceipt},
+    execution::{Call, ExecutionReceipt, SimOutcome},
 };
 
 /// Minimum surface every signing context must satisfy.
@@ -32,6 +32,19 @@ pub trait Account: Send + Sync {
     /// Does **not** wait for confirmation — the returned receipt carries
     /// only the transaction hash.
     async fn execute(&self, calls: Vec<Call>) -> ContractResult<ExecutionReceipt>;
+
+    /// **Gas-free** chain simulation of `calls` (skip-validate + skip-fee),
+    /// used to catch a reverting transaction *before* it is submitted and
+    /// burns gas.
+    ///
+    /// Returns `Ok(Some(outcome))` when the account can simulate (inspect
+    /// [`SimOutcome::revert_reason`]), or `Ok(None)` for account types that
+    /// cannot simulate (mocks / signers without a provider) — callers treat
+    /// `None` as "unknown, proceed". The default impl returns `None`; concrete
+    /// provider-backed accounts override it.
+    async fn simulate(&self, _calls: &[Call]) -> ContractResult<Option<SimOutcome>> {
+        Ok(None)
+    }
 }
 
 #[async_trait]
@@ -45,6 +58,10 @@ where
 
     async fn execute(&self, calls: Vec<Call>) -> ContractResult<ExecutionReceipt> {
         (*self).execute(calls).await
+    }
+
+    async fn simulate(&self, calls: &[Call]) -> ContractResult<Option<SimOutcome>> {
+        (*self).simulate(calls).await
     }
 }
 
@@ -63,14 +80,14 @@ mod owned {
     use starknet_accounts::{
         Account as _, ConnectedAccount as _, ExecutionEncoding, SingleOwnerAccount,
     };
-    use starknet_core::types::{BlockId, BlockTag, Felt};
+    use starknet_core::types::{BlockId, BlockTag, ExecuteInvocation, Felt, TransactionTrace};
     use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
     use tracing::instrument;
 
     use crate::{
         account::Account,
         error::{ContractError, ContractResult},
-        execution::{Call, ExecutionReceipt},
+        execution::{Call, ExecutionReceipt, SimOutcome},
         nonce::{NonceGuard, NonceManager},
         signer::{DeadeyeSigner, LocalSigner, SignerAdapter},
     };
@@ -109,7 +126,8 @@ mod owned {
         /// Construct an account from any [`DeadeyeSigner`] implementation.
         ///
         /// Use this for HSM/KMS-backed signers, MPC threshold signers,
-        /// or any custodian service exposed via [`crate::signer::RemoteSigner`].
+        /// or any custodian service exposed via
+        /// [`crate::signer::RemoteSigner`].
         #[must_use]
         pub fn with_signer(
             client: JsonRpcClient<HttpTransport>,
@@ -178,18 +196,55 @@ mod owned {
             })
         }
 
+        /// **Gas-free** chain simulation of `calls`.
+        ///
+        /// Runs the multicall through the sequencer with `skip_validate = true`
+        /// (no signature needed — the in-memory signer's signature is ignored)
+        /// and `skip_fee_charge = true` (no STRK balance needed). The returned
+        /// [`SimOutcome`] reports whether the call path would **revert** (and
+        /// the raw Cairo reason) plus the fee the real submission would pay.
+        ///
+        /// This is the pre-flight the trade write-paths run before
+        /// [`Self::execute`], so a doomed trade (e.g. a hint mismatch that
+        /// makes the AMM panic with `Result::unwrap failed`) is caught
+        /// here for free instead of costing a fee on a reverted
+        /// on-chain transaction.
+        #[instrument(skip(self, calls), fields(call_count = calls.len()))]
+        pub async fn simulate_calls(&self, calls: &[Call]) -> ContractResult<SimOutcome> {
+            let sim = self
+                .inner
+                .execute_v3(calls.to_vec())
+                .simulate(true, true)
+                .await
+                .map_err(|e| ContractError::Provider(format!("simulate: {e}")))?;
+            let revert_reason = match sim.transaction_trace {
+                TransactionTrace::Invoke(trace) => match trace.execute_invocation {
+                    ExecuteInvocation::Reverted(reverted) => Some(reverted.revert_reason),
+                    ExecuteInvocation::Success(_) => None,
+                },
+                // Non-INVOKE traces never arise from `execute_v3`; treat as clean.
+                TransactionTrace::DeployAccount(_)
+                | TransactionTrace::L1Handler(_)
+                | TransactionTrace::Declare(_) => None,
+            };
+            Ok(SimOutcome {
+                revert_reason,
+                estimated_fee: sim.fee_estimation.overall_fee,
+            })
+        }
+
         /// Submit `calls` with automatic fee-bumping retry on stuck-tx
         /// signatures.
         ///
         /// The flow:
         ///
         /// 1. Estimate fee against the current chain state.
-        /// 2. Reserve a nonce (via the wrapped manager) or read the
-        ///    current chain nonce directly.
+        /// 2. Reserve a nonce (via the wrapped manager) or read the current
+        ///    chain nonce directly.
         /// 3. Submit with `policy.initial_tip`.
-        /// 4. If the submission times out or returns a stuck-tx error,
-        ///    multiply the tip by `policy.tip_multiplier` and resubmit
-        ///    with the **same nonce** (replacement tx).
+        /// 4. If the submission times out or returns a stuck-tx error, multiply
+        ///    the tip by `policy.tip_multiplier` and resubmit with the **same
+        ///    nonce** (replacement tx).
         /// 5. Repeat up to `policy.max_attempts`.
         ///
         /// The same nonce is reused across attempts — Starknet sequencers
@@ -511,7 +566,8 @@ mod owned {
         }
     }
 
-    /// Pre-set gas parameters for [`AccountWithNonceManager::execute_managed_with_gas`].
+    /// Pre-set gas parameters for
+    /// [`AccountWithNonceManager::execute_managed_with_gas`].
     ///
     /// Use these when you don't want the SDK to perform a fee estimation
     /// (e.g. when fanning out many concurrent submissions). Reasonable
@@ -560,6 +616,10 @@ mod owned {
             let guard = self.manager.reserve().await;
             self.execute_managed(calls, guard).await
         }
+
+        async fn simulate(&self, calls: &[Call]) -> ContractResult<Option<SimOutcome>> {
+            self.inner.simulate_calls(calls).await.map(Some)
+        }
     }
 
     #[async_trait]
@@ -591,6 +651,10 @@ mod owned {
             )
             .increment(1);
             Ok(ExecutionReceipt::new(result.transaction_hash, call_count))
+        }
+
+        async fn simulate(&self, calls: &[Call]) -> ContractResult<Option<SimOutcome>> {
+            Self::simulate_calls(self, calls).await.map(Some)
         }
     }
 }

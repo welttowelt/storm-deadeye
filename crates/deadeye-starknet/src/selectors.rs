@@ -97,6 +97,11 @@ pub mod amm {
         static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_distribution_hints"));
         *V
     }
+    /// Selector for the `get_runtime_class_hash` entry-point.
+    pub fn get_runtime_class_hash() -> Felt {
+        static V: LazyLock<Felt> = LazyLock::new(|| super::compute("get_runtime_class_hash"));
+        *V
+    }
     /// Selector for the `execute_trade` entry-point.
     pub fn execute_trade() -> Felt {
         static V: LazyLock<Felt> = LazyLock::new(|| super::compute("execute_trade"));

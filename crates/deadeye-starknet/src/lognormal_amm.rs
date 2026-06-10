@@ -556,10 +556,9 @@ where
             .await
     }
 
-    /// Submit a quote previously prepared by
-    /// [`LognormalMarketReader::quote_trade`].
-    #[instrument(skip(self, quote), fields(market = %self.reader.address(), family = "lognormal", kind = "trade", accepts = quote.on_chain_will_accept))]
-    pub async fn execute_quote(&self, quote: LognormalTradeQuote) -> TradeResult<ExecutionReceipt> {
+    /// Build the atomic `[approve, trade]` multicall a quote submits, without
+    /// sending it. See [`crate::NormalMarketWriter::build_trade_calls`].
+    pub async fn build_trade_calls(&self, quote: &LognormalTradeQuote) -> TradeResult<Vec<Call>> {
         if !quote.on_chain_will_accept {
             return Err(TradeError::Rejected {
                 reason: quote.rejection.unwrap_or(TradeRejectionReason::Other {
@@ -593,8 +592,34 @@ where
             supplied_collateral: quote.padded_collateral,
             candidate_hints: quote.candidate_hints,
         };
+        Ok(vec![approve, self.build_trade_call(input)])
+    }
+
+    /// Submit a quote previously prepared by
+    /// [`LognormalMarketReader::quote_trade`].
+    #[instrument(skip(self, quote), fields(market = %self.reader.address(), family = "lognormal", kind = "trade", accepts = quote.on_chain_will_accept))]
+    pub async fn execute_quote(&self, quote: LognormalTradeQuote) -> TradeResult<ExecutionReceipt> {
+        let calls = self.build_trade_calls(&quote).await?;
+        // Gas-free pre-flight: catch a reverting trade before it burns a fee.
+        if let Some(sim) = self
+            .account
+            .simulate(&calls)
+            .await
+            .map_err(TradeError::from_contract)?
+            && let Some(reason) = sim.revert_reason
+        {
+            return Err(TradeError::Rejected {
+                reason: TradeRejectionReason::Other {
+                    raw: "on-chain simulation reverted",
+                },
+                source: ContractError::InvalidResponse {
+                    call: "execute_trade(simulated)",
+                    message: reason,
+                },
+            });
+        }
         self.account
-            .execute(vec![approve, self.build_trade_call(input)])
+            .execute(calls)
             .await
             .map_err(TradeError::from_contract)
     }
