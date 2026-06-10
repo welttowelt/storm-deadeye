@@ -64,7 +64,11 @@ fn main() -> ExitCode {
     // quiet at `warn`. Span close-events surface each instrumented RPC/read
     // (contract address, timing) so a failing call is visible from the trace.
     let filter = tracing_subscriber::EnvFilter::try_from_default_env().unwrap_or_else(|_| {
-        let default = if cli.verbose { "info,deadeye=debug" } else { "warn" };
+        let default = if cli.verbose {
+            "info,deadeye=debug"
+        } else {
+            "warn"
+        };
         tracing_subscriber::EnvFilter::new(default)
     });
     let _ = tracing_subscriber::fmt()

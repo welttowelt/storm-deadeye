@@ -167,5 +167,7 @@ pub(crate) fn build_provider(ctx: &AppContext) -> Result<crate::context::CliProv
         .with_context(|| format!("invalid rpc_url: {}", ctx.config.rpc_url))?;
     tracing::debug!(target: "deadeye::rpc", rpc_url = %url, "resolved RPC endpoint");
     let rpc = JsonRpcClient::new(HttpTransport::new(url));
-    Ok(deadeye_starknet::retry::RetryingProvider::new(JsonRpcProvider::new(rpc)))
+    Ok(deadeye_starknet::retry::RetryingProvider::new(
+        JsonRpcProvider::new(rpc),
+    ))
 }

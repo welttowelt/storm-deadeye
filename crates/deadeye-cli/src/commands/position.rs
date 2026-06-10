@@ -212,8 +212,138 @@ async fn show(
     }
     .with_context(|| format!("reading {} position legs", family_label(family)))?;
 
-    ctx.renderer
-        .print(&legs_view(market_str, trader, family_label(family), &pos))
+    let mut view = legs_view(market_str, trader, family_label(family), &pos);
+
+    // ── Issue #20 + #21 enrichment (normal family, best-effort) ──────
+    // Mark-to-market at the settlement value (settled) or the live mean
+    // (open), the outcome interval where the position nets positive, the
+    // market lifecycle status, and per-leg entry curves from the indexer.
+    if family == Family::Normal && pos.exists && !pos.claimed && pos.active_legs() > 0 {
+        let handle = client.normal_market(market);
+        if let Ok(snapshot) = handle.state_snapshot().await {
+            let status = handle.reader().market_status().await.ok();
+            let settled = status.as_ref().map(|st| st.is_settled);
+            let settlement_value = status.as_ref().and_then(|st| {
+                st.is_settled
+                    .then(|| deadeye_core::Sq128::from_raw(st.settlement_value).to_f64())
+            });
+            view.market_settled = settled;
+            view.settlement_value = settlement_value;
+            let eval_x = settlement_value.unwrap_or(snapshot.mean);
+
+            if let Ok(valuation) = handle.position_value_at(trader, eval_x).await {
+                view.evaluated_at = Some(eval_x);
+                view.unrealized_pnl = Some(valuation.total_position_value);
+                view.gross_return = Some(valuation.gross_return);
+            }
+
+            // Profit interval(s): value the position on a μ±4σ grid (one
+            // concurrent fan-out), then linear-interpolate the zero
+            // crossings of the P&L.
+            view.profit_intervals =
+                profit_intervals(&handle, trader, snapshot.mean, snapshot.sigma).await;
+        }
+
+        // Entry curves: zip indexed trade events (trade order) onto legs.
+        if let Ok(indexer) = ctx.indexer_client()
+            && let Ok(events) = indexer.market_events(market_str, 1, 200).await
+        {
+            let trader_hex = format!("{trader:#x}");
+            let entries: Vec<String> = events
+                .data
+                .iter()
+                .filter(|e| {
+                    e.event_type == "trade_executed"
+                        && e.trader
+                            .as_deref()
+                            .is_some_and(|t| normalize_addr(t) == normalize_addr(&trader_hex))
+                })
+                .map(|e| {
+                    let from = match (e.old_mean, e.old_std_dev) {
+                        (Some(m), Some(s)) => format!("{m:.4}±{s:.4}"),
+                        _ => "?".to_owned(),
+                    };
+                    let to = match (e.mean, e.std_dev) {
+                        (Some(m), Some(s)) => format!("{m:.4}±{s:.4}"),
+                        _ => "?".to_owned(),
+                    };
+                    format!("{from} → {to}")
+                })
+                .collect();
+            if entries.len() == view.legs.len() {
+                for (leg, entry) in view.legs.iter_mut().zip(entries) {
+                    leg.entry = Some(entry);
+                }
+            }
+        }
+    }
+
+    ctx.renderer.print(&view)
+}
+
+/// Lowercase, zero-stripped hex address normalization for event matching.
+fn normalize_addr(addr: &str) -> String {
+    let lower = addr.to_lowercase();
+    let stripped = lower.trim_start_matches("0x").trim_start_matches('0');
+    format!("0x{stripped}")
+}
+
+/// Outcome interval(s) where the position's P&L is ≥ 0, from an on-chain
+/// valuation grid over `mean ± 4σ` (17 nodes, one concurrent fan-out) with
+/// linear interpolation at the sign changes. Resolution ≈ σ/2.
+async fn profit_intervals(
+    handle: &deadeye_sdk::normal::NormalMarket<'_, crate::context::CliProvider>,
+    trader: deadeye_starknet::Felt,
+    mean: f64,
+    sigma: f64,
+) -> Vec<(f64, f64)> {
+    const NODES: usize = 17;
+    if sigma <= 0.0 {
+        return Vec::new();
+    }
+    let lo = sigma.mul_add(-4.0, mean);
+    let hi = sigma.mul_add(4.0, mean);
+    let step = (hi - lo) / (NODES as f64 - 1.0);
+    let xs: Vec<f64> = (0..NODES).map(|i| step.mul_add(i as f64, lo)).collect();
+    let valuations =
+        futures::future::join_all(xs.iter().map(|&x| handle.position_value_at(trader, x))).await;
+    let pnls: Vec<Option<f64>> = valuations
+        .into_iter()
+        .map(|v| v.ok().map(|v| v.total_position_value))
+        .collect();
+    if pnls.iter().any(Option::is_none) {
+        return Vec::new();
+    }
+    let pnls: Vec<f64> = pnls.into_iter().map(|p| p.unwrap_or(0.0)).collect();
+
+    let mut intervals = Vec::new();
+    let mut start: Option<f64> = if pnls[0] >= 0.0 { Some(lo) } else { None };
+    for i in 1..NODES {
+        let (p0, p1) = (pnls[i - 1], pnls[i]);
+        let (x0, x1) = (xs[i - 1], xs[i]);
+        if p0 < 0.0 && p1 >= 0.0 {
+            // entering profit: interpolate the crossing
+            let t = if (p1 - p0).abs() > 1e-12 {
+                -p0 / (p1 - p0)
+            } else {
+                0.0
+            };
+            start = Some((x1 - x0).mul_add(t, x0));
+        } else if p0 >= 0.0 && p1 < 0.0 {
+            let t = if (p1 - p0).abs() > 1e-12 {
+                -p0 / (p1 - p0)
+            } else {
+                0.0
+            };
+            if let Some(a) = start.take() {
+                intervals.push((a, (x1 - x0).mul_add(t, x0)));
+            }
+        }
+    }
+    if let Some(a) = start {
+        intervals.push((a, hi));
+    }
+    intervals
 }
 
 /// Build the [`PositionLegsView`] for `position show` from an SDK
@@ -241,8 +371,15 @@ fn legs_view(
                 lot_id: l.lot_id,
                 settled: l.settled,
                 cancelled: l.cancelled,
+                entry: None,
             })
             .collect(),
+        market_settled: None,
+        settlement_value: None,
+        evaluated_at: None,
+        unrealized_pnl: None,
+        gross_return: None,
+        profit_intervals: Vec::new(),
     }
 }
 

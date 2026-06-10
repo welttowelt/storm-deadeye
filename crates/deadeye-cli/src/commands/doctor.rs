@@ -133,7 +133,9 @@ pub(crate) async fn run(args: DoctorArgs, ctx: &AppContext) -> Result<()> {
             )),
         }
 
-        let strk = strk_balance(p, &ctx.config.strk_token, addr).await.unwrap_or(0);
+        let strk = strk_balance(p, &ctx.config.strk_token, addr)
+            .await
+            .unwrap_or(0);
         #[allow(clippy::cast_precision_loss, reason = "display-only STRK amount")]
         let strk_h = (strk as f64) / 1.0e18;
         checks.push(if strk > 0 {
@@ -152,7 +154,10 @@ pub(crate) async fn run(args: DoctorArgs, ctx: &AppContext) -> Result<()> {
         match build_provider(ctx) {
             Ok(dp) => {
                 let reader = CollateralTokenReader::new(&dp, MAINNET_XP_TOKEN_ADDRESS);
-                let claimed = reader.has_claimed_initial_grant(addr).await.unwrap_or(false);
+                let claimed = reader
+                    .has_claimed_initial_grant(addr)
+                    .await
+                    .unwrap_or(false);
                 let xp = match reader.balance_of(addr).await {
                     Ok(raw) => u256_to_human_18(raw),
                     Err(_) => 0.0,
@@ -309,7 +314,11 @@ impl Render for DoctorReport {
     fn render_pretty(&self, r: &Renderer) {
         r.header("deadeye doctor — readiness");
         for c in &self.checks {
-            let mark = if c.ok { r.highlight("✓") } else { "✗".to_owned() };
+            let mark = if c.ok {
+                r.highlight("✓")
+            } else {
+                "✗".to_owned()
+            };
             println!("  {mark} {:<24} {}", c.name, r.dim(&c.detail));
             if let Some(fix) = &c.fix {
                 println!("      {} {}", r.dim("→ fix:"), fix);

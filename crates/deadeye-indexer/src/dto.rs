@@ -172,6 +172,12 @@ pub struct MarketEvent {
     /// Post-event σ (the indexer reports it as `stdDev`).
     #[serde(rename = "stdDev", default)]
     pub std_dev: Option<f64>,
+    /// Pre-event mean (trade events; the leg's FROM endpoint).
+    #[serde(rename = "oldMean", default)]
+    pub old_mean: Option<f64>,
+    /// Pre-event σ (trade events; the leg's FROM endpoint).
+    #[serde(rename = "oldStdDev", default)]
+    pub old_std_dev: Option<f64>,
     /// Collateral posted (string-encoded).
     #[serde(rename = "collateralPosted", default)]
     pub collateral_posted: Option<String>,

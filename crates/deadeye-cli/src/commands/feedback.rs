@@ -185,10 +185,10 @@ mod tests {
         assert_eq!(labels_for(FeedbackKind::Feature, &[]), vec!["enhancement"]);
         assert_eq!(labels_for(FeedbackKind::Bug, &[]), vec!["bug"]);
         let with_extra = labels_for(FeedbackKind::Idea, &["forecast".into()]);
-        assert_eq!(with_extra, vec![
-            "enhancement".to_owned(),
-            "forecast".to_owned()
-        ]);
+        assert_eq!(
+            with_extra,
+            vec!["enhancement".to_owned(), "forecast".to_owned()]
+        );
     }
 
     #[test]

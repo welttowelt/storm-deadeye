@@ -321,6 +321,19 @@ pub(crate) struct QuoteResult {
     pub(crate) execute_hint: String,
 }
 
+/// Closed-form normal quantiles [P5, P25, P50, P75, P95].
+pub(crate) fn normal_quantiles(mean: f64, sigma: f64) -> [f64; 5] {
+    const Z: [f64; 5] = [-1.644_854, -0.674_490, 0.0, 0.674_490, 1.644_854];
+    Z.map(|z| sigma.mul_add(z, mean))
+}
+
+fn fmt_quantiles(q: [f64; 5]) -> String {
+    format!(
+        "P5 {:.4} | P25 {:.4} | P50 {:.4} | P75 {:.4} | P95 {:.4}",
+        q[0], q[1], q[2], q[3], q[4]
+    )
+}
+
 impl Render for QuoteResult {
     fn render_pretty(&self, r: &Renderer) {
         if self.on_chain_will_accept {
@@ -332,12 +345,36 @@ impl Render for QuoteResult {
         r.kv("market", &self.market);
         if let (Some(mm), Some(ms)) = (self.market_mean, self.market_sigma) {
             r.kv("market_curve", &format!("μ={mm:.6}, σ={ms:.6}"));
+            r.kv("market_quantiles", &fmt_quantiles(normal_quantiles(mm, ms)));
         }
         if let (Some(bm), Some(bs)) = (self.belief_mean, self.belief_sigma) {
             r.kv("belief", &format!("μ={bm:.6}, σ={bs:.6}"));
         }
         if let (Some(m), Some(v)) = (self.candidate_mean, self.candidate_variance) {
             r.kv("candidate", &format!("μ={m:.6}, σ²={v:.6}"));
+            if let Some(cs) = self.candidate_sigma {
+                r.kv(
+                    "candidate_quantiles",
+                    &fmt_quantiles(normal_quantiles(m, cs)),
+                );
+            }
+            // Market impact of this stake (issue #20): what the quoted
+            // collateral buys in curve movement.
+            if let (Some(mm), Some(ms), Some(cs), Some(rc)) = (
+                self.market_mean,
+                self.market_sigma,
+                self.candidate_sigma,
+                self.required_collateral,
+            ) {
+                r.kv(
+                    "market_impact",
+                    &format!(
+                        "{rc:.2} XP moves μ by {:+.4} and σ by {:+.4}",
+                        m - mm,
+                        cs - ms,
+                    ),
+                );
+            }
         }
         if let (Some(m1), Some(m2)) = (self.candidate_mu1, self.candidate_mu2) {
             r.kv("candidate", &format!("μ₁={m1:.6}, μ₂={m2:.6}"));
@@ -370,10 +407,16 @@ impl Render for QuoteResult {
             );
         }
         if let Some(c) = self.cvar_5pct {
-            r.kv("cvar_5pct", &format!("{c:.4} XP  (avg of worst 5% outcomes under your belief)"));
+            r.kv(
+                "cvar_5pct",
+                &format!("{c:.4} XP  (avg of worst 5% outcomes under your belief)"),
+            );
         }
         if let Some(sev) = self.stress_ev {
-            r.kv("stress_ev", &format!("{sev:.4} XP  (EV if your σ is 1.5× too tight)"));
+            r.kv(
+                "stress_ev",
+                &format!("{sev:.4} XP  (EV if your σ is 1.5× too tight)"),
+            );
         }
         if let Some(sz) = &self.sizing {
             r.kv(
@@ -675,6 +718,9 @@ pub(crate) struct LegRow {
     pub(crate) lot_id: u64,
     pub(crate) settled: bool,
     pub(crate) cancelled: bool,
+    /// Entry move "μ_from±σ_from → μ_to±σ_to" from indexed trade events
+    /// (best-effort; None when the indexer is unavailable).
+    pub(crate) entry: Option<String>,
 }
 
 /// `position show` for the trade-lot model: the trader's legs + summary.
@@ -690,6 +736,17 @@ pub(crate) struct PositionLegsView {
     pub(crate) leg_count: usize,
     pub(crate) active_legs: usize,
     pub(crate) legs: Vec<LegRow>,
+    /// Market lifecycle (issue #21): settled + value when known.
+    pub(crate) market_settled: Option<bool>,
+    pub(crate) settlement_value: Option<f64>,
+    /// Mark-to-market (issue #20): position valued at `evaluated_at`
+    /// (settlement value when settled, else the live market mean).
+    pub(crate) evaluated_at: Option<f64>,
+    pub(crate) unrealized_pnl: Option<f64>,
+    pub(crate) gross_return: Option<f64>,
+    /// Outcome interval(s) where the position nets positive (issue #20),
+    /// linear-interpolated from an on-chain valuation grid.
+    pub(crate) profit_intervals: Vec<(f64, f64)>,
 }
 
 impl Render for PositionLegsView {
@@ -717,6 +774,34 @@ impl Render for PositionLegsView {
             "pending_settlement_claim",
             &self.tracks_settlement_claim.to_string(),
         );
+        if let Some(settled) = self.market_settled {
+            let label = match (settled, self.settlement_value) {
+                (true, Some(v)) => format!("settled at {v:.4}"),
+                (true, None) => "settled".to_owned(),
+                (false, _) => "open".to_owned(),
+            };
+            r.kv("market_status", &label);
+        }
+        if let (Some(at), Some(pnl), Some(gross)) =
+            (self.evaluated_at, self.unrealized_pnl, self.gross_return)
+        {
+            r.kv(
+                "mark_to_market",
+                &format!(
+                    "{}{pnl:.4} XP P&L at x={at:.4}  (gross return {gross:.4} XP)",
+                    if pnl >= 0.0 { "+" } else { "" },
+                ),
+            );
+        }
+        if !self.profit_intervals.is_empty() {
+            let ranges = self
+                .profit_intervals
+                .iter()
+                .map(|(a, b)| format!("[{a:.4}, {b:.4}]"))
+                .collect::<Vec<_>>()
+                .join(" ∪ ");
+            r.kv("profitable_if_settles_in", &ranges);
+        }
         for leg in &self.legs {
             let state = if leg.settled {
                 "settled"
@@ -725,7 +810,14 @@ impl Render for PositionLegsView {
             } else {
                 "active"
             };
-            println!("  {} lot #{:<4} {}", r.dim("·"), leg.lot_id, r.dim(state));
+            let entry = leg.entry.as_deref().unwrap_or("");
+            println!(
+                "  {} lot #{:<4} {} {}",
+                r.dim("·"),
+                leg.lot_id,
+                r.dim(state),
+                r.dim(entry)
+            );
         }
     }
 
@@ -738,11 +830,32 @@ impl Render for PositionLegsView {
         writeln!(w, "leg_count: {}", self.leg_count)?;
         writeln!(w, "active_legs: {}", self.active_legs)?;
         writeln!(w, "claimed: {}", self.claimed)?;
+        if let Some(settled) = self.market_settled {
+            writeln!(w, "market_settled: {settled}")?;
+        }
+        if let Some(v) = self.settlement_value {
+            writeln!(w, "settlement_value: {v}")?;
+        }
+        if let Some(at) = self.evaluated_at {
+            writeln!(w, "evaluated_at: {at}")?;
+        }
+        if let Some(pnl) = self.unrealized_pnl {
+            writeln!(w, "unrealized_pnl: {pnl}")?;
+        }
+        if let Some(gross) = self.gross_return {
+            writeln!(w, "gross_return: {gross}")?;
+        }
+        for (a, b) in &self.profit_intervals {
+            writeln!(w, "profit_interval: {a}..{b}")?;
+        }
         for leg in &self.legs {
             writeln!(
                 w,
-                "leg: lot_id={} settled={} cancelled={}",
-                leg.lot_id, leg.settled, leg.cancelled
+                "leg: lot_id={} settled={} cancelled={} entry={}",
+                leg.lot_id,
+                leg.settled,
+                leg.cancelled,
+                leg.entry.as_deref().unwrap_or("-")
             )?;
         }
         Ok(())

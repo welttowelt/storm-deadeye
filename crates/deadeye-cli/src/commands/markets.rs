@@ -222,6 +222,11 @@ async fn show_normal(
             "mu": dist.mean().to_f64(),
             "sigma": dist.sigma().to_f64(),
             "variance": dist.variance().to_f64(),
+            // P5/P25/P50/P75/P95 — issue #20: see the shape, not two numbers.
+            "quantiles": super::render_helpers::normal_quantiles(
+                dist.mean().to_f64(),
+                dist.sigma().to_f64(),
+            ),
             "hints": hints_json,
         }),
         params: params_view(params),

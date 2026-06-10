@@ -21,7 +21,6 @@ use serde_json::json;
 
 use crate::{
     cli::{TradeCmd, TradeExecuteArgs, TradeJournalArgs, TradeQuoteArgs},
-    context::CliProvider,
     commands::{
         render_helpers::{
             QuoteResult, SubmissionResult, pretty_rejection, submission_from_receipt,
@@ -33,6 +32,7 @@ use crate::{
         },
     },
     context::AppContext,
+    context::CliProvider,
     output::OutputMode,
 };
 
@@ -106,20 +106,38 @@ fn compute_risk_extras(
 ) -> RiskExtras {
     use super::risk;
     let downside = Some(risk::pnl_at(
-        market_mean, market_sigma, cand_mean, cand_sigma, effective_k, market_mean,
+        market_mean,
+        market_sigma,
+        cand_mean,
+        cand_sigma,
+        effective_k,
+        market_mean,
     ));
     let (cvar, stress) = belief.map_or((None, None), |(bm, bs)| {
         let cvar = risk::cvar_under_belief(
-            market_mean, market_sigma, cand_mean, cand_sigma, effective_k, bm, bs, 0.05,
+            market_mean,
+            market_sigma,
+            cand_mean,
+            cand_sigma,
+            effective_k,
+            bm,
+            bs,
+            0.05,
         );
         let stress = risk::expected_pnl(
-            market_mean, market_sigma, cand_mean, cand_sigma, effective_k, bm, bs * 1.5,
+            market_mean,
+            market_sigma,
+            cand_mean,
+            cand_sigma,
+            effective_k,
+            bm,
+            bs * 1.5,
         );
         (cvar.is_finite().then_some(cvar), Some(stress))
     });
-    let kelly_multiplier = args.kelly.or_else(|| {
-        args.risk.as_deref().and_then(risk::preset_fraction)
-    });
+    let kelly_multiplier = args
+        .kelly
+        .or_else(|| args.risk.as_deref().and_then(risk::preset_fraction));
     if let Some(preset) = args.risk.as_deref()
         && risk::preset_fraction(preset).is_none()
     {
@@ -127,7 +145,15 @@ fn compute_risk_extras(
     }
     let ev_for_sizing = expected_value.or_else(|| {
         belief.map(|(bm, bs)| {
-            risk::expected_pnl(market_mean, market_sigma, cand_mean, cand_sigma, effective_k, bm, bs)
+            risk::expected_pnl(
+                market_mean,
+                market_sigma,
+                cand_mean,
+                cand_sigma,
+                effective_k,
+                bm,
+                bs,
+            )
         })
     });
     let sizing = match (args.bankroll, kelly_multiplier, ev_for_sizing) {
@@ -158,10 +184,7 @@ fn compute_risk_extras(
 /// Pure quote from a saved snapshot (issue #14): zero RPC. Mirrors the
 /// offline branches of `quote_normal`, sourcing state from the JSON that
 /// `deadeye markets snapshot` produced instead of three live view calls.
-fn quote_normal_from_state(
-    path: &std::path::Path,
-    args: &TradeQuoteArgs,
-) -> Result<QuoteResult> {
+fn quote_normal_from_state(path: &std::path::Path, args: &TradeQuoteArgs) -> Result<QuoteResult> {
     use deadeye_sdk::normal::{
         NormalMarketStateSnapshot, optimize_quote_from_state, quote_candidate_from_state,
     };
@@ -290,9 +313,12 @@ async fn quote_normal(
                 // Offline path returns the optimizer's expected value (XP).
                 // Reuses the snapshot — no params/lp re-read (issue #14).
                 let (q, ev) = deadeye_sdk::normal::optimize_quote_from_state(
-                    &snapshot, belief_mean, belief_sigma, budget,
+                    &snapshot,
+                    belief_mean,
+                    belief_sigma,
+                    budget,
                 )
-                    .context("optimize_quote_offline")?;
+                .context("optimize_quote_offline")?;
                 (q, Some(ev))
             };
             (q, Some((belief_mean, belief_sigma)), Some(budget), ev)
