@@ -23,12 +23,29 @@ use crate::output::OutputMode;
 /// # Pipe-friendly for jq / awk:
 /// deadeye markets list --output json | jq '.[] | .address'
 /// ```
+/// Documentation map printed under `--help` and by `deadeye docs`.
+pub(crate) const DOCS_AFTER_HELP: &str = "\
+Documentation (https://deadeye.wtf/docs):
+  /docs                      what distribution markets are — start here
+  /docs/getting-started      10-minute intro: wallet → first trade
+  /docs/trading              trading distribution markets properly
+  /docs/why-probability      why trade whole distributions, not yes/no
+  /docs/for-the-forecasters  the forecasting guide (pairs with `deadeye forecast`)
+  /docs/lp-strategy          LP underwriting strategy (pairs with `deadeye lp`)
+  /docs/glossary             μ, σ, k, λ, backing, XP — every term defined
+  /docs/faq                  FAQ
+
+RPC etiquette: fetch state once (`markets snapshot`), explore candidates with
+`trade quote --from-state` (zero RPC), one dry-run, one execute. The CLI backs
+off automatically on rate limits — never wrap commands in retry loops.";
+
 #[derive(Debug, Parser)]
 #[command(
     name = "deadeye",
     version,
     about = "Market-maker-grade CLI for the Deadeye Rust SDK",
     long_about = None,
+    after_help = DOCS_AFTER_HELP,
     propagate_version = true,
     arg_required_else_help = true,
 )]
@@ -123,6 +140,7 @@ pub(crate) enum Command {
     Onboard(OnboardArgs),
     /// Superforecasting workspace: gather evidence, blend base rates, and
     /// curate a calibrated (mean, σ) forecast that feeds `trade quote`.
+    #[command(after_help = "Guide: https://deadeye.wtf/docs/for-the-forecasters")]
     Forecast {
         #[command(subcommand)]
         action: ForecastCmd,
@@ -165,11 +183,13 @@ pub(crate) enum Command {
         action: AccountCmd,
     },
     /// Browse markets from the indexer and on-chain.
+    #[command(after_help = "What these numbers mean: https://deadeye.wtf/docs/glossary · the model: https://deadeye.wtf/docs")]
     Markets {
         #[command(subcommand)]
         action: MarketsCmd,
     },
     /// Read trader positions and LP shares.
+    #[command(after_help = "P&L / breakeven semantics: https://deadeye.wtf/docs/trading")]
     Position {
         #[command(subcommand)]
         action: PositionCmd,
@@ -179,14 +199,19 @@ pub(crate) enum Command {
         #[command(subcommand)]
         action: ConfigCmd,
     },
+    /// Print the documentation map (deadeye.wtf/docs) — what distribution
+    /// markets are, how to trade them, the glossary, and the guides.
+    Docs,
 
     // ─── Driver B subcommands ─────────────────────────────────────────
     /// Trade preflight / execute / journal (Driver B).
+    #[command(after_help = "How to trade distribution markets: https://deadeye.wtf/docs/trading · terms: https://deadeye.wtf/docs/glossary")]
     Trade {
         #[command(subcommand)]
         action: TradeCmd,
     },
     /// LP add / remove (Driver B write paths).
+    #[command(after_help = "LP underwriting strategy: https://deadeye.wtf/docs/lp-strategy")]
     Lp {
         #[command(subcommand)]
         action: LpCmd,

@@ -69,6 +69,10 @@ pub(crate) async fn dispatch(cli: Cli) -> Result<()> {
         Command::Update(args) => update::run(args, confirm).await,
         Command::Account { action } => account::run(action, &ctx, confirm).await,
         Command::Markets { action } => markets::run(action, &ctx).await,
+        Command::Docs => {
+            println!("{}", crate::cli::DOCS_AFTER_HELP);
+            Ok(())
+        },
         Command::Position { action } => position::run(action, &ctx, confirm).await,
         Command::Config { action } => config_cmd::run(action, &ctx).await,
         Command::Trade { action } => trade::run(action, &ctx, confirm).await,

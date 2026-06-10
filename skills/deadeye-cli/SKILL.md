@@ -195,6 +195,18 @@ deadeye position list                 # all open positions
 deadeye trade journal --tail 20       # recent trade log
 ```
 
+## Documentation
+
+`deadeye docs` prints the full map. To actually understand distribution
+markets before forecasting/trading them, read:
+
+- <https://deadeye.wtf/docs> — what a distribution market is (start here)
+- <https://deadeye.wtf/docs/trading> — how trading the curve works
+- <https://deadeye.wtf/docs/glossary> — μ, σ, k, λ, backing, XP defined
+- <https://deadeye.wtf/docs/for-the-forecasters> — the forecasting guide
+
+Every `deadeye <command> --help` footer links the relevant page.
+
 ## RPC etiquette (read this before trading)
 
 The RPC endpoint is a **shared resource**. The optimizer/EV math is local —
