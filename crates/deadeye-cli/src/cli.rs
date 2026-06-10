@@ -1075,6 +1075,23 @@ pub(crate) enum ForecastCmd {
     Trade(ForecastTradeArgs),
     /// Run a Bayesian / aggregation routine (JSON in, JSON + rationale out).
     Bayes(ForecastBayesArgs),
+    /// Score the committed snapshot against the settled market: CRPS,
+    /// z-score, signed error. Persists the record for `forecast calibration`.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye forecast score 0xMARKET
+    /// ```
+    Score {
+        /// Market contract address (the snapshot workspace key).
+        #[arg(value_name = "MARKET")]
+        market: String,
+    },
+    /// Personal calibration dashboard across every scored market: bias,
+    /// dispersion (are your σ's too tight?), interval coverage, mean CRPS —
+    /// plus the bias/σ correction to apply to your next commit.
+    Calibration,
 }
 
 /// `deadeye forecast quote …` — quote from the committed snapshot.
@@ -1254,6 +1271,9 @@ pub(crate) enum BayesRoutine {
     EffectiveCount,
     /// P(outcome ≤ x) under a normal: `{x, mean, sd}`.
     ProbBelow,
+    /// Shrink a forecast toward the market by edge strength:
+    /// `{my_mu, my_sigma, market_mu, market_sigma, edge_strength}`.
+    ShrinkToMarket,
 }
 
 #[derive(Debug, clap::Args)]

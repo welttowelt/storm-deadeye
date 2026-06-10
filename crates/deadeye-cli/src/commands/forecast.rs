@@ -34,6 +34,8 @@ pub(crate) async fn run(action: ForecastCmd, ctx: &AppContext, confirm: bool) ->
         ForecastCmd::Quote(args) => quote_from_snapshot(ctx, args).await,
         ForecastCmd::Trade(args) => trade_from_snapshot(ctx, args, confirm).await,
         ForecastCmd::Bayes(args) => bayes_routine(args),
+        ForecastCmd::Score { market } => score(ctx, &market).await,
+        ForecastCmd::Calibration => calibration(),
     }
 }
 
@@ -389,6 +391,7 @@ fn bayes_routine(args: ForecastBayesArgs) -> Result<()> {
         BayesRoutine::Devig => run_devig(&v)?,
         BayesRoutine::EffectiveCount => run_effective_count(&v)?,
         BayesRoutine::ProbBelow => run_prob_below(&v)?,
+        BayesRoutine::ShrinkToMarket => run_shrink_to_market(&v)?,
     };
 
     println!(
@@ -613,5 +616,162 @@ fn run_effective_count(v: &Value) -> Result<(Value, String)> {
     Ok((
         json!({ "effective": eff }),
         format!("{n} correlated items (rho={rho}) ≈ {eff:.2} independent."),
+    ))
+}
+
+// ─── score + calibration (issues #25, #21) ───────────────────────────────────
+
+/// Record of one scored forecast, persisted as `score.json` in the workspace.
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
+struct ScoreRecord {
+    market: String,
+    settlement_value: f64,
+    mean: f64,
+    sd: f64,
+    /// Signed error `settlement − mean` (positive = you were low).
+    error: f64,
+    /// Standardized error `error / sd` — the calibration unit.
+    z: f64,
+    /// Closed-form CRPS of the normal forecast vs the realized value.
+    crps: f64,
+    scored_at: u64,
+}
+
+/// `forecast score <market>` — pull the settlement value and score the
+/// committed snapshot (CRPS, z, signed error). Persists the record so
+/// `forecast calibration` can aggregate the track record.
+async fn score(ctx: &AppContext, market: &str) -> Result<()> {
+    let ws = Workspace::resolve(market)?;
+    let snapshot = ws
+        .load_snapshot()?
+        .context("no committed snapshot — `deadeye forecast snapshot` first")?;
+
+    let client = ctx.deadeye_client()?;
+    let market_felt = crate::context::parse_address(market)?;
+    let status = client
+        .normal_market(market_felt)
+        .reader()
+        .market_status()
+        .await
+        .map_err(|e| anyhow::anyhow!("market_status: {e}"))?;
+    if !status.is_settled {
+        bail!("market is not settled yet — score it after settlement");
+    }
+    let settlement_value = deadeye_core::Sq128::from_raw(status.settlement_value).to_f64();
+
+    let error = settlement_value - snapshot.mean;
+    let z = if snapshot.sd > 0.0 { error / snapshot.sd } else { f64::NAN };
+    let crps = bayes::crps_normal(snapshot.mean, snapshot.sd, settlement_value);
+    let record = ScoreRecord {
+        market: market.to_owned(),
+        settlement_value,
+        mean: snapshot.mean,
+        sd: snapshot.sd,
+        error,
+        z,
+        crps,
+        scored_at: now_unix(),
+    };
+    let path = ws.dir().join("score.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&record)?)
+        .with_context(|| format!("writing {}", path.display()))?;
+
+    println!("Forecast score — {market}");
+    println!("  committed:        μ={:.4} σ={:.4}", record.mean, record.sd);
+    println!("  settled at:       {settlement_value:.4}");
+    println!(
+        "  signed error:     {:+.4}  (positive = you were low)",
+        record.error
+    );
+    println!("  z-score:          {:+.3}  (|z|>2 ⇒ badly off or σ too tight)", record.z);
+    println!("  CRPS:             {:.5}  (lower is better)", record.crps);
+    println!();
+    println!("  postmortem prompt: what did you miss, and what did you over-weight?");
+    println!("  recorded → {}", path.display());
+    Ok(())
+}
+
+/// `forecast calibration` — aggregate every scored market into a personal
+/// track record: bias, dispersion, coverage, mean CRPS, and the correction
+/// to apply to the next commit (issue #25).
+fn calibration() -> Result<()> {
+    let markets = ledger::list_markets()?;
+    let mut records: Vec<ScoreRecord> = Vec::new();
+    for market in &markets {
+        let ws = Workspace::resolve(market)?;
+        let path = ws.dir().join("score.json");
+        if let Ok(raw) = std::fs::read_to_string(&path)
+            && let Ok(record) = serde_json::from_str::<ScoreRecord>(&raw)
+        {
+            records.push(record);
+        }
+    }
+    if records.is_empty() {
+        println!(
+            "No scored forecasts yet — settle a market, then `deadeye forecast score <market>`."
+        );
+        return Ok(());
+    }
+
+    let n = records.len() as f64;
+    let mean_bias = records.iter().map(|r| r.error).sum::<f64>() / n;
+    let mean_z = records.iter().map(|r| r.z).sum::<f64>() / n;
+    let z_var = records.iter().map(|r| (r.z - mean_z).powi(2)).sum::<f64>() / n;
+    // RMS of z is the dispersion-calibration unit: 1.0 = perfectly sized σ.
+    let rms_z = (records.iter().map(|r| r.z * r.z).sum::<f64>() / n).sqrt();
+    let cover_1s = records.iter().filter(|r| r.z.abs() <= 1.0).count() as f64 / n;
+    let cover_90 = records.iter().filter(|r| r.z.abs() <= 1.644_854).count() as f64 / n;
+    let mean_crps = records.iter().map(|r| r.crps).sum::<f64>() / n;
+
+    println!("Personal calibration — {} scored market(s)", records.len());
+    println!("  mean signed bias:   {mean_bias:+.4}  (positive = you forecast low)");
+    println!("  RMS z:              {rms_z:.3}   (1.0 = σ perfectly sized; >1 = overconfident)");
+    println!("  z dispersion (σ_z): {:.3}", z_var.sqrt());
+    println!("  coverage |z|≤1:     {:.0}%  (target ≈ 68%)", cover_1s * 100.0);
+    println!("  coverage |z|≤1.64:  {:.0}%  (target ≈ 90%)", cover_90 * 100.0);
+    println!("  mean CRPS:          {mean_crps:.5}");
+    println!();
+    if rms_z > 1.1 {
+        println!(
+            "  suggestion: widen your σ by ~{rms_z:.2}× before committing (history says you're overconfident)."
+        );
+    } else if rms_z < 0.9 && records.len() >= 3 {
+        println!(
+            "  suggestion: your σ's look too wide (~{rms_z:.2}×) — you can commit sharper forecasts."
+        );
+    } else {
+        println!("  suggestion: σ sizing looks healthy.");
+    }
+    if mean_bias.abs() > 1e-9 {
+        println!(
+            "  suggestion: nudge your committed mean by {mean_bias:+.4} (your historical bias \
+             says reality lands there relative to your commits).",
+        );
+    }
+    println!("  apply via: `forecast bayes shrink-to-market` + adjust before `forecast snapshot`.");
+    Ok(())
+}
+
+/// `forecast bayes shrink-to-market` — posterior shrunk toward the market by
+/// edge strength (issue #23).
+fn run_shrink_to_market(v: &Value) -> Result<(Value, String)> {
+    let f = |k: &str| -> Result<f64> {
+        v.get(k)
+            .and_then(Value::as_f64)
+            .with_context(|| format!("missing/invalid `{k}`"))
+    };
+    let (my_mu, my_sigma) = (f("my_mu")?, f("my_sigma")?);
+    let (market_mu, market_sigma) = (f("market_mu")?, f("market_sigma")?);
+    let edge = f("edge_strength")?;
+    let (mu, sd) = bayes::shrink_to_market(my_mu, my_sigma, market_mu, market_sigma, edge);
+    let rationale = format!(
+        "blend with weight {edge:.2} on you, {:.2} on the market; σ uses the mixture variance, \
+         widening on disagreement (|Δμ|={:.4})",
+        1.0 - edge.clamp(0.0, 1.0),
+        (my_mu - market_mu).abs(),
+    );
+    Ok((
+        json!({ "mean": mu, "sd": sd, "variance": sd * sd, "edge_strength": edge.clamp(0.0, 1.0) }),
+        rationale,
     ))
 }

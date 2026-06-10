@@ -458,6 +458,41 @@ pub(crate) fn normal_pdf(z: f64) -> f64 {
     (-(z * z) / 2.0).exp() / (2.0 * PI).sqrt()
 }
 
+/// Shrink a forecast toward the market (issue #23): a mixture-blend with
+/// weight `edge_strength` on the forecaster. The blended σ uses the mixture
+/// variance — it *widens* when the two means disagree, which is exactly the
+/// honest treatment of model disagreement.
+#[must_use]
+pub(crate) fn shrink_to_market(
+    my_mu: f64,
+    my_sigma: f64,
+    market_mu: f64,
+    market_sigma: f64,
+    edge_strength: f64,
+) -> (f64, f64) {
+    let e = edge_strength.clamp(0.0, 1.0);
+    let mu = e.mul_add(my_mu, (1.0 - e) * market_mu);
+    let var = e.mul_add(
+        my_sigma * my_sigma,
+        (1.0 - e) * market_sigma * market_sigma,
+    ) + e * (1.0 - e) * (my_mu - market_mu).powi(2);
+    (mu, var.max(0.0).sqrt())
+}
+
+/// Closed-form CRPS of a normal forecast `N(mean, sd)` against a realized
+/// value: `sd · (z(2Φ(z) − 1) + 2φ(z) − 1/√π)`. Lower is better; same units
+/// as the outcome.
+#[must_use]
+pub(crate) fn crps_normal(mean: f64, sd: f64, realized: f64) -> f64 {
+    if sd <= 0.0 {
+        return (realized - mean).abs();
+    }
+    let z = (realized - mean) / sd;
+    let pdf = (-0.5 * z * z).exp() / (2.0 * core::f64::consts::PI).sqrt();
+    let cdf = normal_cdf(z);
+    sd * (z.mul_add(2.0f64.mul_add(cdf, -1.0), 2.0 * pdf) - 1.0 / core::f64::consts::PI.sqrt())
+}
+
 /// Standard normal CDF via the Abramowitz–Stegun erf approximation.
 #[must_use]
 pub(crate) fn normal_cdf(z: f64) -> f64 {
@@ -658,6 +693,27 @@ mod tests {
         );
         assert!(approx(agg.mean, -5.0, 1e-9));
         assert!(approx(agg.variance, 0.0, 1e-12)); // zero sigma -> no fabricated spread
+    }
+
+    #[test]
+    fn shrink_to_market_endpoints() {
+        // edge 0 → market; edge 1 → self; midway widens on disagreement.
+        let (mu0, sd0) = shrink_to_market(4.16, 0.08, 4.20, 0.10, 0.0);
+        assert!((mu0 - 4.20).abs() < 1e-12 && (sd0 - 0.10).abs() < 1e-12);
+        let (mu1, sd1) = shrink_to_market(4.16, 0.08, 4.20, 0.10, 1.0);
+        assert!((mu1 - 4.16).abs() < 1e-12 && (sd1 - 0.08).abs() < 1e-12);
+        let (muh, sdh) = shrink_to_market(4.16, 0.08, 4.20, 0.10, 0.5);
+        assert!((muh - 4.18).abs() < 1e-12);
+        assert!(sdh > 0.09, "disagreement widens σ: {sdh}");
+    }
+
+    #[test]
+    fn crps_zero_distance_beats_miss() {
+        let hit = crps_normal(4.2, 0.1, 4.2);
+        let miss = crps_normal(4.2, 0.1, 4.6);
+        assert!(hit > 0.0 && miss > hit);
+        // Known closed-form value at z=0: sd·(2φ(0) − 1/√π) ≈ sd·0.2337.
+        assert!((hit - 0.1 * 0.233_69).abs() < 1e-4, "{hit}");
     }
 
     #[test]
