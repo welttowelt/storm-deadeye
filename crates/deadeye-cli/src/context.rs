@@ -45,6 +45,7 @@ impl AppContext {
     pub(crate) fn deadeye_client(&self) -> Result<DeadeyeClient<JsonRpcProvider>> {
         let url = Url::parse(&self.config.rpc_url)
             .with_context(|| format!("rpc_url is not a valid URL: {}", self.config.rpc_url))?;
+        tracing::debug!(target: "deadeye::rpc", rpc_url = %url, "resolved RPC endpoint");
         let rpc = JsonRpcClient::new(HttpTransport::new(url));
         let provider = JsonRpcProvider::new(rpc);
         Ok(DeadeyeClient::new(provider))
@@ -52,6 +53,11 @@ impl AppContext {
 
     /// Build a fresh `IndexerClient` over the configured indexer URL.
     pub(crate) fn indexer_client(&self) -> Result<IndexerClient> {
+        tracing::debug!(
+            target: "deadeye::rpc",
+            indexer_url = %self.config.indexer_url,
+            "resolved indexer endpoint",
+        );
         IndexerClient::new(&self.config.indexer_url)
             .with_context(|| format!("invalid indexer URL: {}", self.config.indexer_url))
     }

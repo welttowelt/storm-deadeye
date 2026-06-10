@@ -163,6 +163,7 @@ pub(crate) fn build_owned_account(ctx: &AppContext) -> Result<OwnedAccount> {
 pub(crate) fn build_provider(ctx: &AppContext) -> Result<JsonRpcProvider> {
     let url = Url::parse(&ctx.config.rpc_url)
         .with_context(|| format!("invalid rpc_url: {}", ctx.config.rpc_url))?;
+    tracing::debug!(target: "deadeye::rpc", rpc_url = %url, "resolved RPC endpoint");
     let rpc = JsonRpcClient::new(HttpTransport::new(url));
     Ok(JsonRpcProvider::new(rpc))
 }
