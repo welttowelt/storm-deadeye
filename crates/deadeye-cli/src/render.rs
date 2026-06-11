@@ -1,7 +1,7 @@
 //! Serializable view types + `Render` impls for each command.
 //!
 //! Every command builds one of these from its raw SDK reads, then hands
-//! it to the [`Renderer`](crate::output::Renderer). Keeping the view
+//! it to the `Renderer` (`crate::output`). Keeping the view
 //! types in one place means the JSON wire format is one grep away from
 //! the table layout — the two never drift.
 

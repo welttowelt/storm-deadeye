@@ -3,8 +3,8 @@
 //! This module is the **analytical** layer a market maker uses *before*
 //! deciding to submit a trade. Everything here is pure off-chain math
 //! — no RPC, no signing. The only async surface is
-//! [`MarketReader::impact_for_mu_shift`] (and its sibling) which reads
-//! current market state and then runs the f64 collateral solver
+//! [`crate::NormalMarketReader::impact_for_mu_shift`] (and its sibling) which
+//! reads current market state and then runs the f64 collateral solver
 //! locally.
 //!
 //! ## Hot path
@@ -42,7 +42,7 @@
 //!
 //! ## A note on `spread_at`
 //!
-//! See [`spread_at_normal`] for the rationale on why the AMM cannot
+//! See `spread_at_normal` (below) for the rationale on why the AMM cannot
 //! cleanly project a CLOB-style bid/ask spread.
 
 use deadeye_collateral::{

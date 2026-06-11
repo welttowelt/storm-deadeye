@@ -12,13 +12,13 @@
 //! * [`runtime_class_hash`] — class-hash lookup keyed by `(chain, family)`,
 //!   with mainnet hashes embedded as compile-time constants.
 //! * [`projected_deploy_address`] — pure address derivation via the
-//!   [`get_udc_deployed_address`](starknet_core::utils::get_udc_deployed_address)
-//!   helper. Used for dry-runs and idempotency checks.
+//!   [`starknet_core::utils::get_udc_deployed_address`] helper. Used for
+//!   dry-runs and idempotency checks.
 //! * [`RuntimeCache`] / [`RuntimeEntry`] — TOML-on-disk cache of
 //!   previously-deployed runtime instances, keyed by chain key + family.
 //!
 //! Actual on-chain deploy submission lives in the CLI (it needs an
-//! [`OwnedAccount`](::deadeye_starknet::OwnedAccount)) — this crate stays
+//! `deadeye_starknet::OwnedAccount`) — this crate stays
 //! provider/account-free so it can be embedded in lighter consumers.
 
 use std::{

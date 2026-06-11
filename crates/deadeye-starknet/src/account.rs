@@ -2,7 +2,7 @@
 //!
 //! [`Account`] is the minimal trait every signing context must satisfy.
 //! When the `account` feature is enabled, [`OwnedAccount`] wraps the
-//! `starknet-accounts` [`SingleOwnerAccount`] so MMs can sign with a
+//! `starknet-accounts` `SingleOwnerAccount` so MMs can sign with a
 //! locally-held private key with zero ceremony.
 //!
 //! ## Design

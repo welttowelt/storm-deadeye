@@ -160,8 +160,8 @@ pub(crate) fn build_owned_account(ctx: &AppContext) -> Result<OwnedAccount> {
 
 /// Build a fresh provider-only client. Each call constructs its own HTTP
 /// connection so concurrent code paths don't share state. Wrapped in
-/// [`RetryingProvider`] so throttled endpoints back off instead of
-/// surfacing raw parse errors (issue #14).
+/// [`deadeye_starknet::retry::RetryingProvider`] so throttled endpoints back
+/// off instead of surfacing raw parse errors (issue #14).
 pub(crate) fn build_provider(ctx: &AppContext) -> Result<crate::context::CliProvider> {
     let url = Url::parse(&ctx.config.rpc_url)
         .with_context(|| format!("invalid rpc_url: {}", ctx.config.rpc_url))?;

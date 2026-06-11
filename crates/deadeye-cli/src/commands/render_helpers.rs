@@ -674,7 +674,7 @@ impl Render for WatchUpdate {
     }
 }
 
-/// Render a [`TradeError`] → human-readable explanation, returning a
+/// Render a `TradeError` → human-readable explanation, returning a
 /// fully-populated [`SubmissionResult`] caller can pass to `Renderer::print`.
 pub(crate) fn submission_from_trade_error(
     action: &'static str,

@@ -22,8 +22,7 @@
 //!    release assets (see `deadeye_artifacts::RELEASE_COMMIT`) and invoke
 //!    `starknet_accounts::Account::declare_v3` directly.
 //! 3. Use the [`Deployment::factory_address`](Deployment) field to bind a
-//!    [`deadeye_starknet::FactoryReader`](::deadeye_starknet::FactoryReader)
-//!    once the factory is deployed.
+//!    `deadeye_starknet::FactoryReader` once the factory is deployed.
 
 #![doc(html_no_source)]
 

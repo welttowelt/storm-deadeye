@@ -3,7 +3,7 @@
 //! Production market makers fan dozens of trades out across many markets
 //! from a single wallet. Each trade needs a distinct INVOKE-v3 nonce —
 //! the chain rejects duplicates with `InvalidTransactionNonce`. The
-//! upstream [`SingleOwnerAccount`] resolves the nonce by calling
+//! upstream `SingleOwnerAccount` resolves the nonce by calling
 //! `get_nonce` on every submission, which serialises the bot to roughly
 //! one in-flight tx per account.
 //!

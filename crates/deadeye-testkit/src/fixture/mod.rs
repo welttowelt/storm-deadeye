@@ -3,7 +3,7 @@
 //! Composes [`artifacts`] (Sierra/CASM loading), [`declare`] (idempotent
 //! class declaration), [`deploy`] (UDC-based instantiation),
 //! [`factory_setup`] (market-type configuration + deploy profiles),
-//! [`erc20`] (test collateral token), and [`env`] (the [`TestEnv`]
+//! [`erc20`] (test collateral token), and [`env`](mod@env) (the [`TestEnv`]
 //! one-shot bootstrap).
 
 pub mod artifacts;

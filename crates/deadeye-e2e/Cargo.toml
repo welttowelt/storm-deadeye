@@ -1,5 +1,6 @@
 [package]
 name = "deadeye-e2e"
+license.workspace = true
 description = "End-to-end / integration tests for the Deadeye Rust SDK. Not published."
 version = "0.0.0"
 edition.workspace = true

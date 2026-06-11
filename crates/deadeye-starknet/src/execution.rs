@@ -1,7 +1,7 @@
 //! Common types for write-path invocations.
 //!
 //! Every write call (trade, sell, claim, liquidity, admin) flows through
-//! the same shape: build a [`Call`], submit it via an [`Account`], get
+//! the same shape: build a [`Call`], submit it via an [`crate::Account`], get
 //! back an [`ExecutionReceipt`].
 
 /// Re-export of [`starknet_core::types::Call`] — the unit of work submitted
@@ -9,7 +9,7 @@
 pub use starknet_core::types::Call;
 use starknet_core::types::Felt;
 
-/// Result of submitting one or more [`Call`]s through an [`Account`].
+/// Result of submitting one or more [`Call`]s through an [`crate::Account`].
 ///
 /// We intentionally keep this minimal: we surface the on-chain transaction
 /// hash and the number of calls bundled. Higher layers can poll for
