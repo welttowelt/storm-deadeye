@@ -1,7 +1,7 @@
 #!/bin/sh
 # Deadeye CLI installer.
 #
-#   curl -fsSL https://project-deadeye.vercel.app/install.sh | sh
+#   curl -fsSL https://deadeye.wtf/install.sh | sh
 #
 # Installs the `deadeye` binary and the `/deadeye-cli` agent skill so a coding
 # agent can run the whole market loop for you. Re-run any time to update.
