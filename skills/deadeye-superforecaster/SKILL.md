@@ -181,6 +181,14 @@ deadeye trade execute <MARKET> --mean 3.02 --variance 0.0484 --max-collateral <X
 
 (Or drive it from your belief directly: `trade quote <MARKET> --belief <mean> --budget <xp> --belief-sigma <sd>`.)
 
+Both families are supported: normal markets take `--belief` in outcome space;
+**lognormal markets take `--belief`/`--belief-sigma` in log space** (the same
+(μ, σ) the chain stores). Single-trade movement is capped (σ ratio ≤ 4×,
+|Δμ| ≤ 4σ_market — see "Per-trade movement limits" in the deadeye-cli skill):
+when the quote reports `belief_utilization < 100%`, your full belief needs a
+**ladder of trades** — execute, re-quote from the new state, repeat — sized
+as a whole, since each rung locks its own lot and pays its own fee.
+
 Mind RPC etiquette (see the deadeye-cli skill): snapshot state once with
 `markets snapshot --output json`, explore candidates via `--from-state` with
 zero further RPC, then one `--dry-run` and one `execute`. Never retry in a

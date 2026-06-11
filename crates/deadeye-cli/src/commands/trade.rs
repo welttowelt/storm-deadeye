@@ -432,12 +432,106 @@ async fn quote_normal(
     })
 }
 
+/// Lognormal optimizer quote (log-space belief + budget) — fully offline.
+async fn quote_lognormal_optimized(
+    client: &DeadeyeClient<CliProvider>,
+    market: Felt,
+    belief_mu: f64,
+    budget: f64,
+    args: &TradeQuoteArgs,
+) -> Result<QuoteResult> {
+    use deadeye_core::Distribution as _;
+    let handle = client.lognormal_market(market);
+    let current = handle
+        .distribution()
+        .await
+        .context("reading lognormal market distribution")?;
+    let market_mu = current.mu().to_f64();
+    let market_sigma = deadeye_core::Distribution::sigma(&current).to_f64();
+    let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
+
+    let result = handle
+        .optimize_quote_offline_ev(belief_mu, belief_sigma, budget)
+        .await
+        .map_err(|e| anyhow::anyhow!("optimize_quote_offline_ev (lognormal): {e}"))?;
+
+    if result.collateral_required <= 0.0 {
+        anyhow::bail!(
+            "lognormal optimizer found no positive-EV trade inside the policy region under \
+             budget {budget} XP — either the market already prices your belief, or the \
+             per-trade movement caps bind (σ ratio ≤ 4×, |Δμ| ≤ 4σ per trade); for a \
+             far-away belief, ladder multiple trades"
+        );
+    }
+
+    let mut warnings = Vec::new();
+    if result.belief_utilization < 0.999 && !result.is_budget_sufficient {
+        warnings.push(format!(
+            "single trade expresses {:.0}% of your belief shift (per-trade caps: σ ratio ≤4×, \
+             |Δμ| ≤ 4σ_market) — execute, then re-quote from the new market state to ladder \
+             the remainder",
+            result.belief_utilization * 100.0,
+        ));
+    }
+
+    let execute_hint = format!(
+        "deadeye trade execute {:#x} --family lognormal --mean {:.6} --variance {:.6} --max-collateral {:.6}",
+        market,
+        result.optimized_mu,
+        result.optimized_variance,
+        result.collateral_required * 1.10
+    );
+    Ok(QuoteResult {
+        family: "lognormal",
+        market: format!("{market:#x}"),
+        candidate_mean: Some(result.optimized_mu),
+        candidate_variance: Some(result.optimized_variance),
+        candidate_sigma: Some(result.optimized_sigma),
+        candidate_mu1: None,
+        candidate_mu2: None,
+        candidate_rho: None,
+        x_star: Some(result.x_star),
+        required_collateral: Some(result.collateral_required),
+        padded_collateral: Some(result.collateral_required * (1.0 + args.pad.max(0.0))),
+        sigma_floor: None,
+        market_mean: Some(market_mu),
+        market_sigma: Some(market_sigma),
+        belief_mean: Some(belief_mu),
+        belief_sigma: Some(belief_sigma),
+        expected_value: Some(result.expected_value),
+        budget: Some(budget),
+        // The optimizer only emits policy-region candidates; execute still
+        // chain-probes + verifies before submitting.
+        on_chain_will_accept: true,
+        rejection: None,
+        downside_at_market_mean: None,
+        cvar_5pct: None,
+        stress_ev: None,
+        sizing: super::risk::sizing_advice(
+            result.expected_value,
+            result.collateral_required,
+            args.bankroll.unwrap_or(0.0),
+            args.kelly
+                .or_else(|| args.risk.as_deref().and_then(super::risk::preset_fraction))
+                .unwrap_or(0.5),
+        ),
+        warnings,
+        execute_hint,
+    })
+}
+
 async fn quote_lognormal(
     client: &DeadeyeClient<CliProvider>,
     market: Felt,
     family: Family,
     args: &TradeQuoteArgs,
 ) -> Result<QuoteResult> {
+    // Optimizer path (issue: lognormal optimizer): --belief/--budget runs the
+    // EV-max grid search fully client-side — no runtime, no tx. Belief is in
+    // LOG space, matching the on-chain (μ, σ).
+    if let (Some(belief_mu), Some(budget)) = (args.belief, args.budget) {
+        return quote_lognormal_optimized(client, market, belief_mu, budget, args).await;
+    }
     let runtime = resolve_runtime(args.runtime.as_deref(), family)?;
     let provider = client.provider();
     let reader = LognormalMarketReader::new(provider, market);

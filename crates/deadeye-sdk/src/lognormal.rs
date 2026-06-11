@@ -119,6 +119,47 @@ where
         Ok(lognormal_collateral(&current, candidate, opts)?)
     }
 
+    /// EV-max trade under a **log-space** belief `N(μ, σ²)` and a budget —
+    /// the lognormal twin of the normal market's `optimize_quote_offline_ev`.
+    /// Fully client-side: one fetch of distribution + params + `lp_info`, then
+    /// the grid optimizer with the audited Newton collateral minimiser per
+    /// candidate. Returns the optimizer result (log-space candidate,
+    /// collateral at the live effective k, audited x*, EV in tokens).
+    ///
+    /// # Errors
+    /// Propagates provider/read failures; the optimizer itself is total and
+    /// returns a no-trade result when nothing in the policy region has
+    /// positive EV under the budget.
+    #[instrument(skip(self), fields(market = %self.reader.address()))]
+    pub async fn optimize_quote_offline_ev(
+        &self,
+        belief_mu: f64,
+        belief_sigma: f64,
+        budget_xp: f64,
+    ) -> SdkResult<deadeye_optimizer::LognormalOptimizationResult> {
+        let current = self.distribution().await?;
+        let params = self.reader.params().await?;
+        let lp_info = self.reader.lp_info().await?;
+        let base_k = Sq128::from_raw(params.k);
+        // Convention pin — identical to the normal market's
+        // `optimize_quote_offline_ev` (see that doc comment): live pool over
+        // immutable initial backing, floored at base k.
+        let pool_backing = Sq128::from_raw(lp_info.total_backing_deposited);
+        let initial_backing = Sq128::from_raw(params.backing);
+        let effective_k =
+            crate::normal::live_effective_k(base_k, pool_backing, initial_backing).to_f64();
+        Ok(deadeye_optimizer::optimize_lognormal_trade(
+            deadeye_optimizer::LognormalOptimizationInput::new(
+                budget_xp,
+                belief_mu,
+                belief_sigma,
+                current.mu().to_f64(),
+                deadeye_core::Distribution::sigma(&current).to_f64(),
+                effective_k,
+            ),
+        ))
+    }
+
     // ── Multi-leg (trade-lot) position tracking + valuation ─────────────
 
     /// Enumerate a trader's legs (lot ids + lifecycle flags) and read the

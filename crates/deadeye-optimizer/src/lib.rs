@@ -15,10 +15,15 @@
 
 #![doc(html_no_source)]
 
+pub mod lognormal;
 pub mod lp;
 pub mod normal;
 
 pub use lp::{compute_lp_claim_component_value, compute_total_lp_claim_value, f_at};
+pub use lognormal::{
+    LognormalOptimizationInput, LognormalOptimizationResult, lognormal_cross_expectation,
+    optimize_lognormal_trade,
+};
 pub use normal::{
     NormalOptimizationInput, NormalOptimizationResult, OptimizerConstraints, normal_sigma_floor,
     optimize_normal_trade,

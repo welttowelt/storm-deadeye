@@ -176,7 +176,7 @@ fn validate_effective_k_override(value: f64) -> SdkResult<()> {
 ///
 /// Returns `base_k` as a fallback when `initial_backing == 0` (matches the
 /// chain's `Option::None` path: no scaling possible, so no upgrade applied).
-fn live_effective_k(params_k: Sq128, pool_backing: Sq128, initial_backing: Sq128) -> Sq128 {
+pub(crate) fn live_effective_k(params_k: Sq128, pool_backing: Sq128, initial_backing: Sq128) -> Sq128 {
     if initial_backing.is_zero() || initial_backing.is_negative() {
         return params_k;
     }

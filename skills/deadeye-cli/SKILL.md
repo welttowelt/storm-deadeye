@@ -207,6 +207,42 @@ markets before forecasting/trading them, read:
 
 Every `deadeye <command> --help` footer links the relevant page.
 
+## Per-trade movement limits (σ and μ caps)
+
+A single trade can only move the curve so far — the chain (and the optimizer
+mirroring it) enforces a policy region around the CURRENT market state:
+
+- **σ ratio cap:** your candidate σ must satisfy `σ_market/4 ≤ σ ≤ 4·σ_market`
+  in ONE trade. Tighter ("too small") or wider ("too large") is rejected.
+- **μ move cap:** `|μ_candidate − μ_market| ≤ 4·σ_market` per trade — a mean
+  "too different" from the market is rejected outright.
+- **σ floor from backing:** independent of the ratio cap, σ can never go below
+  `k²/(backing²·√π)` — the pool can't underwrite a sharper curve
+  (`SIGMA_TOO_LOW`). `trade quote` prints the floor.
+- **Min trade collateral + tolerance:** dust moves below the market's
+  `min_trade_collateral` or inside its tolerance band are rejected.
+- **Lognormal markets:** identical caps, applied in **log space** — μ, σ, and
+  your `--belief`/`--belief-sigma` are log-space parameters. On a coarse log
+  domain even ~2.5σ one-step moves can be infeasible under the on-chain side
+  law — that's the contract, not a bug.
+
+**If one trade can't reach your belief: ladder it.** The optimizer caps its
+candidate at the policy region and reports `belief_utilization` (the fraction
+of your intended shift one trade expresses, with a warning when < 100%). The
+loop is:
+
+```bash
+deadeye trade quote <MKT> --belief <μ_you> --budget <xp>   # says e.g. "expresses 60%"
+deadeye trade execute <MKT> --belief <μ_you> --budget <xp> --max-collateral <cap>
+# market has moved toward you — re-quote FROM THE NEW STATE and repeat
+deadeye trade quote <MKT> --belief <μ_you> --budget <remaining>
+```
+
+Each rung re-prices from the new market state (your earlier rung moved it),
+locks separate collateral as its own lot, and pays its own deposit fee —
+budget the ladder as a whole before starting. Stop when `belief_utilization`
+reaches 100% or your edge is priced in.
+
 ## RPC etiquette (read this before trading)
 
 The RPC endpoint is a **shared resource**. The optimizer/EV math is local —
