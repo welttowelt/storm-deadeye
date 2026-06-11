@@ -330,8 +330,16 @@ pub(crate) struct TradeQuoteArgs {
     #[arg(long, value_name = "XP")]
     pub(crate) bankroll: Option<f64>,
     /// Explicit Kelly multiplier (e.g. 0.5 = half-Kelly). Overrides --risk.
+    /// With --bankroll this CAPS the staked collateral at the fractional-
+    /// Kelly stake (issue #33) — the candidate is re-optimised at the capped
+    /// budget; the belief itself never changes.
     #[arg(long, value_name = "FRAC")]
     pub(crate) kelly: Option<f64>,
+    /// Cap the stake so the 5% CVaR loss stays within this many XP — the
+    /// budget is walked down until `cvar_5pct >= -max_cvar` (issue #33).
+    /// Normal-family offline quotes only.
+    #[arg(long, value_name = "XP")]
+    pub(crate) max_cvar: Option<f64>,
     /// Quote from a saved state snapshot (zero RPC). Produce one with
     /// `deadeye markets snapshot <ADDRESS> --output json > state.json`.
     /// Normal-family only.
@@ -399,6 +407,20 @@ pub(crate) struct TradeExecuteArgs {
     /// log-space for lognormal markets).
     #[arg(long)]
     pub(crate) belief_sigma: Option<f64>,
+    /// Risk preset (conservative=0.25, balanced=0.5, aggressive=1.0) — caps
+    /// the optimizer budget at the fractional-Kelly stake (issue #33).
+    #[arg(long, value_name = "PRESET")]
+    pub(crate) risk: Option<String>,
+    /// Bankroll (XP) for Kelly sizing — pairs with --kelly or --risk.
+    #[arg(long, value_name = "XP")]
+    pub(crate) bankroll: Option<f64>,
+    /// Kelly multiplier cap on the stake (e.g. 0.5 = half-Kelly); needs
+    /// --bankroll. Same semantics as `trade quote` (issue #33).
+    #[arg(long, value_name = "FRAC")]
+    pub(crate) kelly: Option<f64>,
+    /// Cap the stake so 5% CVaR stays within this many XP (normal family).
+    #[arg(long, value_name = "XP")]
+    pub(crate) max_cvar: Option<f64>,
     /// Maximum collateral the caller is willing to supply (STRK).
     #[arg(long)]
     pub(crate) max_collateral: f64,
@@ -1283,6 +1305,16 @@ pub(crate) struct ForecastSnapshotArgs {
     /// What would change your mind (repeatable).
     #[arg(long = "change-my-mind")]
     pub(crate) change_my_mind: Vec<String>,
+    /// Record the market (μ, σ) this forecast was blended against, read from
+    /// a `markets snapshot --output json` file (issue #34 — audit/scoring).
+    #[arg(long, value_name = "SNAPSHOT_JSON")]
+    pub(crate) from_state: Option<std::path::PathBuf>,
+    /// Market μ blended against (overrides --from-state).
+    #[arg(long)]
+    pub(crate) market_mu: Option<f64>,
+    /// Market σ blended against (overrides --from-state).
+    #[arg(long)]
+    pub(crate) market_sigma: Option<f64>,
 }
 
 /// Bayesian / aggregation routines exposed by `forecast bayes`.
@@ -1316,12 +1348,36 @@ pub(crate) struct ForecastBayesArgs {
     /// Routine to run.
     #[arg(value_name = "ROUTINE")]
     pub(crate) routine: BayesRoutine,
-    /// JSON input. If omitted, read from stdin.
+    /// JSON input. If omitted (and no named flags follow), read from stdin.
     #[arg(long, value_name = "JSON")]
     pub(crate) input: Option<String>,
     /// Emit only JSON (no human rationale line).
     #[arg(long)]
     pub(crate) json: bool,
+    /// `aggregate-normal` only: read the live market (μ, σ) from a
+    /// `markets snapshot --output json` file and include it as a weighted
+    /// component — zero extra RPC, no hand-copying (issue #34).
+    #[arg(long, value_name = "SNAPSHOT_JSON")]
+    pub(crate) from_state: Option<std::path::PathBuf>,
+    /// Weight for the injected market component (default 1.0 — the market is
+    /// included unless --no-market).
+    #[arg(long, value_name = "WEIGHT")]
+    pub(crate) market_weight: Option<f64>,
+    /// Skip the market component even when --from-state is given.
+    #[arg(long)]
+    pub(crate) no_market: bool,
+    /// Named scalar inputs as trailing flags — `--my-mu 4.32 --market-sigma
+    /// 0.55` (or `--key=value`) builds the same JSON object `--input` takes;
+    /// kebab-case maps to snake_case keys. Scalar routines (shrink-to-market,
+    /// devig, prob-below, effective-count, evidence-weight, lr-update with a
+    /// single `--lrs` value) work fully from flags; array-shaped routines
+    /// (aggregate-normal, blend-base-rates, pool) still need `--input`.
+    #[arg(
+        trailing_var_arg = true,
+        allow_hyphen_values = true,
+        value_name = "NAMED_FLAGS"
+    )]
+    pub(crate) named: Vec<String>,
 }
 
 impl StanceArg {

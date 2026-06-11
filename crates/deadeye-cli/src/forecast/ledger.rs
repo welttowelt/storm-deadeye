@@ -131,6 +131,13 @@ pub(crate) struct Snapshot {
     /// What would change the forecaster's mind.
     #[serde(default)]
     pub(crate) change_my_mind: Vec<String>,
+    /// Market μ the forecast was aggregated/blended against (issue #34) —
+    /// links the snapshot to the exact market state for later scoring/audit.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) market_mu: Option<f64>,
+    /// Market σ the forecast was aggregated/blended against.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub(crate) market_sigma: Option<f64>,
     /// When this snapshot was committed (unix seconds).
     pub(crate) created_at: u64,
 }
@@ -366,6 +373,8 @@ mod tests {
             reasons_up: vec!["shelter".into()],
             reasons_down: vec!["energy".into()],
             change_my_mind: vec!["surprise core".into()],
+            market_mu: Some(3.05),
+            market_sigma: Some(0.3),
             created_at: now_unix(),
         })
         .unwrap();

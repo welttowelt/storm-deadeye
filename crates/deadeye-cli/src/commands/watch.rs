@@ -166,30 +166,35 @@ fn build_candidate_quote(
     match family {
         Family::Normal => CandidateQuote::Normal {
             runtime,
-            candidate: deadeye_core::distribution::NormalDistributionRaw {
-                mean: Sq128::from_f64(spec.mean).unwrap_or(Sq128::ZERO).to_raw(),
-                variance: Sq128::from_f64(spec.variance)
-                    .unwrap_or(Sq128::ZERO)
-                    .to_raw(),
-                sigma: Sq128::from_f64(spec.variance.sqrt())
-                    .unwrap_or(Sq128::ZERO)
-                    .to_raw(),
-            },
+            // Raw derived via from_variance so (σ, σ²) stays Sq128-exact —
+            // the runtime rejects inconsistent encodings (issue #36).
+            candidate: deadeye_core::NormalDistribution::from_variance(
+                Sq128::from_f64(spec.mean).unwrap_or(Sq128::ZERO),
+                Sq128::from_f64(spec.variance).unwrap_or(Sq128::ZERO),
+            )
+            .map(|d| deadeye_core::Distribution::to_raw(&d))
+            .unwrap_or_else(|_| deadeye_core::distribution::NormalDistributionRaw {
+                mean: Sq128::ZERO.to_raw(),
+                variance: Sq128::ZERO.to_raw(),
+                sigma: Sq128::ZERO.to_raw(),
+            }),
             x_star: Sq128::from_f64(spec.mean).unwrap_or(Sq128::ZERO).to_raw(),
             supplied_collateral: supplied,
             collateral_pad: zero,
         },
         Family::Lognormal => CandidateQuote::Lognormal {
             runtime,
-            candidate: deadeye_core::distribution::LognormalDistributionRaw {
-                mu: Sq128::from_f64(spec.mean).unwrap_or(Sq128::ZERO).to_raw(),
-                variance: Sq128::from_f64(spec.variance)
-                    .unwrap_or(Sq128::ZERO)
-                    .to_raw(),
-                sigma: Sq128::from_f64(spec.variance.sqrt())
-                    .unwrap_or(Sq128::ZERO)
-                    .to_raw(),
-            },
+            // Same Sq128-exact (σ, σ²) requirement as the normal arm.
+            candidate: deadeye_core::LognormalDistribution::from_variance(
+                Sq128::from_f64(spec.mean).unwrap_or(Sq128::ZERO),
+                Sq128::from_f64(spec.variance).unwrap_or(Sq128::ZERO),
+            )
+            .map(|d| deadeye_core::Distribution::to_raw(&d))
+            .unwrap_or_else(|_| deadeye_core::distribution::LognormalDistributionRaw {
+                mu: Sq128::ZERO.to_raw(),
+                variance: Sq128::ZERO.to_raw(),
+                sigma: Sq128::ZERO.to_raw(),
+            }),
             x_star: Sq128::from_f64(spec.mean).unwrap_or(Sq128::ZERO).to_raw(),
             supplied_collateral: supplied,
             collateral_pad: zero,

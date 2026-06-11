@@ -72,7 +72,10 @@ where
     if response.first() != Some(&OPTION_SOME) {
         return Err(ContractError::InvalidResponse {
             call: call_name,
-            message: "runtime returned Option::None — input rejected".into(),
+            message: "runtime returned Option::None — input rejected (most often an \
+                       inconsistent (σ, σ²) encoding: build candidates so σ·σ == variance \
+                       at Sq128 precision, e.g. via from_variance/from_sigma + to_raw)"
+                .into(),
         });
     }
     let tail = response

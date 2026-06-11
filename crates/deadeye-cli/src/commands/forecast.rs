@@ -64,6 +64,7 @@ async fn quote_from_snapshot(ctx: &AppContext, args: ForecastQuoteArgs) -> Resul
             risk: None,
             bankroll: None,
             kelly: None,
+            max_cvar: None,
             market: args.market,
             family: args.family,
             mean: None,
@@ -83,6 +84,7 @@ async fn quote_from_snapshot(ctx: &AppContext, args: ForecastQuoteArgs) -> Resul
             risk: None,
             bankroll: None,
             kelly: None,
+            max_cvar: None,
             market: args.market,
             family: args.family,
             mean: Some(snap.mean),
@@ -123,6 +125,10 @@ async fn trade_from_snapshot(
         belief: None,
         budget: None,
         belief_sigma: None,
+        risk: None,
+        bankroll: None,
+        kelly: None,
+        max_cvar: None,
         max_collateral: args.max_collateral,
         runtime: args.runtime,
         journal: args.journal,
@@ -323,6 +329,16 @@ fn blend_base_rates(market: &str) -> Result<()> {
 fn snapshot(args: ForecastSnapshotArgs) -> Result<()> {
     let ws = require_ws(&args.market)?;
     let variance = args.sd * args.sd;
+    // Issue #34: persist the market curve this forecast was blended against
+    // (explicit flags win; else read it from a state-snapshot file).
+    let (market_mu, market_sigma) = match (args.market_mu, args.market_sigma, &args.from_state) {
+        (mu @ Some(_), sigma, _) | (mu, sigma @ Some(_), _) => (mu, sigma),
+        (None, None, Some(path)) => {
+            let (mu, sigma, _) = market_curve_from_state(path)?;
+            (Some(mu), Some(sigma))
+        },
+        (None, None, None) => (None, None),
+    };
     ws.save_snapshot(&Snapshot {
         mean: args.mean,
         sd: args.sd,
@@ -332,6 +348,8 @@ fn snapshot(args: ForecastSnapshotArgs) -> Result<()> {
         reasons_up: args.reason_up,
         reasons_down: args.reason_down,
         change_my_mind: args.change_my_mind,
+        market_mu,
+        market_sigma,
         created_at: now_unix(),
     })?;
     println!(
@@ -340,6 +358,9 @@ fn snapshot(args: ForecastSnapshotArgs) -> Result<()> {
         args.mean,
         args.sd
     );
+    if let (Some(mu), Some(sigma)) = (market_mu, market_sigma) {
+        println!("Blended against market state: μ={mu:.6} σ={sigma:.6} (recorded for scoring)");
+    }
     println!(
         "Trade it (reads this snapshot):\n  deadeye forecast quote {0}\n  \
          deadeye forecast quote {0} --budget <XP>   # EV-max sizing",
@@ -376,25 +397,164 @@ fn map_classes(classes: &[ReferenceClass]) -> Vec<bayes::BaseRateClass> {
 
 // ─── `forecast bayes <routine>` ──────────────────────────────────────────
 
+/// The JSON shape each routine expects — surfaced in errors so a wrong
+/// invocation is self-correcting (issue #35: the old unknown-flag error never
+/// mentioned `--input`).
+const fn bayes_expected_input(routine: BayesRoutine) -> &'static str {
+    match routine {
+        BayesRoutine::AggregateNormal => {
+            r#"{"components":[{"mu":4.2,"sigma":0.3,"weight":1.0,"side":"long"}],"rho":0.0} (array-shaped: use --input)"#
+        },
+        BayesRoutine::BlendBaseRates => {
+            r#"{"classes":[{"base_rate":0.3,"applicability":1.0,"uncertainty":0.0}],"space":"value|probability"} (array-shaped: use --input)"#
+        },
+        BayesRoutine::Pool => {
+            r#"{"items":[{"p":0.4,"weight":1.0}],"method":"log-odds|linear","extremize":1.0} (array-shaped: use --input)"#
+        },
+        BayesRoutine::EvidenceWeight => {
+            r#"{"direction":"for|against","strength":"weak|moderate|strong","reliability":1.0,"relevance":1.0,"independence":1.0,"recency":1.0,"bias_risk":0.0}"#
+        },
+        BayesRoutine::LrUpdate => r#"{"prior":0.3,"lrs":[1.8,0.7]}"#,
+        BayesRoutine::Devig => r#"{"yes":0.55,"no":0.51}"#,
+        BayesRoutine::EffectiveCount => r#"{"n":6,"rho":0.5}"#,
+        BayesRoutine::ProbBelow => r#"{"x":4.4,"mean":4.1,"sd":0.4}"#,
+        BayesRoutine::ShrinkToMarket => {
+            r#"{"my_mu":4.32,"my_sigma":0.26,"market_mu":4.13,"market_sigma":0.55,"edge_strength":0.6}"#
+        },
+    }
+}
+
+/// Parse trailing `--key value` / `--key=value` pairs into the JSON object a
+/// routine's `--input` would carry. Kebab-case flags map to snake_case keys;
+/// values parse as numbers when they can, else strings (issue #35).
+fn bayes_named_to_json(named: &[String]) -> Result<Value> {
+    let mut obj = serde_json::Map::new();
+    let mut iter = named.iter();
+    while let Some(raw) = iter.next() {
+        let stripped = raw.strip_prefix("--").with_context(|| {
+            format!("expected `--key value` pairs after the routine, got `{raw}`")
+        })?;
+        let (key, value) = if let Some((k, v)) = stripped.split_once('=') {
+            (k, v.to_owned())
+        } else {
+            let v = iter
+                .next()
+                .with_context(|| format!("flag `--{stripped}` is missing a value"))?;
+            (stripped, v.clone())
+        };
+        let json_key = key.replace('-', "_");
+        let parsed = value
+            .parse::<f64>()
+            .map(Value::from)
+            .unwrap_or(Value::String(value));
+        obj.insert(json_key, parsed);
+    }
+    Ok(Value::Object(obj))
+}
+
+/// Load the live market `(μ, σ)` from a `markets snapshot --output json`
+/// file (issue #34 — the market curve is evidence and should be injected
+/// mechanically, not hand-copied).
+fn market_curve_from_state(path: &std::path::Path) -> Result<(f64, f64, String)> {
+    let raw = std::fs::read_to_string(path)
+        .with_context(|| format!("reading market snapshot {}", path.display()))?;
+    let snapshot: deadeye_sdk::normal::NormalMarketStateSnapshot = serde_json::from_str(&raw)
+        .context("parsing market snapshot JSON (expected `markets snapshot --output json`)")?;
+    Ok((snapshot.mean, snapshot.sigma, snapshot.market))
+}
+
 fn bayes_routine(args: ForecastBayesArgs) -> Result<()> {
-    let input = read_input(args.input.as_deref())?;
-    let v: Value = if input.trim().is_empty() {
-        json!({})
+    // clap's trailing capture eats known flags that appear AFTER the first
+    // named input (`… --my-mu 4.3 --json`) — recover them here so flag order
+    // doesn't matter.
+    let mut args = args;
+    if !args.named.is_empty() {
+        let mut kept = Vec::with_capacity(args.named.len());
+        let mut iter = args.named.iter();
+        while let Some(tok) = iter.next() {
+            match tok.as_str() {
+                "--json" => args.json = true,
+                "--input" => {
+                    let value = iter.next().context("--input needs a value")?;
+                    args.input = Some(value.clone());
+                },
+                _ => kept.push(tok.clone()),
+            }
+        }
+        args.named = kept;
+    }
+    let args = args;
+    let v: Value = if args.named.is_empty() {
+        let input = read_input(args.input.as_deref())?;
+        if input.trim().is_empty() {
+            json!({})
+        } else {
+            serde_json::from_str(&input).context("input is not valid JSON")?
+        }
     } else {
-        serde_json::from_str(&input).context("input is not valid JSON")?
+        anyhow::ensure!(
+            args.input.is_none(),
+            "pass either `--input '<json>'` or named flags, not both"
+        );
+        bayes_named_to_json(&args.named)?
     };
 
+    // Issue #34: the market curve is evidence — inject it as a component
+    // straight from a state snapshot (zero RPC) instead of hand-copied μ/σ.
+    let mut v = v;
+    let mut market_note: Option<String> = None;
+    if let Some(path) = &args.from_state {
+        anyhow::ensure!(
+            args.routine == BayesRoutine::AggregateNormal,
+            "--from-state only applies to the aggregate-normal routine"
+        );
+        if args.no_market {
+            market_note = Some("market component skipped (--no-market)".into());
+        } else {
+            let (mu, sigma, market) = market_curve_from_state(path)?;
+            let weight = args.market_weight.unwrap_or(1.0);
+            let component = json!({ "mu": mu, "sigma": sigma, "weight": weight, "side": "long" });
+            match v.get_mut("components").and_then(Value::as_array_mut) {
+                Some(arr) => arr.push(component),
+                None => {
+                    v["components"] = json!([component]);
+                },
+            }
+            v["market_component"] =
+                json!({ "market": market, "mu": mu, "sigma": sigma, "weight": weight });
+            market_note = Some(format!(
+                "included the live market curve as a component: μ={mu:.6}, σ={sigma:.6}, \
+                 weight {weight} ({market}) — record it on the committed snapshot with \
+                 `forecast snapshot … --from-state {}`",
+                path.display()
+            ));
+        }
+    } else if args.routine == BayesRoutine::AggregateNormal && !args.no_market {
+        market_note = Some(
+            "note: no market component — pass `--from-state <markets snapshot json>` to \
+             include the live curve as evidence (issue #34), or --no-market to silence this"
+                .into(),
+        );
+    }
+
     let (out, rationale) = match args.routine {
-        BayesRoutine::AggregateNormal => aggregate_normal(&v)?,
-        BayesRoutine::BlendBaseRates => run_blend(&v)?,
-        BayesRoutine::Pool => run_pool(&v)?,
-        BayesRoutine::EvidenceWeight => run_evidence_weight(&v)?,
-        BayesRoutine::LrUpdate => run_lr_update(&v)?,
-        BayesRoutine::Devig => run_devig(&v)?,
-        BayesRoutine::EffectiveCount => run_effective_count(&v)?,
-        BayesRoutine::ProbBelow => run_prob_below(&v)?,
-        BayesRoutine::ShrinkToMarket => run_shrink_to_market(&v)?,
-    };
+        BayesRoutine::AggregateNormal => aggregate_normal(&v),
+        BayesRoutine::BlendBaseRates => run_blend(&v),
+        BayesRoutine::Pool => run_pool(&v),
+        BayesRoutine::EvidenceWeight => run_evidence_weight(&v),
+        BayesRoutine::LrUpdate => run_lr_update(&v),
+        BayesRoutine::Devig => run_devig(&v),
+        BayesRoutine::EffectiveCount => run_effective_count(&v),
+        BayesRoutine::ProbBelow => run_prob_below(&v),
+        BayesRoutine::ShrinkToMarket => run_shrink_to_market(&v),
+    }
+    .with_context(|| {
+        format!(
+            "routine input invalid — pass `--input '<json>'` (or named flags for scalar \
+             routines); expected shape: {}",
+            bayes_expected_input(args.routine)
+        )
+    })?;
 
     println!(
         "{}",
@@ -402,6 +562,9 @@ fn bayes_routine(args: ForecastBayesArgs) -> Result<()> {
     );
     if !args.json {
         eprintln!("{rationale}");
+        if let Some(note) = market_note {
+            eprintln!("{note}");
+        }
     }
     Ok(())
 }

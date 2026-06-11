@@ -115,15 +115,24 @@ not three confirmations; collapse them or raise `rho` accordingly.
 ### 6. Aggregate into a calibrated (mean, σ)
 
 ```bash
-deadeye forecast bayes aggregate-normal --input '{
+# Snapshot the live market once (also feeds trade quote --from-state):
+deadeye markets snapshot <MARKET> --output json > state.json
+
+# The market curve is EVIDENCE — inject it mechanically, never hand-copy μ/σ:
+deadeye forecast bayes aggregate-normal --from-state state.json --market-weight 0.8 --input '{
   "rho": 0.3,
   "components": [
     {"mu": 3.10, "sigma": 0.30, "weight": 1.0},   # base-rate prior
-    {"mu": 2.95, "sigma": 0.20, "weight": 1.2},   # inside view (disinflation)
-    {"mu": 3.05, "sigma": 0.25, "weight": 0.8}    # de-vigged market
+    {"mu": 2.95, "sigma": 0.20, "weight": 1.2}    # inside view (disinflation)
   ]
 }'
 ```
+
+`--from-state` appends the live market `(μ, σ)` as a component (zero extra
+RPC) and echoes exactly what it blended against; skip it only with
+`--no-market` and a reason. Scalar routines also take named flags directly —
+`deadeye forecast bayes shrink-to-market --my-mu 4.32 --my-sigma 0.26
+--market-mu 4.13 --market-sigma 0.55 --edge-strength 0.6` — no JSON quoting.
 
 `rho` is the shared correlation across components (0 = independent). The output
 `mean`, `sd`, and `variance` are your forecast. **Keep σ honest** — if you can't
@@ -145,8 +154,13 @@ canonical overconfidence failure.
 
 ### 7. Commit the snapshot
 
+Pass the same `--from-state state.json` so the committed snapshot records the
+exact market (μ, σ) you blended against — that link is what makes later
+scoring and audit honest.
+
 ```bash
 deadeye forecast snapshot <MARKET> --mean 3.02 --sd 0.22 --method aggregate-normal \
+    --from-state state.json \
     --rationale "Outside view ~3.1; energy disinflation pulls it down; market roughly agrees." \
     --reason-up "shelter stays sticky" --reason-down "energy keeps falling" \
     --change-my-mind "a hot core services print"
@@ -162,12 +176,15 @@ record AND the calibration loop. Instead:
 
 - Keep `(μ, σ)` exactly as committed in step 7 — σ is a function of *evidence
   only*.
-- Choose the stake via a stated risk policy: a fraction of bankroll scaled by
-  recorded edge strength (fractional-Kelly thinking — half-Kelly or less when
-  your track record is thin), or the CLI's risk/sizing flags where available
-  (`--risk`, `--bankroll`, `--kelly`).
-- Record the decision (policy, fraction, resulting budget) alongside the
-  snapshot so the postmortem can judge the sizing separately from the forecast.
+- Choose the stake via a stated risk policy — the CLI enforces it as a hard
+  cap on `trade quote` AND `trade execute` (the belief is never altered):
+  `--bankroll 20000 --kelly 0.5` caps at half-Kelly; `--max-cvar 15` walks the
+  stake down until the worst-5% loss fits (normal family); `--risk
+  conservative|balanced|aggressive` maps to Kelly 0.25/0.5/1.0. The output's
+  `sizing_basis` names the constraint that bound — record it.
+- Record the decision (policy, fraction, resulting budget, `sizing_basis`)
+  alongside the snapshot so the postmortem can judge the sizing separately
+  from the forecast.
 
 ### 9. Turn the forecast into the highest-EV trade
 

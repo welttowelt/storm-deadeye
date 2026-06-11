@@ -156,13 +156,9 @@ async fn lognormal_quote_execute_parity_both_directions() {
             Sq128::from_f64(result.optimized_variance).unwrap(),
         )
         .expect("candidate distribution");
-        let candidate_raw = LognormalDistributionRaw {
-            mu: Sq128::from_f64(result.optimized_mu).unwrap().to_raw(),
-            variance: Sq128::from_f64(result.optimized_variance).unwrap().to_raw(),
-            sigma: Sq128::from_f64(result.optimized_variance.sqrt())
-                .unwrap()
-                .to_raw(),
-        };
+        // Raw FROM the dist — Sq128-exact (σ, σ²), matching the fixed CLI
+        // encoding (issue #36: independent f64-sqrt σ gets Option::None).
+        let candidate_raw = Distribution::to_raw(&candidate_dist);
         let solved = lognormal_collateral(&current, &candidate_dist, LognormalOptions::default())
             .expect("f64 lognormal solver");
         let supplied = Sq128::from_f64((solved.collateral * 3.0).max(50.0))

@@ -157,6 +157,22 @@ deadeye trade execute <MARKET_ADDR> --belief <MU_YOU> --budget <XP_BUDGET> \
     --max-collateral <XP_CAP> --journal ~/.local/share/deadeye/journal.jsonl
 ```
 
+**Risk-aware sizing (quote AND execute).** The forecast (μ, σ) and the stake
+are separate decisions — never shrink σ to bet more. Size from a stated rule
+instead:
+
+```bash
+# Cap the stake at half-Kelly from a 20k bankroll:
+deadeye trade quote <MKT> --belief <μ> --budget 500 --bankroll 20000 --kelly 0.5
+# Cap the stake so the worst-5% loss stays within 15 XP (normal family):
+deadeye trade quote <MKT> --belief <μ> --budget 500 --max-cvar 15
+```
+
+The output's `sizing_basis` names whichever constraint bound (`budget`,
+`kelly-0.50`, `cvar-cap`). The same flags work on `trade execute`; the belief
+itself is never altered — only the budget the optimizer may spend. `--kelly`
+and `--risk` need `--bankroll`; the smallest resulting stake wins.
+
 `trade execute` re-runs the quote (state may have moved), prompts for
 confirmation (skip with the global `--confirm`), submits the trade, and appends
 to the journal on success. `--max-collateral` is a hard ceiling in XP — the

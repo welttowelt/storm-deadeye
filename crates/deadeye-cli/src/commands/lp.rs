@@ -4,8 +4,10 @@ use anyhow::{Context as _, Result};
 use deadeye_core::Sq128;
 use deadeye_sdk::bulk::Family;
 use deadeye_starknet::{
-    BivariateMarketReader, BivariateMarketWriter, LognormalMarketReader, LognormalMarketWriter,
-    MultinoulliMarketReader, MultinoulliMarketWriter, NormalMarketReader, NormalMarketWriter,
+    Account as _, BivariateMarketReader, BivariateMarketWriter, Call, LognormalMarketReader,
+    LognormalMarketWriter, MultinoulliMarketReader, MultinoulliMarketWriter, NormalMarketReader,
+    NormalMarketWriter, build_erc20_approve_call, collateral_allowance_base_units,
+    types::common::AmmConfigRaw,
 };
 
 use crate::{
@@ -51,11 +53,30 @@ async fn add(ctx: &AppContext, args: LpAddArgs, confirm: bool) -> Result<()> {
     let share_amount = Sq128::from_f64(args.amount)?.to_raw();
     let market_hex = format!("{market:#x}");
 
+    // The deposit pulls collateral via `transfer_from`, so the multicall must
+    // lead with an ERC-20 approve of the collateral token to the market —
+    // exactly like `trade execute` (issue #29: a bare `add_liquidity` call
+    // reverts on `Result::unwrap failed` with zero allowance).
+    let approve_for = |config: &AmmConfigRaw| -> Call {
+        // 5% allowance margin (matches the trade path / webapp buffer).
+        let amount = collateral_allowance_base_units(args.amount, config.token_decimals, 5);
+        build_erc20_approve_call(config.collateral_token, market, amount)
+    };
+
     let result = match family {
         Family::Normal => {
             let writer =
                 NormalMarketWriter::new(NormalMarketReader::new(&writer_provider, market), account);
-            match writer.add_liquidity(share_amount).await {
+            let config = writer
+                .reader()
+                .config()
+                .await
+                .context("reading market config for the collateral approve")?;
+            let calls = vec![
+                approve_for(&config),
+                writer.build_add_liquidity_call(share_amount),
+            ];
+            match writer.account().execute(calls).await {
                 Ok(receipt) => submission_from_receipt("lp_add", market_hex, receipt),
                 Err(e) => submission_from_trade_error(
                     "lp_add",
@@ -69,7 +90,16 @@ async fn add(ctx: &AppContext, args: LpAddArgs, confirm: bool) -> Result<()> {
                 LognormalMarketReader::new(&writer_provider, market),
                 account,
             );
-            match writer.add_liquidity(share_amount).await {
+            let config = writer
+                .reader()
+                .config()
+                .await
+                .context("reading market config for the collateral approve")?;
+            let calls = vec![
+                approve_for(&config),
+                writer.build_add_liquidity_call(share_amount),
+            ];
+            match writer.account().execute(calls).await {
                 Ok(receipt) => submission_from_receipt("lp_add", market_hex, receipt),
                 Err(e) => submission_from_trade_error(
                     "lp_add",
@@ -94,7 +124,16 @@ async fn add(ctx: &AppContext, args: LpAddArgs, confirm: bool) -> Result<()> {
                 BivariateMarketReader::new(&writer_provider, market),
                 account,
             );
-            match writer.add_liquidity(share_amount).await {
+            let config = writer
+                .reader()
+                .config()
+                .await
+                .context("reading market config for the collateral approve")?;
+            let calls = vec![
+                approve_for(&config),
+                writer.build_add_liquidity_call(share_amount),
+            ];
+            match writer.account().execute(calls).await {
                 Ok(receipt) => submission_from_receipt("lp_add", market_hex, receipt),
                 Err(e) => submission_from_trade_error(
                     "lp_add",

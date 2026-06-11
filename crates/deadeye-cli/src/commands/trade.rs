@@ -193,12 +193,67 @@ fn quote_normal_from_state(path: &std::path::Path, args: &TradeQuoteArgs) -> Res
     let market_mean = snapshot.mean;
     let market_sigma = snapshot.sigma;
 
-    let (quote, belief, budget, expected_value) =
+    let kelly_mult = args
+        .kelly
+        .or_else(|| args.risk.as_deref().and_then(super::risk::preset_fraction));
+    let (quote, belief, budget, expected_value, sizing_basis) =
         if let (Some(belief_mean), Some(budget)) = (args.belief, args.budget) {
             let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
-            let (q, ev) = optimize_quote_from_state(&snapshot, belief_mean, belief_sigma, budget)
-                .map_err(|e| anyhow::anyhow!("optimize_quote_from_state: {e}"))?;
-            (q, Some((belief_mean, belief_sigma)), Some(budget), Some(ev))
+            let quote_at = |b: f64| {
+                optimize_quote_from_state(&snapshot, belief_mean, belief_sigma, b)
+                    .map_err(|e| anyhow::anyhow!("optimize_quote_from_state: {e}"))
+            };
+            // Sizing policy (issue #33) — pure re-quotes, zero RPC.
+            let (mut q, mut ev) = quote_at(budget)?;
+            let mut basis = "budget".to_owned();
+            let mut eff = budget;
+            let required = Sq128::from_raw(q.required_collateral).to_f64();
+            if let Some((cap, kelly_basis)) =
+                super::risk::kelly_stake_cap(args.bankroll, kelly_mult, ev, required)?
+                && cap < required
+            {
+                eff = cap;
+                basis = kelly_basis;
+                (q, ev) = quote_at(eff)?;
+            }
+            if let Some(max_cvar) = args.max_cvar {
+                anyhow::ensure!(max_cvar > 0.0, "--max-cvar must be > 0");
+                for _ in 0..40 {
+                    let cm = Sq128::from_raw(q.candidate.mean).to_f64();
+                    let cs = Sq128::from_raw(q.candidate.sigma).to_f64();
+                    let cvar = super::risk::cvar_under_belief(
+                        market_mean,
+                        market_sigma,
+                        cm,
+                        cs,
+                        snapshot.effective_k,
+                        belief_mean,
+                        belief_sigma,
+                        0.05,
+                    );
+                    if !cvar.is_finite() || cvar >= -max_cvar {
+                        break;
+                    }
+                    eff *= 0.75;
+                    basis = "cvar-cap".to_owned();
+                    let (q2, ev2) = quote_at(eff)?;
+                    if Sq128::from_raw(q2.required_collateral).to_f64() <= 0.0 {
+                        anyhow::bail!(
+                            "--max-cvar {max_cvar} XP is unreachable: the smallest viable \
+                             stake still has 5% CVaR {cvar:.4} XP — raise --max-cvar or \
+                             shrink the belief distance"
+                        );
+                    }
+                    (q, ev) = (q2, ev2);
+                }
+            }
+            (
+                q,
+                Some((belief_mean, belief_sigma)),
+                Some(budget),
+                Some(ev),
+                Some(basis),
+            )
         } else {
             let mean = args
                 .mean
@@ -208,7 +263,7 @@ fn quote_normal_from_state(path: &std::path::Path, args: &TradeQuoteArgs) -> Res
                 .context("`--variance` is required (or pair --belief / --budget)")?;
             let q = quote_candidate_from_state(&snapshot, mean, variance)
                 .map_err(|e| anyhow::anyhow!("quote_candidate_from_state: {e}"))?;
-            (q, None, None, None)
+            (q, None, None, None, None)
         };
 
     let market_hex = snapshot.market.clone();
@@ -263,6 +318,7 @@ fn quote_normal_from_state(path: &std::path::Path, args: &TradeQuoteArgs) -> Res
         cvar_5pct: extras.cvar_5pct,
         stress_ev: extras.stress_ev,
         sizing: extras.sizing,
+        sizing_basis,
         warnings: extras.warnings,
         execute_hint,
     })
@@ -296,29 +352,91 @@ async fn quote_normal(
         snapshot.pool_backing_xp,
     ));
 
-    let (quote, belief, budget, expected_value) =
+    let kelly_mult = args
+        .kelly
+        .or_else(|| args.risk.as_deref().and_then(super::risk::preset_fraction));
+    let (quote, belief, budget, expected_value, sizing_basis) =
         if let (Some(belief_mean), Some(budget)) = (args.belief, args.budget) {
             let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
-            let (q, ev) = if let Some(rt) = runtime {
+            let (q, ev, basis) = if let Some(rt) = runtime {
+                anyhow::ensure!(
+                    kelly_mult.is_none() && args.max_cvar.is_none(),
+                    "sizing caps (--kelly/--risk/--max-cvar) run on the offline quote path — \
+                     drop --runtime"
+                );
                 // Chain-runtime path doesn't surface the optimizer EV.
                 let q = market_handle
                     .optimize_quote(rt, belief_mean, belief_sigma, budget)
                     .await
                     .context("optimize_quote (chain runtime)")?;
-                (q, None)
+                (q, None, None)
             } else {
                 // Offline path returns the optimizer's expected value (XP).
                 // Reuses the snapshot — no params/lp re-read (issue #14).
-                let (q, ev) = deadeye_sdk::normal::optimize_quote_from_state(
-                    &snapshot,
-                    belief_mean,
-                    belief_sigma,
-                    budget,
-                )
-                .context("optimize_quote_offline")?;
-                (q, Some(ev))
+                // Sizing policy (issue #33): the belief is never touched; the
+                // stake is capped by re-optimising at a smaller budget, and
+                // `sizing_basis` names whichever constraint bound.
+                let quote_at = |b: f64| {
+                    deadeye_sdk::normal::optimize_quote_from_state(
+                        &snapshot,
+                        belief_mean,
+                        belief_sigma,
+                        b,
+                    )
+                    .context("optimize_quote_offline")
+                };
+                let (mut q, mut ev) = quote_at(budget)?;
+                let mut basis = "budget".to_owned();
+                let mut eff = budget;
+                let required = Sq128::from_raw(q.required_collateral).to_f64();
+                if let Some((cap, kelly_basis)) =
+                    super::risk::kelly_stake_cap(args.bankroll, kelly_mult, ev, required)?
+                    && cap < required
+                {
+                    eff = cap;
+                    basis = kelly_basis;
+                    (q, ev) = quote_at(eff)?;
+                }
+                if let Some(max_cvar) = args.max_cvar {
+                    anyhow::ensure!(max_cvar > 0.0, "--max-cvar must be > 0");
+                    for _ in 0..40 {
+                        let cm = Sq128::from_raw(q.candidate.mean).to_f64();
+                        let cs = Sq128::from_raw(q.candidate.sigma).to_f64();
+                        let cvar = super::risk::cvar_under_belief(
+                            market_mean,
+                            market_sigma,
+                            cm,
+                            cs,
+                            effective_k,
+                            belief_mean,
+                            belief_sigma,
+                            0.05,
+                        );
+                        if !cvar.is_finite() || cvar >= -max_cvar {
+                            break;
+                        }
+                        eff *= 0.75;
+                        basis = "cvar-cap".to_owned();
+                        let (q2, ev2) = quote_at(eff)?;
+                        if Sq128::from_raw(q2.required_collateral).to_f64() <= 0.0 {
+                            anyhow::bail!(
+                                "--max-cvar {max_cvar} XP is unreachable: the smallest viable \
+                                 stake still has 5% CVaR {cvar:.4} XP — raise --max-cvar or \
+                                 shrink the belief distance"
+                            );
+                        }
+                        (q, ev) = (q2, ev2);
+                    }
+                }
+                (q, Some(ev), Some(basis))
             };
-            (q, Some((belief_mean, belief_sigma)), Some(budget), ev)
+            (
+                q,
+                Some((belief_mean, belief_sigma)),
+                Some(budget),
+                ev,
+                basis,
+            )
         } else {
             let mean = args
                 .mean
@@ -328,15 +446,14 @@ async fn quote_normal(
                 .context("`--variance` is required (or pair --belief / --budget)")?;
             let q = if let Some(rt) = runtime {
                 // Optional chain-faithful path for a fixed candidate.
-                let candidate = deadeye_core::distribution::NormalDistributionRaw {
-                    mean: Sq128::from_f64(mean)?.to_raw(),
-                    variance: Sq128::from_f64(variance)?.to_raw(),
-                    sigma: Sq128::from_f64(variance.sqrt())?.to_raw(),
-                };
                 let cand_dist = deadeye_core::NormalDistribution::from_variance(
                     Sq128::from_f64(mean)?,
                     Sq128::from_f64(variance)?,
                 )?;
+                // Encode the raw FROM the dist so (σ, σ²) stays Sq128-exact —
+                // an f64-sqrt σ quantized independently fails the runtime's
+                // consistency check with an opaque Option::None (issue #36).
+                let candidate = deadeye_core::Distribution::to_raw(&cand_dist);
                 let x_star = match deadeye_sdk::collateral::normal_collateral(
                     &current,
                     &cand_dist,
@@ -357,7 +474,7 @@ async fn quote_normal(
                     .context("quote_candidate_from_state")?
             };
             // Fixed-candidate quote has no belief → no expected value.
-            (q, None, None, None)
+            (q, None, None, None, None)
         };
 
     let cand_mean = Sq128::from_raw(quote.candidate.mean).to_f64();
@@ -424,6 +541,7 @@ async fn quote_normal(
         cvar_5pct: extras.cvar_5pct,
         stress_ev: extras.stress_ev,
         sizing: extras.sizing,
+        sizing_basis,
         warnings: extras.warnings,
         execute_hint,
     })
@@ -446,10 +564,33 @@ async fn quote_lognormal_optimized(
     let market_sigma = deadeye_core::Distribution::sigma(&current).to_f64();
     let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
 
-    let result = handle
+    anyhow::ensure!(
+        args.max_cvar.is_none(),
+        "--max-cvar is normal-family only for now (lognormal risk extras are not yet wired)"
+    );
+    let kelly_mult = args
+        .kelly
+        .or_else(|| args.risk.as_deref().and_then(super::risk::preset_fraction));
+    let mut sizing_basis = "budget".to_owned();
+    let mut result = handle
         .optimize_quote_offline_ev(belief_mu, belief_sigma, budget)
         .await
         .map_err(|e| anyhow::anyhow!("optimize_quote_offline_ev (lognormal): {e}"))?;
+    // Fractional-Kelly stake cap (issue #33): re-optimise at the capped
+    // budget; the belief itself never changes.
+    if let Some((cap, kelly_basis)) = super::risk::kelly_stake_cap(
+        args.bankroll,
+        kelly_mult,
+        result.expected_value,
+        result.collateral_required,
+    )? && cap < result.collateral_required
+    {
+        sizing_basis = kelly_basis;
+        result = handle
+            .optimize_quote_offline_ev(belief_mu, belief_sigma, cap)
+            .await
+            .map_err(|e| anyhow::anyhow!("optimize_quote_offline_ev (lognormal): {e}"))?;
+    }
 
     if result.collateral_required <= 0.0 {
         anyhow::bail!(
@@ -519,10 +660,9 @@ async fn quote_lognormal_optimized(
             result.expected_value,
             result.collateral_required,
             args.bankroll.unwrap_or(0.0),
-            args.kelly
-                .or_else(|| args.risk.as_deref().and_then(super::risk::preset_fraction))
-                .unwrap_or(0.5),
+            kelly_mult.unwrap_or(0.5),
         ),
+        sizing_basis: Some(sizing_basis),
         warnings,
         execute_hint,
     })
@@ -549,12 +689,6 @@ async fn quote_lognormal(
     let variance = args
         .variance
         .context("--variance is required for lognormal quote")?;
-    let sigma = variance.sqrt();
-    let candidate = deadeye_core::distribution::LognormalDistributionRaw {
-        mu: Sq128::from_f64(mean)?.to_raw(),
-        variance: Sq128::from_f64(variance)?.to_raw(),
-        sigma: Sq128::from_f64(sigma)?.to_raw(),
-    };
     let supplied = Sq128::from_f64(args.pad.max(0.0))?.to_raw();
     // x* seed: the f64 minimiser's root. NEVER the candidate's μ — feeding
     // μ_cand as x* fails the verifier's side/stationarity checks for every
@@ -567,6 +701,9 @@ async fn quote_lognormal(
         Sq128::from_f64(mean)?,
         Sq128::from_f64(variance)?,
     )?;
+    // Raw FROM the dist: (σ, σ²) must be Sq128-exact or the runtime's
+    // compute_hints_view rejects the candidate as Option::None (issue #36).
+    let candidate = deadeye_core::Distribution::to_raw(&cand_dist);
     let x_star = match deadeye_sdk::collateral::lognormal_collateral(
         &current,
         &cand_dist,
@@ -623,6 +760,7 @@ async fn quote_lognormal(
         cvar_5pct: None,
         stress_ev: None,
         sizing: None,
+        sizing_basis: None,
         warnings,
         family: family_label(family),
         market: format!("{market:#x}"),
@@ -694,13 +832,65 @@ async fn execute_normal(
                 .await
                 .context("reading market state snapshot")?;
             let belief_sigma = args.belief_sigma.unwrap_or(snapshot.sigma);
-            let (q, ev) = deadeye_sdk::normal::optimize_quote_from_state(
-                &snapshot,
-                belief_mean,
-                belief_sigma,
-                budget,
-            )
-            .context("optimize_quote_offline")?;
+            let quote_at = |b: f64| {
+                deadeye_sdk::normal::optimize_quote_from_state(
+                    &snapshot,
+                    belief_mean,
+                    belief_sigma,
+                    b,
+                )
+                .context("optimize_quote_offline")
+            };
+            let (mut q, mut ev) = quote_at(budget)?;
+            // Sizing policy (issue #33) — same semantics as `trade quote`:
+            // the belief never changes; the stake is capped by re-optimising
+            // at a smaller budget.
+            let kelly_mult = args
+                .kelly
+                .or_else(|| args.risk.as_deref().and_then(super::risk::preset_fraction));
+            let mut eff = budget;
+            let mut basis = "budget".to_owned();
+            let required0 = Sq128::from_raw(q.required_collateral).to_f64();
+            if let Some((cap, kelly_basis)) =
+                super::risk::kelly_stake_cap(args.bankroll, kelly_mult, ev, required0)?
+                && cap < required0
+            {
+                eff = cap;
+                basis = kelly_basis;
+                (q, ev) = quote_at(eff)?;
+            }
+            if let Some(max_cvar) = args.max_cvar {
+                anyhow::ensure!(max_cvar > 0.0, "--max-cvar must be > 0");
+                for _ in 0..40 {
+                    let cm = Sq128::from_raw(q.candidate.mean).to_f64();
+                    let cs = Sq128::from_raw(q.candidate.sigma).to_f64();
+                    let cvar = super::risk::cvar_under_belief(
+                        snapshot.mean,
+                        snapshot.sigma,
+                        cm,
+                        cs,
+                        snapshot.effective_k,
+                        belief_mean,
+                        belief_sigma,
+                        0.05,
+                    );
+                    if !cvar.is_finite() || cvar >= -max_cvar {
+                        break;
+                    }
+                    eff *= 0.75;
+                    basis = "cvar-cap".to_owned();
+                    let (q2, ev2) = quote_at(eff)?;
+                    if Sq128::from_raw(q2.required_collateral).to_f64() <= 0.0 {
+                        anyhow::bail!(
+                            "--max-cvar {max_cvar} XP is unreachable: the smallest viable \
+                             stake still has 5% CVaR {cvar:.4} XP — raise --max-cvar or \
+                             shrink the belief distance"
+                        );
+                    }
+                    (q, ev) = (q2, ev2);
+                }
+            }
+            let _ = eff;
             let required = Sq128::from_raw(q.required_collateral).to_f64();
             if !q.on_chain_will_accept || required <= 0.0 {
                 anyhow::bail!(
@@ -711,7 +901,7 @@ async fn execute_normal(
             let v = Sq128::from_raw(q.candidate.variance).to_f64();
             if ctx.renderer.mode() != OutputMode::Json {
                 eprintln!(
-                    "optimizer: EV-max candidate μ={m:.6}, σ²={v:.6} (EV {ev:+.4} XP,                      collateral ~{required:.4} XP)"
+                    "optimizer: EV-max candidate μ={m:.6}, σ²={v:.6} (EV {ev:+.4} XP,                      collateral ~{required:.4} XP, sizing_basis {basis})"
                 );
             }
             (m, v)
@@ -722,15 +912,12 @@ async fn execute_normal(
     };
 
     let mut quote = if let Some(rt) = runtime {
-        let candidate = deadeye_core::distribution::NormalDistributionRaw {
-            mean: Sq128::from_f64(mean)?.to_raw(),
-            variance: Sq128::from_f64(variance)?.to_raw(),
-            sigma: Sq128::from_f64(variance.sqrt())?.to_raw(),
-        };
         let cand_dist = deadeye_core::NormalDistribution::from_variance(
             Sq128::from_f64(mean)?,
             Sq128::from_f64(variance)?,
         )?;
+        // Sq128-exact (σ, σ²) — see issue #36.
+        let candidate = deadeye_core::Distribution::to_raw(&cand_dist);
         let current = market_handle.distribution().await?;
         let solver = deadeye_sdk::collateral::normal_collateral(
             &current,
@@ -1010,13 +1197,37 @@ async fn execute_lognormal(
     let (mean, variance) = match (args.mean, args.variance, args.belief, args.budget) {
         (Some(m), Some(v), ..) => (m, v),
         (None, None, Some(belief_mu), Some(budget)) => {
+            anyhow::ensure!(
+                args.max_cvar.is_none(),
+                "--max-cvar is normal-family only for now (lognormal risk extras are not \
+                 yet wired)"
+            );
             let market_sigma = deadeye_core::Distribution::sigma(&current).to_f64();
             let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
             let handle = client.lognormal_market(market);
-            let result = handle
+            let kelly_mult = args
+                .kelly
+                .or_else(|| args.risk.as_deref().and_then(super::risk::preset_fraction));
+            let mut result = handle
                 .optimize_quote_offline_ev(belief_mu, belief_sigma, budget)
                 .await
                 .map_err(|e| anyhow::anyhow!("optimize_quote_offline_ev (lognormal): {e}"))?;
+            // Fractional-Kelly stake cap (issue #33), mirroring `trade quote`.
+            if let Some((cap, basis)) = super::risk::kelly_stake_cap(
+                args.bankroll,
+                kelly_mult,
+                result.expected_value,
+                result.collateral_required,
+            )? && cap < result.collateral_required
+            {
+                if ctx.renderer.mode() != OutputMode::Json {
+                    eprintln!("sizing: {basis} caps the stake at {cap:.4} XP");
+                }
+                result = handle
+                    .optimize_quote_offline_ev(belief_mu, belief_sigma, cap)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("optimize_quote_offline_ev (lognormal): {e}"))?;
+            }
             if result.collateral_required <= 0.0 {
                 anyhow::bail!(
                     "lognormal optimizer found no positive-EV trade inside the policy region \
@@ -1044,12 +1255,6 @@ async fn execute_lognormal(
         ),
     };
 
-    let sigma = variance.sqrt();
-    let candidate = deadeye_core::distribution::LognormalDistributionRaw {
-        mu: Sq128::from_f64(mean)?.to_raw(),
-        variance: Sq128::from_f64(variance)?.to_raw(),
-        sigma: Sq128::from_f64(sigma)?.to_raw(),
-    };
     let supplied = Sq128::from_f64(args.max_collateral)?.to_raw();
 
     // Off-chain draft: solve x* with the f64 lognormal minimiser; the
@@ -1058,6 +1263,10 @@ async fn execute_lognormal(
         Sq128::from_f64(mean)?,
         Sq128::from_f64(variance)?,
     )?;
+    // Encode the raw FROM the dist: the runtime's compute_hints_view verifies
+    // (σ, σ²) consistency at Sq128 precision and rejects an f64-sqrt σ that
+    // was quantized independently — the issue #36 Brazil/Belgium blocker.
+    let candidate = deadeye_core::Distribution::to_raw(&cand_dist);
     let solved = deadeye_sdk::collateral::lognormal_collateral(
         &current,
         &cand_dist,

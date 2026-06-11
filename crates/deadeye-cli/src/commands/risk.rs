@@ -174,6 +174,34 @@ pub(crate) fn sizing_advice(
     })
 }
 
+/// Resolve the fractional-Kelly stake cap (issue #33). `probe_ev` /
+/// `probe_collateral` come from an unconstrained quote at the full budget —
+/// the edge estimate the Kelly fraction is computed from. Returns `None`
+/// when no Kelly policy is active; errors when --kelly/--risk lack
+/// --bankroll.
+pub(crate) fn kelly_stake_cap(
+    bankroll: Option<f64>,
+    kelly_multiplier: Option<f64>,
+    probe_ev: f64,
+    probe_collateral: f64,
+) -> anyhow::Result<Option<(f64, String)>> {
+    let Some(mult) = kelly_multiplier else {
+        return Ok(None);
+    };
+    let bankroll = bankroll.ok_or_else(|| {
+        anyhow::anyhow!(
+            "--kelly/--risk size the stake from a bankroll — pass --bankroll <XP> as well"
+        )
+    })?;
+    let Some(advice) = sizing_advice(probe_ev, probe_collateral, bankroll, mult) else {
+        return Ok(None);
+    };
+    Ok(Some((
+        advice.recommended_stake_xp,
+        format!("kelly-{mult:.2}"),
+    )))
+}
+
 /// Pre-trade lint (issue #24): warn, never block. Each warning names the
 /// specific reason.
 #[must_use]

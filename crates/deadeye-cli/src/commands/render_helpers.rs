@@ -316,6 +316,10 @@ pub(crate) struct QuoteResult {
     pub(crate) stress_ev: Option<f64>,
     /// Kelly/bankroll sizing recommendation (issue #15).
     pub(crate) sizing: Option<crate::commands::risk::SizingAdvice>,
+    /// Which sizing constraint bound the stake: `budget`, `kelly-<frac>`,
+    /// or `cvar-cap` (issue #33). None when no sizing policy was applied.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) sizing_basis: Option<String>,
     /// Pre-trade lint findings — warnings, never blocks (issue #24).
     pub(crate) warnings: Vec<String>,
     pub(crate) execute_hint: String,
@@ -417,6 +421,9 @@ impl Render for QuoteResult {
                 "stress_ev",
                 &format!("{sev:.4} XP  (EV if your σ is 1.5× too tight)"),
             );
+        }
+        if let Some(basis) = &self.sizing_basis {
+            r.kv("sizing_basis", basis);
         }
         if let Some(sz) = &self.sizing {
             r.kv(
