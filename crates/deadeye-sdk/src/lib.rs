@@ -26,16 +26,19 @@
 //! settlement.
 //!
 //! ```no_run
-//! use deadeye_sdk::starknet::{
-//!     BivariateMarketReader, BivariateMarketWriter, Felt, JsonRpcProvider,
-//!     NormalMarketReader, NormalMarketWriter, OwnedAccount, TradeError,
-//!     TradeRejectionReason,
+//! use deadeye_sdk::{
+//!     core::{distribution::NormalDistributionRaw, sq128::Sq128Raw},
+//!     starknet::{
+//!         BivariateMarketReader, BivariateMarketWriter, Felt, JsonRpcProvider,
+//!         NormalMarketReader, NormalMarketWriter, OwnedAccount, TradeError, TradeRejectionReason,
+//!     },
 //! };
-//! use deadeye_sdk::core::{distribution::NormalDistributionRaw, sq128::Sq128Raw};
 //! use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 //!
 //! # async fn run() -> Result<(), Box<dyn std::error::Error>> {
-//! let rpc = JsonRpcClient::new(HttpTransport::new("http://localhost:5050".parse::<url::Url>()?));
+//! let rpc = JsonRpcClient::new(HttpTransport::new(
+//!     "http://localhost:5050".parse::<url::Url>()?,
+//! ));
 //! let provider = JsonRpcProvider::new(rpc);
 //!
 //! let (market, runtime): (Felt, Felt) = (Felt::ZERO, Felt::ZERO);
@@ -45,18 +48,31 @@
 //!
 //! let reader = NormalMarketReader::new(&provider, market);
 //! let signer = OwnedAccount::from_signing_key(
-//!     JsonRpcClient::new(HttpTransport::new("http://localhost:5050".parse::<url::Url>()?)),
-//!     address, signing_key, chain_id,
+//!     JsonRpcClient::new(HttpTransport::new(
+//!         "http://localhost:5050".parse::<url::Url>()?,
+//!     )),
+//!     address,
+//!     signing_key,
+//!     chain_id,
 //! );
 //! let writer = NormalMarketWriter::new(reader, signer);
 //!
 //! // 1) Preflight: chain-correct hints + check_trade_view in one call.
 //! let candidate = NormalDistributionRaw {
-//!     mean: Sq128Raw::ZERO, variance: Sq128Raw::ZERO, sigma: Sq128Raw::ZERO,
+//!     mean: Sq128Raw::ZERO,
+//!     variance: Sq128Raw::ZERO,
+//!     sigma: Sq128Raw::ZERO,
 //! };
-//! let quote = writer.reader().quote_trade(
-//!     runtime, candidate, Sq128Raw::ZERO, Sq128Raw::ZERO, Sq128Raw::ZERO,
-//! ).await?;
+//! let quote = writer
+//!     .reader()
+//!     .quote_trade(
+//!         runtime,
+//!         candidate,
+//!         Sq128Raw::ZERO,
+//!         Sq128Raw::ZERO,
+//!         Sq128Raw::ZERO,
+//!     )
+//!     .await?;
 //!
 //! // 2) Branch on the typed verdict.
 //! if !quote.on_chain_will_accept {
@@ -67,9 +83,12 @@
 //! // 3) Submit.
 //! match writer.execute_quote(quote).await {
 //!     Ok(receipt) => println!("trade tx: {:#x}", receipt.transaction_hash),
-//!     Err(TradeError::Rejected { reason: TradeRejectionReason::StaleState { .. }, .. }) => {
+//!     Err(TradeError::Rejected {
+//!         reason: TradeRejectionReason::StaleState { .. },
+//!         ..
+//!     }) => {
 //!         // typical MM retry: re-read, re-quote, re-submit
-//!     }
+//!     },
 //!     Err(e) => return Err(e.into()),
 //! }
 //!
@@ -124,6 +143,10 @@ pub use backtest::{
 };
 pub use bulk::{BulkReader, DistributionSnapshot, Family, MarketStateSnapshot, Position};
 pub use client::DeadeyeClient;
+pub use deadeye_artifacts as artifacts;
+pub use deadeye_collateral as collateral;
+pub use deadeye_core as core;
+pub use deadeye_starknet as starknet;
 pub use error::{SdkError, SdkResult};
 pub use journal::{
     EntryKind, JournalEntry, JournalError, JournalSink, JournalledBivariateWriter,
@@ -135,8 +158,3 @@ pub use stream::{
     BlockNumberSource, CandidateQuote, MarketStateStream, MarketStateUpdate, QuoteSnapshot,
     StarknetBlockSource, StreamConfig,
 };
-
-pub use deadeye_artifacts as artifacts;
-pub use deadeye_collateral as collateral;
-pub use deadeye_core as core;
-pub use deadeye_starknet as starknet;

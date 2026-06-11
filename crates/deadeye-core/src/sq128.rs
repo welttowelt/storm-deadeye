@@ -11,12 +11,12 @@
 //!
 //! # Guarantees
 //!
-//! * **No silent truncation** — every fallible operation returns
-//!   `Result<Self, CoreError>` and never panics on numeric edges.
+//! * **No silent truncation** — every fallible operation returns `Result<Self,
+//!   CoreError>` and never panics on numeric edges.
 //! * **Bit-identical limb encoding** — round-tripping `Sq128 -> Sq128Raw ->
 //!   Sq128` is the identity for every representable value (property-tested).
-//! * **Canonical zero** — `-0` and `+0` compare equal; both serialise to
-//!   `neg = false`.
+//! * **Canonical zero** — `-0` and `+0` compare equal; both serialise to `neg =
+//!   false`.
 
 use core::{
     cmp::Ordering,
@@ -293,10 +293,10 @@ impl Sq128 {
     /// magnitude with the same Newton-Raphson iteration the chain runs:
     ///
     /// 1. Identify the highest non-zero 128-bit limb of the shifted value.
-    /// 2. Seed Newton with `2^192`, `2^128`, `2^64`, or fall back to the
-    ///    u64 `Sqrt` for low magnitudes — matching the Cairo seed table.
-    /// 3. Iterate `g_next = (g + v / g) / 2` until `g_next == g` or
-    ///    oscillates by ±1, then return the smaller of the converged pair.
+    /// 2. Seed Newton with `2^192`, `2^128`, `2^64`, or fall back to the u64
+    ///    `Sqrt` for low magnitudes — matching the Cairo seed table.
+    /// 3. Iterate `g_next = (g + v / g) / 2` until `g_next == g` or oscillates
+    ///    by ±1, then return the smaller of the converged pair.
     ///
     /// The f64 sqrt is **not** consulted; the iteration runs entirely on
     /// `Sq128`'s 256/512-bit integer helpers. This guarantees bit-for-bit

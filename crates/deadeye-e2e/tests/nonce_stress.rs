@@ -15,8 +15,8 @@
 //! routed via a [`NonceManager`]. We verify:
 //!
 //! * Every `reserve()` call produced a distinct nonce.
-//! * The account survived heavy concurrency without the dreaded
-//!   "Account transaction nonce is invalid" cascade.
+//! * The account survived heavy concurrency without the dreaded "Account
+//!   transaction nonce is invalid" cascade.
 //! * Final chain nonce == initial + successful submissions.
 //!
 //! **Devnet caveat:** `starknet-devnet-rs` does not buffer future

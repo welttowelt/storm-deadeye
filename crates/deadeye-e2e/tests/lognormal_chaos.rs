@@ -75,8 +75,8 @@
 //!   * On-chain executor base from driver1 (`run_trade`, `run_add_liquidity`,
 //!     `run_sell_all`, `settle_market_best_effort`, claim sweep).
 //!   * `LpExposureSlice` + `LpBoundedScenario` lifted from driver2 (with the
-//!     dilution bug fixed: `open` rescales prior un-closed slices'
-//!     `pool_share` proportionally; `close` removes the slice and re-normalises).
+//!     dilution bug fixed: `open` rescales prior un-closed slices' `pool_share`
+//!     proportionally; `close` removes the slice and re-normalises).
 //!   * Closed-form LP P&L check via
 //!     `deadeye_optimizer::lp::compute_lp_claim_component_value`.
 //!
@@ -92,7 +92,8 @@
 //! the original) and a degenerate round-trip (P&L must be ≤ initial + DUST).
 //!
 //! Run with:
-//!   `DEADEYE_RUN_INTEGRATION=1 cargo test -p deadeye-e2e --test lognormal_chaos`
+//!   `DEADEYE_RUN_INTEGRATION=1 cargo test -p deadeye-e2e --test
+//! lognormal_chaos`
 
 use std::collections::BTreeMap;
 
@@ -123,7 +124,8 @@ use deadeye_testkit::{
 };
 use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 
-// ─── Constants ────────────────────────────────────────────────────────────────
+// ─── Constants
+// ────────────────────────────────────────────────────────────────
 
 /// Profile id we install for this test.
 const PROFILE_ID: u32 = 1;
@@ -178,7 +180,8 @@ fn strk_units(amount: f64) -> u128 {
     }
 }
 
-// ─── Roles & participants ─────────────────────────────────────────────────────
+// ─── Roles & participants
+// ─────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum Role {
@@ -339,7 +342,8 @@ impl LpBoundedScenario {
     }
 }
 
-// ─── Balance snapshots ────────────────────────────────────────────────────────
+// ─── Balance snapshots
+// ────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone)]
 struct BalanceSnapshot {
@@ -459,7 +463,8 @@ fn diff_snapshots(before: &BalanceSnapshot, after: &BalanceSnapshot, participant
     eprintln!("└─");
 }
 
-/// Conservation invariant: outside settle/claim, `Σparticipant Δ + market Δ + (optionally treasury Δ) = 0`.
+/// Conservation invariant: outside settle/claim, `Σparticipant Δ + market Δ +
+/// (optionally treasury Δ) = 0`.
 ///
 /// If `treasury_is_participant` is set, the treasury is already part of
 /// the participants tally — don't double-count.
@@ -505,7 +510,8 @@ fn assert_no_negative_positions(snap: &BalanceSnapshot) {
     }
 }
 
-// ─── Scenario plan ────────────────────────────────────────────────────────────
+// ─── Scenario plan
+// ────────────────────────────────────────────────────────────
 
 #[derive(Debug, Clone, Copy)]
 struct LnState {
@@ -959,7 +965,8 @@ async fn run_sell_all<P: starknet_providers::Provider + Sync>(
     eprintln!("   ✅ sell[{label}] tx={:#x}", receipt.transaction_hash);
 }
 
-// ─── Settlement ───────────────────────────────────────────────────────────────
+// ─── Settlement
+// ───────────────────────────────────────────────────────────────
 
 async fn settle_market_best_effort(
     admin: &OwnedAccount,
@@ -988,7 +995,8 @@ async fn settle_market_best_effort(
     eprintln!("   ✅ settle tx={:#x}", receipt.transaction_hash);
 }
 
-// ─── The test ─────────────────────────────────────────────────────────────────
+// ─── The test
+// ─────────────────────────────────────────────────────────────────
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 #[ignore = "blocked on initialize_market u256 overflow + lognormal LP writers"]

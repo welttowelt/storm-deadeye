@@ -61,22 +61,21 @@
 //! ## Current scope
 //!
 //! * **Normal family** — fully wired. Every Trade action submits via
-//!   `NormalMarketWriter::execute_trade`, every Sell via
-//!   `sell_position`. The lambda-scaled solver from
-//!   `deadeye-collateral` finds `x*`; the chain re-verifies.
-//! * **Lognormal / Multinoulli / Bivariate families** — off-chain
-//!   only at this revision. The wiring template is identical to the
-//!   normal family's; landing it is mechanical and tracked in
-//!   `docs/SDK_QA_REVIEW.md`. The off-chain solver is still exercised
-//!   so the convergence-rate assertion is meaningful.
+//!   `NormalMarketWriter::execute_trade`, every Sell via `sell_position`. The
+//!   lambda-scaled solver from `deadeye-collateral` finds `x*`; the chain
+//!   re-verifies.
+//! * **Lognormal / Multinoulli / Bivariate families** — off-chain only at this
+//!   revision. The wiring template is identical to the normal family's; landing
+//!   it is mechanical and tracked in `docs/SDK_QA_REVIEW.md`. The off-chain
+//!   solver is still exercised so the convergence-rate assertion is meaningful.
 //!
 //! ## Gating
 //!
 //! Two env vars must be set for this test to actually run:
 //!
 //! * `DEADEYE_RUN_INTEGRATION=1` — gates every integration test.
-//! * `DEADEYE_RUN_LONG=1` — gates the slow tests inside the
-//!   integration set. Without it, the test no-ops with a `skip:` log.
+//! * `DEADEYE_RUN_LONG=1` — gates the slow tests inside the integration set.
+//!   Without it, the test no-ops with a `skip:` log.
 //!
 //! ## Determinism
 //!

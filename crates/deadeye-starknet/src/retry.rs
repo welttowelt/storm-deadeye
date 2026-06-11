@@ -1,4 +1,5 @@
-//! Retrying [`Provider`] wrapper — backoff with jitter for flaky/throttled RPCs.
+//! Retrying [`Provider`] wrapper — backoff with jitter for flaky/throttled
+//! RPCs.
 //!
 //! Public Starknet RPC endpoints rate-limit by returning empty bodies (which
 //! surface as `expected value at line 1 column 1` from serde), `429`s, or
@@ -22,8 +23,10 @@ use std::time::Duration;
 use async_trait::async_trait;
 use starknet_core::types::{BlockId, Felt, FunctionCall};
 
-use crate::error::{ContractError, ContractResult};
-use crate::provider::Provider;
+use crate::{
+    error::{ContractError, ContractResult},
+    provider::Provider,
+};
 
 /// Maximum attempts per call (1 initial + 3 retries).
 const MAX_ATTEMPTS: u32 = 4;
@@ -128,7 +131,7 @@ impl<P: Provider> Provider for RetryingProvider<P> {
                         tokio::time::sleep(delay).await;
                     }
                     last_error = Some(err);
-                }
+                },
             }
         }
         let raw = last_error.map_or_else(String::new, |e| e.to_string());

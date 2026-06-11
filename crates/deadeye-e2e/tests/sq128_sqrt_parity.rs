@@ -13,10 +13,10 @@
 //! via [`Sq128::sqrt`], builds a [`NormalDistributionRaw`], and calls
 //! `compute_hints_view` on the deployed `normal_math_runtime`. Asserts:
 //!
-//! * **Every** distribution survives `to_normal`'s `sqrt_verified` check —
-//!   not a single `None` return.
-//! * The runtime accepts our σ bit-for-bit (i.e. the deployed contract has
-//!   no need to recompute σ — its own `sqrt_verified` already accepted ours).
+//! * **Every** distribution survives `to_normal`'s `sqrt_verified` check — not
+//!   a single `None` return.
+//! * The runtime accepts our σ bit-for-bit (i.e. the deployed contract has no
+//!   need to recompute σ — its own `sqrt_verified` already accepted ours).
 //!
 //! Gated behind `DEADEYE_RUN_INTEGRATION=1`; requires `starknet-devnet` on
 //! the default port. The bootstrap re-uses the standalone `normal_runtime`

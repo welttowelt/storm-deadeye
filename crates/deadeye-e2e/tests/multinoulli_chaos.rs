@@ -46,10 +46,10 @@
 //! * **Driver #1's hard u128 conservation** — `assert_collateral_conservation`
 //!   demands exact equality on non-settlement phase deltas, not a soft delta
 //!   log.
-//! * **Settlement** — dust ≤ `1000` base units; payouts vs market backing
-//!   `rel < 1e-3`; the longshot (Diaz) settlement actually pays the
-//!   participants who held substantial Diaz mass (replacing the trivial
-//!   `bal > 0` check from driver #2).
+//! * **Settlement** — dust ≤ `1000` base units; payouts vs market backing `rel
+//!   < 1e-3`; the longshot (Diaz) settlement actually pays the participants who
+//!   held substantial Diaz mass (replacing the trivial `bal > 0` check from
+//!   driver #2).
 //! * **λ tolerance** — loosened from `1e-6` to `1e-4` absolute (with
 //!   relative-tolerance fallback) to account for the Sq128 → f64 → sqrt
 //!   round-trip.
@@ -62,19 +62,21 @@
 //! * **Round-trip P&L ≤ 0** — the degenerate "trade back to entry priors"
 //!   action (action 11) hard-asserts pre-settle P&L ≤ 0.
 //! * **Transfer list drift guard** — the hand-edited `new_probs` for each
-//!   transfer trade is `assert_eq!`'d against re-applying the transfer list
-//!   to the pre-trade probs.
+//!   transfer trade is `assert_eq!`'d against re-applying the transfer list to
+//!   the pre-trade probs.
 //! * **Hint via testkit** — uses `lifecycle::fetch_multinoulli_hint` which
-//!   tries `compute_hint_view` then `compute_hints_view` (singular →
-//!   plural); replaces driver #1's local Q128 sqrt approximation.
+//!   tries `compute_hint_view` then `compute_hints_view` (singular → plural);
+//!   replaces driver #1's local Q128 sqrt approximation.
 //!
 //! The test is **ignored** until the upstream `initialize_market` u256
 //! overflow lands and a standalone multinoulli runtime instance is deployed
 //! (alongside `env.normal_runtime`). At that point removing `#[ignore]`
 //! flips the chaos suite live.
 
-use std::collections::{BTreeMap, BTreeSet};
-use std::time::Duration;
+use std::{
+    collections::{BTreeMap, BTreeSet},
+    time::Duration,
+};
 
 use deadeye_collateral::{
     CategoricalVerifiedMinimum, categorical_collateral, categorical_l2_norm, categorical_lambda,
@@ -356,7 +358,8 @@ fn apply_transfers_raw(
     }
 }
 
-/// Read `(total_shares, total_backing_deposited)` from the AMM via `get_lp_info`.
+/// Read `(total_shares, total_backing_deposited)` from the AMM via
+/// `get_lp_info`.
 async fn read_lp_info<P: Provider + Sync>(
     rpc: &P,
     market: Felt,
@@ -769,11 +772,11 @@ fn probs_equal(a: &[f64], b: &[f64], tol: f64) -> bool {
 /// `compute_effective_trade_k_view` rule:
 /// `effective_k = max(base_k, base_k · pool_backing / initial_backing)`
 /// (Cairo:
-/// `onchain-multinoulli-amm/src/internal/state.cairo::compute_effective_trade_k_raw`).
-/// The previous assertion used the constant `MARKET_K` and failed
-/// after `add_liquidity` events with `rel_err ≈ pool_backing /
-/// initial_backing - 1`. We now read live pool backing from the AMM
-/// to derive the expected lambda.
+/// `onchain-multinoulli-amm/src/internal/state.
+/// cairo::compute_effective_trade_k_raw`). The previous assertion used the
+/// constant `MARKET_K` and failed after `add_liquidity` events with `rel_err ≈
+/// pool_backing / initial_backing - 1`. We now read live pool backing from the
+/// AMM to derive the expected lambda.
 async fn assert_lambda_invariant<P: Provider + Sync>(
     rpc: &P,
     market: Felt,
@@ -1298,11 +1301,10 @@ async fn multinoulli_market_chaos() {
         actions += 1;
         eprintln!("\n[action {actions}] ADD_LP — Cara deposits 900 backing");
         let owned = env.owned_account(&participants[2].account);
-        submit(
-            &owned,
-            &rpc,
-            vec![build_add_liquidity_call(market, sq(900.0))],
-        )
+        submit(&owned, &rpc, vec![build_add_liquidity_call(
+            market,
+            sq(900.0),
+        )])
         .await
         .expect("Cara add_liquidity");
     }
@@ -1381,11 +1383,10 @@ async fn multinoulli_market_chaos() {
         actions += 1;
         eprintln!("\n[action {actions}] ADD_LP — Dan deposits 600 backing");
         let owned = env.owned_account(&participants[3].account);
-        submit(
-            &owned,
-            &rpc,
-            vec![build_add_liquidity_call(market, sq(600.0))],
-        )
+        submit(&owned, &rpc, vec![build_add_liquidity_call(
+            market,
+            sq(600.0),
+        )])
         .await
         .expect("Dan add_liquidity");
     }
@@ -1430,11 +1431,10 @@ async fn multinoulli_market_chaos() {
         actions += 1;
         eprintln!("\n[action {actions}] REMOVE_LP — Cara unwinds 30 share");
         let owned = env.owned_account(&participants[2].account);
-        submit(
-            &owned,
-            &rpc,
-            vec![build_remove_liquidity_call(market, sq(30.0))],
-        )
+        submit(&owned, &rpc, vec![build_remove_liquidity_call(
+            market,
+            sq(30.0),
+        )])
         .await
         .expect("Cara remove_liquidity");
     }
@@ -1527,17 +1527,17 @@ async fn multinoulli_market_chaos() {
     // ran trades AT HIGH `effective_k` (i.e. post-LP-add) AND pushed
     // mass onto the settlement outcome (Diaz) carry the largest draws:
     //
-    // 1. Bob (Trader-B)  — INVERSION at action 6 (k=850), DENSE-flat
-    //    at action 12 (k=1350): largest single λ-jump in the schedule.
-    // 2. Alice (Trader-A) — DENSE rotate at action 7 (k=850),
-    //    DEGENERATE at action 11 (k=1350): λ_eff ~2900 with Diaz p
-    //    held at the entry-prior level → still demands ~150 STRK.
-    // 3. Eli (Chaos)     — TRANSFER-DOUBLE at action 9 + SPARSE Diaz
-    //    longshot at action 14: deliberately Diaz-weighted.
+    // 1. Bob (Trader-B)  — INVERSION at action 6 (k=850), DENSE-flat at action 12
+    //    (k=1350): largest single λ-jump in the schedule.
+    // 2. Alice (Trader-A) — DENSE rotate at action 7 (k=850), DEGENERATE at action
+    //    11 (k=1350): λ_eff ~2900 with Diaz p held at the entry-prior level → still
+    //    demands ~150 STRK.
+    // 3. Eli (Chaos)     — TRANSFER-DOUBLE at action 9 + SPARSE Diaz longshot at
+    //    action 14: deliberately Diaz-weighted.
     // 4. Dan (Hybrid)    — smaller per-trade collateral envelope.
     // 5. Fran (Admin)    — single trade at action 15.
-    // 6. Cara (LP-only)  — strictly after all trader claims
-    //    (Cairo: `lp_claims.cairo:99`).
+    // 6. Cara (LP-only)  — strictly after all trader claims (Cairo:
+    //    `lp_claims.cairo:99`).
     fn claim_priority(p: &Participant) -> u8 {
         if p.name.starts_with("Bob") {
             return 0;

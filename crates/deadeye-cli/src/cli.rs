@@ -183,7 +183,9 @@ pub(crate) enum Command {
         action: AccountCmd,
     },
     /// Browse markets from the indexer and on-chain.
-    #[command(after_help = "What these numbers mean: https://deadeye.wtf/docs/glossary · the model: https://deadeye.wtf/docs")]
+    #[command(
+        after_help = "What these numbers mean: https://deadeye.wtf/docs/glossary · the model: https://deadeye.wtf/docs"
+    )]
     Markets {
         #[command(subcommand)]
         action: MarketsCmd,
@@ -205,7 +207,9 @@ pub(crate) enum Command {
 
     // ─── Driver B subcommands ─────────────────────────────────────────
     /// Trade preflight / execute / journal (Driver B).
-    #[command(after_help = "How to trade distribution markets: https://deadeye.wtf/docs/trading · terms: https://deadeye.wtf/docs/glossary")]
+    #[command(
+        after_help = "How to trade distribution markets: https://deadeye.wtf/docs/trading · terms: https://deadeye.wtf/docs/glossary"
+    )]
     Trade {
         #[command(subcommand)]
         action: TradeCmd,
@@ -383,12 +387,18 @@ pub(crate) struct TradeExecuteArgs {
     /// Bivariate μ₂.
     #[arg(long)]
     pub(crate) mu2: Option<f64>,
-    /// Optimizer belief mean.
+    /// Optimizer belief mean — runs the same EV-max optimizer as
+    /// `trade quote --belief/--budget` and submits its candidate (log-space
+    /// μ for lognormal markets, matching the on-chain distribution).
     #[arg(long)]
     pub(crate) belief: Option<f64>,
-    /// Optimizer budget.
+    /// Optimizer budget (max collateral the optimizer may risk).
     #[arg(long)]
     pub(crate) budget: Option<f64>,
+    /// Optimizer belief sigma (defaults to the current market sigma;
+    /// log-space for lognormal markets).
+    #[arg(long)]
+    pub(crate) belief_sigma: Option<f64>,
     /// Maximum collateral the caller is willing to supply (STRK).
     #[arg(long)]
     pub(crate) max_collateral: f64,

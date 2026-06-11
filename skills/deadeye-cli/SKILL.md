@@ -222,9 +222,15 @@ mirroring it) enforces a policy region around the CURRENT market state:
 - **Min trade collateral + tolerance:** dust moves below the market's
   `min_trade_collateral` or inside its tolerance band are rejected.
 - **Lognormal markets:** identical caps, applied in **log space** — μ, σ, and
-  your `--belief`/`--belief-sigma` are log-space parameters. On a coarse log
-  domain even ~2.5σ one-step moves can be infeasible under the on-chain side
-  law — that's the contract, not a bug.
+  your `--belief`/`--belief-sigma` are log-space parameters (for quote AND
+  execute). On a coarse log domain even ~2.5σ one-step moves can be infeasible
+  under the on-chain side law — that's the contract, not a bug.
+- **`SideInvalid` / `StationaryInvalid` on every candidate?** Update the CLI
+  (`deadeye update`, ≥ 0.1.16). These verdicts judge the supplied x*
+  (collateral point), not your move size — current `trade execute`
+  chain-probes and certifies x* automatically, so they should no longer
+  appear for optimizer candidates. Pre-0.1.16 CLIs mis-seeded x* on
+  lognormal markets and rejected every trade with exactly these errors.
 
 **If one trade can't reach your belief: ladder it.** The optimizer caps its
 candidate at the policy region and reports `belief_utilization` (the fraction

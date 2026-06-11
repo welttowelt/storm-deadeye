@@ -2,7 +2,7 @@
 
 use anyhow::{Context as _, Result};
 use deadeye_core::{Distribution, Sq128};
-use deadeye_sdk::{DeadeyeClient, bulk::Family, starknet::JsonRpcProvider};
+use deadeye_sdk::{DeadeyeClient, bulk::Family};
 use deadeye_starknet::{
     BivariateMarketReader, ContractResult, Felt, LognormalMarketReader, MultinoulliMarketReader,
     NormalMarketReader,

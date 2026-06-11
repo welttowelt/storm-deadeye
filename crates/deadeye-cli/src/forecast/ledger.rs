@@ -372,9 +372,8 @@ mod tests {
         let snap = ws.load_snapshot().unwrap().unwrap();
         assert!((snap.mean - 3.1).abs() < 1e-9);
 
-        assert_eq!(
-            list_markets_in(tmp.path()).unwrap(),
-            vec!["0xabc".to_owned()]
-        );
+        assert_eq!(list_markets_in(tmp.path()).unwrap(), vec![
+            "0xabc".to_owned()
+        ]);
     }
 }

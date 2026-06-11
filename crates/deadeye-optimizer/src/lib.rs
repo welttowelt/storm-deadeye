@@ -8,10 +8,10 @@
 //!
 //! Two-line user mental model:
 //!
-//! 1. Call [`optimize_normal_trade`] to pick the highest-net-EV trade in
-//!    the policy region given a budget and a belief.
-//! 2. Call [`f_at`] / [`compute_lp_claim_component_value`] to reason
-//!    about LP profitability at a settlement outcome.
+//! 1. Call [`optimize_normal_trade`] to pick the highest-net-EV trade in the
+//!    policy region given a budget and a belief.
+//! 2. Call [`f_at`] / [`compute_lp_claim_component_value`] to reason about LP
+//!    profitability at a settlement outcome.
 
 #![doc(html_no_source)]
 
@@ -19,11 +19,11 @@ pub mod lognormal;
 pub mod lp;
 pub mod normal;
 
-pub use lp::{compute_lp_claim_component_value, compute_total_lp_claim_value, f_at};
 pub use lognormal::{
     LognormalOptimizationInput, LognormalOptimizationResult, lognormal_cross_expectation,
     optimize_lognormal_trade,
 };
+pub use lp::{compute_lp_claim_component_value, compute_total_lp_claim_value, f_at};
 pub use normal::{
     NormalOptimizationInput, NormalOptimizationResult, OptimizerConstraints, normal_sigma_floor,
     optimize_normal_trade,

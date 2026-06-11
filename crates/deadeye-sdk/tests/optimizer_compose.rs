@@ -7,8 +7,8 @@
 //! per the v1.0 contract:
 //!
 //! * Returns a candidate with `μ` shifted toward the belief mean.
-//! * Returns positive collateral when the belief differs meaningfully
-//!   from the market.
+//! * Returns positive collateral when the belief differs meaningfully from the
+//!   market.
 //! * Respects the budget cap.
 
 #![allow(
@@ -43,7 +43,11 @@ fn optimizer_shifts_mean_toward_belief() {
     ));
     eprintln!(
         "optimizer: μ_g = {:.4}, σ_g = {:.4}, coll = {:.4}, ev = {:.4}, roi = {:.4}",
-        res.optimized_mean, res.optimized_sigma, res.collateral_required, res.expected_value, res.roi,
+        res.optimized_mean,
+        res.optimized_sigma,
+        res.collateral_required,
+        res.expected_value,
+        res.roi,
     );
 
     assert!(

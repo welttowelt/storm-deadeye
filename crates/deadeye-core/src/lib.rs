@@ -10,8 +10,8 @@
 //! * [`sq128`] — signed Q128.128 fixed-point numbers, the on-wire numeric
 //!   representation used by every Deadeye market contract.
 //! * [`distribution`] — generic [`Distribution`] trait plus concrete
-//!   value-objects for the four market families currently supported
-//!   (normal, lognormal, multinoulli, bivariate normal).
+//!   value-objects for the four market families currently supported (normal,
+//!   lognormal, multinoulli, bivariate normal).
 //! * [`error`] — the [`CoreError`] hierarchy that bubbles up through every
 //!   layer of the SDK.
 

@@ -419,16 +419,12 @@ async fn deploy_math_runtime(ctx: &AppContext, args: AdminDeployMathRuntimeArgs)
     let tx_hex = format!("{:#x}", tx.transaction_hash);
 
     if verified {
-        cache.upsert(
-            chain,
-            family,
-            RuntimeEntry {
-                address: address_hex.clone(),
-                class_hash: class_hex.clone(),
-                deployed_at_block: deployed_block,
-                deployed_tx: Some(tx_hex.clone()),
-            },
-        );
+        cache.upsert(chain, family, RuntimeEntry {
+            address: address_hex.clone(),
+            class_hash: class_hex.clone(),
+            deployed_at_block: deployed_block,
+            deployed_tx: Some(tx_hex.clone()),
+        });
         cache.save(&cache_path).context("saving runtime cache")?;
     }
 

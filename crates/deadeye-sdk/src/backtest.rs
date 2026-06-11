@@ -9,9 +9,9 @@
 //!
 //! 1. Holds an `initial_state` and a vector of [`MarketEvent`]s.
 //! 2. Walks the events in order, mutating the simulated state.
-//! 3. After every event, polls a user-supplied [`Strategy`] for actions
-//!    and applies them to the same simulated state, charging the strategy
-//!    a P&L delta computed from the off-chain solver.
+//! 3. After every event, polls a user-supplied [`Strategy`] for actions and
+//!    applies them to the same simulated state, charging the strategy a P&L
+//!    delta computed from the off-chain solver.
 //!
 //! There are no chain calls. Strategies that need on-chain feedback
 //! should be tested via the chaos suite (see `crates/deadeye-e2e/`).
@@ -35,8 +35,8 @@ use deadeye_collateral::{
     categorical_collateral, lognormal_collateral, normal_collateral,
 };
 use deadeye_core::{
-    BivariateNormalDistribution, CategoricalDistribution, LognormalDistribution, NormalDistribution,
-    Sq128,
+    BivariateNormalDistribution, CategoricalDistribution, LognormalDistribution,
+    NormalDistribution, Sq128,
 };
 use starknet_core::types::Felt;
 
@@ -211,23 +211,21 @@ impl BacktestEngine {
     ///
     /// Behaviour:
     ///
-    /// * **Missing path** — returns the underlying [`io::Error`]
-    ///   (`NotFound`), so callers can distinguish "no journal yet" from
-    ///   "journal corrupt".
-    /// * **Empty file** — returns an engine with zero events and the
-    ///   default initial state.
-    /// * **Corrupted / unparseable lines** — emitted as a
-    ///   `tracing::warn` and skipped (matches
+    /// * **Missing path** — returns the underlying [`io::Error`] (`NotFound`),
+    ///   so callers can distinguish "no journal yet" from "journal corrupt".
+    /// * **Empty file** — returns an engine with zero events and the default
+    ///   initial state.
+    /// * **Corrupted / unparseable lines** — emitted as a `tracing::warn` and
+    ///   skipped (matches
     ///   [`TradeJournal::replay`](crate::journal::TradeJournal::replay)'s
-    ///   permissive contract; the journal is an observability tool, not
-    ///   a strict schema gate).
-    /// * **Trade entries that aren't `Family::Normal`** — currently
-    ///   skipped. The harness mirrors the on-chain Normal AMM solver;
-    ///   broader family support arrives when the other families ship
-    ///   their off-chain solvers.
-    /// * **`Trade` entries with non-finite μ/σ or σ ≤ 0** — skipped
-    ///   (these are operator-side gate-skip rows where the off-chain
-    ///   quote shape was intentionally truncated).
+    ///   permissive contract; the journal is an observability tool, not a
+    ///   strict schema gate).
+    /// * **Trade entries that aren't `Family::Normal`** — currently skipped.
+    ///   The harness mirrors the on-chain Normal AMM solver; broader family
+    ///   support arrives when the other families ship their off-chain solvers.
+    /// * **`Trade` entries with non-finite μ/σ or σ ≤ 0** — skipped (these are
+    ///   operator-side gate-skip rows where the off-chain quote shape was
+    ///   intentionally truncated).
     ///
     /// Submission-state rows the analytics layer flags as "skipped"
     /// (`receipt.error` starting with `"skipped (…)"`, no `tx_hash`)
@@ -560,7 +558,9 @@ fn seed_initial_state(events: &[MarketEvent]) -> io::Result<MarketState> {
     let var = Sq128::from_f64(1.0)
         .map_err(|e| io::Error::other(format!("seed_initial_state: Sq128(1.0) failed: {e}")))?;
     let dist = NormalDistribution::from_variance(mu, var).map_err(|e| {
-        io::Error::other(format!("seed_initial_state: N(0,1) construction failed: {e}"))
+        io::Error::other(format!(
+            "seed_initial_state: N(0,1) construction failed: {e}"
+        ))
     })?;
     Ok(MarketState {
         distribution: SimDistribution::Normal(dist),
@@ -751,13 +751,10 @@ mod tests {
         let engine = BacktestEngine::from_journal(&path).unwrap();
         assert_eq!(engine.events.len(), 3, "expected 3 Trade events");
         for ev in &engine.events {
-            assert!(matches!(
-                ev,
-                MarketEvent::Trade {
-                    candidate: EventDistribution::Normal(_),
-                    ..
-                },
-            ));
+            assert!(matches!(ev, MarketEvent::Trade {
+                candidate: EventDistribution::Normal(_),
+                ..
+            },));
         }
         // Initial state is seeded from the first Normal trade (μ ≈ 2.0).
         if let SimDistribution::Normal(d) = &engine.initial_state.distribution {
@@ -798,7 +795,10 @@ mod tests {
             JournalSink::flush(&mut j).unwrap();
         }
         // Simulate a torn write: append a half-baked JSON line.
-        let mut f = std::fs::OpenOptions::new().append(true).open(&path).unwrap();
+        let mut f = std::fs::OpenOptions::new()
+            .append(true)
+            .open(&path)
+            .unwrap();
         f.write_all(b"{\"timestamp\":\"truncated").unwrap();
         f.sync_data().unwrap();
         drop(f);

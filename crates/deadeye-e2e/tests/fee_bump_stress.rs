@@ -15,13 +15,14 @@
 //! useful error. Devnet doesn't actually require fee competition so
 //! the bump path is mostly a no-op; we still exercise the API.
 
+use std::time::Duration;
+
 use deadeye_starknet::{FeeBumpPolicy, Felt};
 use deadeye_testkit::{
     devnet,
     fixture::env::{BootstrapConfig, bootstrap_devnet},
 };
 use starknet_core::{types::Call, utils::get_selector_from_name};
-use std::time::Duration;
 use url::Url;
 
 fn integration_enabled() -> bool {

@@ -10,14 +10,14 @@
 //!
 //! Layout:
 //! 1. Start two devnets on ports 5050 and 5051 (the harness assumes the
-//!    operator has both running — we *don't* spawn them from the test
-//!    because spawning subprocesses inside a `cargo test` is flaky).
+//!    operator has both running — we *don't* spawn them from the test because
+//!    spawning subprocesses inside a `cargo test` is flaky).
 //! 2. Construct a `MultiRpcProvider` pointing at both.
 //! 3. Call `block_number` repeatedly — both endpoints serve traffic.
-//! 4. Set `DEADEYE_KILL_PRIMARY=1` to instruct the test harness to make
-//!    the first endpoint unreachable mid-run. (We approximate this by
-//!    pointing the first URL at a closed port on `:65000` and only
-//!    relying on the secondary at `:5050`.)
+//! 4. Set `DEADEYE_KILL_PRIMARY=1` to instruct the test harness to make the
+//!    first endpoint unreachable mid-run. (We approximate this by pointing the
+//!    first URL at a closed port on `:65000` and only relying on the secondary
+//!    at `:5050`.)
 //! 5. Verify the provider continues to serve traffic from the secondary.
 //! 6. Endpoint health snapshot should mark the bad endpoint Down.
 

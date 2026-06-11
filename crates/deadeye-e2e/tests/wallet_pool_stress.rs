@@ -14,8 +14,8 @@
 //! Builds a pool of 5 devnet accounts, fires 100 concurrent transfers
 //! using [`WalletPool::lease`], and asserts:
 //! 1. All 100 submissions succeeded.
-//! 2. Per-wallet load is roughly balanced (each wallet handled
-//!    20 ± 5 tx under round-robin).
+//! 2. Per-wallet load is roughly balanced (each wallet handled 20 ± 5 tx under
+//!    round-robin).
 //!
 //! Gated on `DEADEYE_RUN_INTEGRATION=1` + devnet on `:5050`.
 

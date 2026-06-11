@@ -111,7 +111,8 @@ async fn trade_from_snapshot(
         args.market, snap.mean, snap.sd, snap.variance
     );
     // Execute trades the snapshot distribution as a fixed candidate (the
-    // execute path is fixed-candidate; the optimizer lives in `quote`).
+    // snapshot IS the curated belief; optimizer sizing happens in
+    // `forecast quote --budget` / `trade execute --belief/--budget`).
     let execute_args = TradeExecuteArgs {
         market: args.market,
         family: args.family,
@@ -121,6 +122,7 @@ async fn trade_from_snapshot(
         mu2: None,
         belief: None,
         budget: None,
+        belief_sigma: None,
         max_collateral: args.max_collateral,
         runtime: args.runtime,
         journal: args.journal,
@@ -660,7 +662,11 @@ async fn score(ctx: &AppContext, market: &str) -> Result<()> {
     let settlement_value = deadeye_core::Sq128::from_raw(status.settlement_value).to_f64();
 
     let error = settlement_value - snapshot.mean;
-    let z = if snapshot.sd > 0.0 { error / snapshot.sd } else { f64::NAN };
+    let z = if snapshot.sd > 0.0 {
+        error / snapshot.sd
+    } else {
+        f64::NAN
+    };
     let crps = bayes::crps_normal(snapshot.mean, snapshot.sd, settlement_value);
     let record = ScoreRecord {
         market: market.to_owned(),
@@ -677,13 +683,19 @@ async fn score(ctx: &AppContext, market: &str) -> Result<()> {
         .with_context(|| format!("writing {}", path.display()))?;
 
     println!("Forecast score — {market}");
-    println!("  committed:        μ={:.4} σ={:.4}", record.mean, record.sd);
+    println!(
+        "  committed:        μ={:.4} σ={:.4}",
+        record.mean, record.sd
+    );
     println!("  settled at:       {settlement_value:.4}");
     println!(
         "  signed error:     {:+.4}  (positive = you were low)",
         record.error
     );
-    println!("  z-score:          {:+.3}  (|z|>2 ⇒ badly off or σ too tight)", record.z);
+    println!(
+        "  z-score:          {:+.3}  (|z|>2 ⇒ badly off or σ too tight)",
+        record.z
+    );
     println!("  CRPS:             {:.5}  (lower is better)", record.crps);
     println!();
     println!("  postmortem prompt: what did you miss, and what did you over-weight?");
@@ -727,8 +739,14 @@ fn calibration() -> Result<()> {
     println!("  mean signed bias:   {mean_bias:+.4}  (positive = you forecast low)");
     println!("  RMS z:              {rms_z:.3}   (1.0 = σ perfectly sized; >1 = overconfident)");
     println!("  z dispersion (σ_z): {:.3}", z_var.sqrt());
-    println!("  coverage |z|≤1:     {:.0}%  (target ≈ 68%)", cover_1s * 100.0);
-    println!("  coverage |z|≤1.64:  {:.0}%  (target ≈ 90%)", cover_90 * 100.0);
+    println!(
+        "  coverage |z|≤1:     {:.0}%  (target ≈ 68%)",
+        cover_1s * 100.0
+    );
+    println!(
+        "  coverage |z|≤1.64:  {:.0}%  (target ≈ 90%)",
+        cover_90 * 100.0
+    );
     println!("  mean CRPS:          {mean_crps:.5}");
     println!();
     if rms_z > 1.1 {

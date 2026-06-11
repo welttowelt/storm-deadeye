@@ -71,13 +71,13 @@ pub(crate) fn pretty_rejection(reason: &TradeRejectionReason) -> RejectionExplan
                 match sub_reason {
                     Some(VerificationSubReason::SideInvalid) => (
                         Some("SideInvalid"),
-                        "Verifier rejected the chosen trade side at chain precision.",
-                        "Pick a candidate strictly inside the policy region — check that |Δμ| < tolerance · σ.",
+                        "Verifier rejected the supplied x* (collateral point): wrong side of the payoff crossing at chain precision.",
+                        "Not a move-size problem — drop any hand-supplied x* and re-run `trade execute` (it chain-probes and certifies x* automatically). Per-trade caps are σ ratio ≤ 4× and |Δμ| ≤ 4σ_market.",
                     ),
                     Some(VerificationSubReason::StationaryInvalid) => (
                         Some("StationaryInvalid"),
-                        "d'(x*) is outside the chain's tolerance — the off-chain x* missed the stationary point.",
-                        "Let `quote_trade` re-derive x* from the candidate instead of supplying your own.",
+                        "d'(x*) is outside the chain's tolerance — the supplied x* missed the verifier's own fixed-point root.",
+                        "Re-run `trade execute` (it chain-probes x* to the verifier's root); if you supplied --x-star by hand, drop it.",
                     ),
                     Some(VerificationSubReason::CurvatureInvalid) => (
                         Some("CurvatureInvalid"),

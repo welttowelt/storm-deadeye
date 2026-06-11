@@ -11,7 +11,6 @@ use deadeye_sdk::{
     DeadeyeClient,
     bulk::Family,
     journal::{EntryKind, JournalEntry, TradeJournal},
-    starknet::JsonRpcProvider,
 };
 use deadeye_starknet::{
     Account, Call, Felt, LognormalMarketReader, LognormalMarketWriter, NormalMarketReader,
@@ -31,8 +30,7 @@ use crate::{
             resolve_runtime, resolve_runtime_opt,
         },
     },
-    context::AppContext,
-    context::CliProvider,
+    context::{AppContext, CliProvider},
     output::OutputMode,
 };
 
@@ -276,7 +274,6 @@ async fn quote_normal(
     family: Family,
     args: &TradeQuoteArgs,
 ) -> Result<QuoteResult> {
-    use deadeye_core::Distribution as _;
     let market_handle = client.normal_market(market);
     // Offline by default: a runtime address is an *optional* chain-faithful
     // override, never required for a read-only quote (issue #4).
@@ -440,7 +437,6 @@ async fn quote_lognormal_optimized(
     budget: f64,
     args: &TradeQuoteArgs,
 ) -> Result<QuoteResult> {
-    use deadeye_core::Distribution as _;
     let handle = client.lognormal_market(market);
     let current = handle
         .distribution()
@@ -474,12 +470,24 @@ async fn quote_lognormal_optimized(
         ));
     }
 
+    warnings.push(format!(
+        "collateral {:.4} XP is the off-chain optimizer's estimate — the chain-certified \
+         requirement at execute time can differ (the on-chain λ calibration is not fully \
+         mirrored off-chain yet); `trade execute` \
+         probes the chain first and only proceeds while the certified cost stays under your \
+         --max-collateral ceiling",
+        result.collateral_required,
+    ));
+    // Hint in `--belief` form: execute re-runs this same optimizer against
+    // live state and submits its candidate — no lossy hand-off through
+    // --mean/--variance, and the chain probe certifies x* before submission
+    // (issues #30 + #32). --max-collateral carries the BUDGET (the documented
+    // \"max collateral the trader will risk\"), not estimate×1.1 — the chain
+    // truth can exceed the f64 estimate, and the post-probe ceiling check is
+    // the real guard.
     let execute_hint = format!(
-        "deadeye trade execute {:#x} --family lognormal --mean {:.6} --variance {:.6} --max-collateral {:.6}",
-        market,
-        result.optimized_mu,
-        result.optimized_variance,
-        result.collateral_required * 1.10
+        "deadeye trade execute {market:#x} --family lognormal --belief {belief_mu:.6} \
+         --belief-sigma {belief_sigma:.6} --budget {budget:.6} --max-collateral {budget:.6}"
     );
     Ok(QuoteResult {
         family: "lognormal",
@@ -548,10 +556,49 @@ async fn quote_lognormal(
         sigma: Sq128::from_f64(sigma)?.to_raw(),
     };
     let supplied = Sq128::from_f64(args.pad.max(0.0))?.to_raw();
+    // x* seed: the f64 minimiser's root. NEVER the candidate's μ — feeding
+    // μ_cand as x* fails the verifier's side/stationarity checks for every
+    // candidate, which mis-reported all moves as SideInvalid (issues #30/#31).
+    let current = reader
+        .distribution()
+        .await
+        .map_err(|e| anyhow::anyhow!("reading market distribution: {e}"))?;
+    let cand_dist = deadeye_core::LognormalDistribution::from_variance(
+        Sq128::from_f64(mean)?,
+        Sq128::from_f64(variance)?,
+    )?;
+    let x_star = match deadeye_sdk::collateral::lognormal_collateral(
+        &current,
+        &cand_dist,
+        deadeye_sdk::collateral::LognormalOptions::default(),
+    ) {
+        Ok(s) => Sq128::from_f64(s.x_star)?.to_raw(),
+        Err(_) => candidate.mu,
+    };
     let quote = reader
-        .quote_trade(runtime, candidate, candidate.mu, supplied, supplied)
+        .quote_trade(runtime, candidate, x_star, supplied, supplied)
         .await
         .map_err(|e| anyhow::anyhow!("quote_trade: {e}"))?;
+
+    // The runtime check verifies the *supplied* x* at fixed-point precision;
+    // a perfect f64 root can still sit just outside its acceptance window
+    // (the chain-probe drift, issue #13). Execute probes + certifies x*
+    // automatically, so a Side/Stationary rejection here is conservative.
+    let mut warnings = Vec::new();
+    if matches!(
+        quote.rejection,
+        Some(deadeye_starknet::TradeRejectionReason::VerificationFailed {
+            sub_reason: Some(
+                deadeye_starknet::VerificationSubReason::SideInvalid
+                    | deadeye_starknet::VerificationSubReason::StationaryInvalid
+            ),
+        })
+    ) {
+        warnings.push(
+            "the runtime rejected the f64 x* at chain fixed-point precision — `trade execute`              chain-probes and certifies x* automatically, so this candidate may still execute;              treat this preflight as conservative"
+                .into(),
+        );
+    }
 
     let cand_mu = Sq128::from_raw(quote.candidate.mu).to_f64();
     let cand_sigma = Sq128::from_raw(quote.candidate.sigma).to_f64();
@@ -576,7 +623,7 @@ async fn quote_lognormal(
         cvar_5pct: None,
         stress_ev: None,
         sizing: None,
-        warnings: Vec::new(),
+        warnings,
         family: family_label(family),
         market: format!("{market:#x}"),
         candidate_mean: Some(cand_mu),
@@ -635,10 +682,44 @@ async fn execute_normal(
     let runtime = resolve_runtime_opt(args.runtime.as_deref(), Family::Normal)?;
     let market_handle = client.normal_market(market);
 
-    let mean = args.mean.context("--mean required for normal execute")?;
-    let variance = args
-        .variance
-        .context("--variance required for normal execute")?;
+    // Candidate: explicit --mean/--variance, or the same EV-max optimizer
+    // `trade quote --belief/--budget` runs (issue #32) — the executed
+    // candidate is exactly the optimizer's certified one, re-derived against
+    // live state.
+    let (mean, variance) = match (args.mean, args.variance, args.belief, args.budget) {
+        (Some(m), Some(v), ..) => (m, v),
+        (None, None, Some(belief_mean), Some(budget)) => {
+            let snapshot = market_handle
+                .state_snapshot()
+                .await
+                .context("reading market state snapshot")?;
+            let belief_sigma = args.belief_sigma.unwrap_or(snapshot.sigma);
+            let (q, ev) = deadeye_sdk::normal::optimize_quote_from_state(
+                &snapshot,
+                belief_mean,
+                belief_sigma,
+                budget,
+            )
+            .context("optimize_quote_offline")?;
+            let required = Sq128::from_raw(q.required_collateral).to_f64();
+            if !q.on_chain_will_accept || required <= 0.0 {
+                anyhow::bail!(
+                    "normal optimizer found no acceptable positive-EV trade under budget                      {budget} XP — the market may already price your belief; re-quote with                      `trade quote --belief/--budget` for diagnostics"
+                );
+            }
+            let m = Sq128::from_raw(q.candidate.mean).to_f64();
+            let v = Sq128::from_raw(q.candidate.variance).to_f64();
+            if ctx.renderer.mode() != OutputMode::Json {
+                eprintln!(
+                    "optimizer: EV-max candidate μ={m:.6}, σ²={v:.6} (EV {ev:+.4} XP,                      collateral ~{required:.4} XP)"
+                );
+            }
+            (m, v)
+        },
+        _ => anyhow::bail!(
+            "normal execute needs either --mean/--variance or --belief/--budget              [--belief-sigma] (runs the same EV-max optimizer as `trade quote`)"
+        ),
+    };
 
     let mut quote = if let Some(rt) = runtime {
         let candidate = deadeye_core::distribution::NormalDistributionRaw {
@@ -745,13 +826,21 @@ async fn execute_normal(
                 // `execute_trade` deducts deposit fees from the supplied
                 // amount and verifies the NET against the requirement —
                 // gross up by the measured net rate, plus a thin margin.
-                let gross_needed = chain_required / outcome.net_rate;
+                // The NET supply must also clear the AMM's minimum-trade
+                // floor, or a small trade reverts LOW_COLLATERAL.
+                let min_trade = match writer.reader().params().await {
+                    Ok(p) => Sq128::from_raw(p.min_trade_collateral).to_f64(),
+                    Err(_) => 0.0,
+                };
+                let net_needed = chain_required.max(min_trade);
+                let gross_needed = net_needed / outcome.net_rate;
                 let buffered = gross_needed * 1.002;
                 if buffered > args.max_collateral {
                     anyhow::bail!(
-                        "chain-verified collateral is {chain_required:.4} XP net \
-                         (≈{buffered:.4} XP gross incl. deposit fees), which exceeds \
-                         --max-collateral {:.4}; raise the ceiling",
+                        "chain-verified collateral is {net_needed:.4} XP net \
+                         (≈{buffered:.4} XP gross incl. deposit fees and the {min_trade:.4} \
+                         XP minimum-trade floor), which exceeds --max-collateral {:.4}; \
+                         raise the ceiling",
                         args.max_collateral,
                     );
                 }
@@ -899,17 +988,62 @@ async fn execute_lognormal(
     confirm: bool,
     label: &'static str,
 ) -> Result<()> {
-    // A math-runtime address is optional: with one, the legacy chain-preflight
-    // quote path runs; without one (the out-of-box default — no runtime
-    // instance is deployed on mainnet), the quote is drafted off-chain and the
-    // chain probe below makes it submittable.
+    // A math-runtime address is OPTIONAL and diagnostic-only. The submit path
+    // always drafts the quote off-chain and has the chain itself certify
+    // x* + hints via the probe. (Issues #30/#31: the old runtime preflight fed
+    // `check_trade_view` the candidate's μ as x*, which fails the verifier's
+    // side/stationarity checks for EVERY candidate — so all lognormal trades
+    // were rejected as SideInvalid/StationaryInvalid before the probe that
+    // would have certified them ever ran.)
     let runtime = resolve_runtime_opt(args.runtime.as_deref(), Family::Lognormal)?;
     let reader = LognormalMarketReader::new(client.provider(), market);
 
-    let mean = args.mean.context("--mean required for lognormal execute")?;
-    let variance = args
-        .variance
-        .context("--variance required for lognormal execute")?;
+    let current = reader
+        .distribution()
+        .await
+        .map_err(|e| anyhow::anyhow!("reading market distribution: {e}"))?;
+
+    // Candidate: explicit log-space --mean/--variance, or the same EV-max
+    // optimizer `trade quote --belief/--budget` runs (issue #32) — so the
+    // executed candidate is exactly the optimizer's certified one, re-derived
+    // against live state. Belief is in LOG space, matching the on-chain (μ, σ).
+    let (mean, variance) = match (args.mean, args.variance, args.belief, args.budget) {
+        (Some(m), Some(v), ..) => (m, v),
+        (None, None, Some(belief_mu), Some(budget)) => {
+            let market_sigma = deadeye_core::Distribution::sigma(&current).to_f64();
+            let belief_sigma = args.belief_sigma.unwrap_or(market_sigma);
+            let handle = client.lognormal_market(market);
+            let result = handle
+                .optimize_quote_offline_ev(belief_mu, belief_sigma, budget)
+                .await
+                .map_err(|e| anyhow::anyhow!("optimize_quote_offline_ev (lognormal): {e}"))?;
+            if result.collateral_required <= 0.0 {
+                anyhow::bail!(
+                    "lognormal optimizer found no positive-EV trade inside the policy region \
+                     under budget {budget} XP — either the market already prices your belief, \
+                     or the per-trade movement caps bind (σ ratio ≤ 4×, |Δμ| ≤ 4σ per trade); \
+                     for a far-away belief, ladder multiple trades"
+                );
+            }
+            if ctx.renderer.mode() != OutputMode::Json {
+                eprintln!(
+                    "optimizer: EV-max candidate μ_log={:.6}, σ²_log={:.6} (EV {:+.4} XP, \
+                     collateral ~{:.4} XP)",
+                    result.optimized_mu,
+                    result.optimized_variance,
+                    result.expected_value,
+                    result.collateral_required,
+                );
+            }
+            (result.optimized_mu, result.optimized_variance)
+        },
+        _ => anyhow::bail!(
+            "lognormal execute needs either --mean/--variance (log-space) or \
+             --belief/--budget [--belief-sigma] (log-space; runs the same EV-max \
+             optimizer as `trade quote`)"
+        ),
+    };
+
     let sigma = variance.sqrt();
     let candidate = deadeye_core::distribution::LognormalDistributionRaw {
         mu: Sq128::from_f64(mean)?.to_raw(),
@@ -918,57 +1052,30 @@ async fn execute_lognormal(
     };
     let supplied = Sq128::from_f64(args.max_collateral)?.to_raw();
 
-    let mut quote = if let Some(rt) = runtime {
-        let q = reader
-            .quote_trade(rt, candidate, candidate.mu, supplied, supplied)
-            .await
-            .map_err(|e| anyhow::anyhow!("preflight quote_trade: {e}"))?;
-        if !q.on_chain_will_accept {
-            let rejection = q.rejection.as_ref().map(pretty_rejection);
-            let result = SubmissionResult {
-                action: "trade",
-                market: format!("{market:#x}"),
-                tx_hash: None,
-                call_count: None,
-                accepted: false,
-                rejection,
-                note: Some(
-                    "preflight rejected — fix the cause and re-quote before retrying".into(),
-                ),
-            };
-            return ctx.renderer.print(&result);
-        }
-        q
-    } else {
-        // Off-chain draft: solve x* with the f64 lognormal minimiser; the
-        // hints + chain-exact x*/collateral come from the probe below.
-        let current = reader
-            .distribution()
-            .await
-            .map_err(|e| anyhow::anyhow!("reading market distribution: {e}"))?;
-        let cand_dist = deadeye_core::LognormalDistribution::from_variance(
-            Sq128::from_f64(mean)?,
-            Sq128::from_f64(variance)?,
-        )?;
-        let solved = deadeye_sdk::collateral::lognormal_collateral(
-            &current,
-            &cand_dist,
-            deadeye_sdk::collateral::LognormalOptions::default(),
-        )
-        .map_err(|e| anyhow::anyhow!("off-chain lognormal solver: {e}"))?;
-        deadeye_starknet::LognormalTradeQuote {
-            candidate,
-            // Placeholder — replaced by the probe's chain-computed hints.
-            candidate_hints: deadeye_starknet::types::lognormal::LognormalSqrtHintsRaw {
-                l2_norm_denom: Sq128::ZERO.to_raw(),
-                backing_denom: Sq128::ZERO.to_raw(),
-            },
-            x_star: Sq128::from_f64(solved.x_star)?.to_raw(),
-            required_collateral: Sq128::from_f64(solved.collateral)?.to_raw(),
-            padded_collateral: supplied,
-            on_chain_will_accept: true,
-            rejection: None,
-        }
+    // Off-chain draft: solve x* with the f64 lognormal minimiser; the
+    // hints + chain-exact x*/collateral come from the probe below.
+    let cand_dist = deadeye_core::LognormalDistribution::from_variance(
+        Sq128::from_f64(mean)?,
+        Sq128::from_f64(variance)?,
+    )?;
+    let solved = deadeye_sdk::collateral::lognormal_collateral(
+        &current,
+        &cand_dist,
+        deadeye_sdk::collateral::LognormalOptions::default(),
+    )
+    .map_err(|e| anyhow::anyhow!("off-chain lognormal solver: {e}"))?;
+    let mut quote = deadeye_starknet::LognormalTradeQuote {
+        candidate,
+        // Placeholder — replaced by the probe's chain-computed hints.
+        candidate_hints: deadeye_starknet::types::lognormal::LognormalSqrtHintsRaw {
+            l2_norm_denom: Sq128::ZERO.to_raw(),
+            backing_denom: Sq128::ZERO.to_raw(),
+        },
+        x_star: Sq128::from_f64(solved.x_star)?.to_raw(),
+        required_collateral: Sq128::from_f64(solved.collateral)?.to_raw(),
+        padded_collateral: supplied,
+        on_chain_will_accept: true,
+        rejection: None,
     };
 
     let account = build_owned_account(ctx)?;
@@ -978,26 +1085,33 @@ async fn execute_lognormal(
         account,
     );
 
-    // Chain-probe x* refinement (issue #13 root cause — same fixed-point
-    // stationarity drift as normal markets). For the offline path this is
-    // MANDATORY: it also supplies the chain-computed candidate hints, without
-    // which `execute_trade` rejects the calldata.
-    match deadeye_starknet::chain_probe::refine_lognormal_quote(
+    // Chain-probe x* certification (issue #13 root cause — fixed-point
+    // stationarity drift). MANDATORY: it also supplies the chain-computed
+    // candidate hints, without which `execute_trade` rejects the calldata.
+    let probe_outcome = deadeye_starknet::chain_probe::refine_lognormal_quote(
         writer.account(),
         writer.reader(),
         &quote,
     )
-    .await
-    {
+    .await;
+    match probe_outcome {
         Ok(Some(outcome)) => {
             let chain_required = Sq128::from_raw(outcome.computed_collateral).to_f64();
-            let gross_needed = chain_required / outcome.net_rate;
+            // The AMM also enforces a minimum-trade floor on the NET supply —
+            // for a small trade the probe-certified requirement can sit below
+            // it, and supplying only the requirement reverts LOW_COLLATERAL.
+            let min_trade = match reader.params().await {
+                Ok(p) => Sq128::from_raw(p.min_trade_collateral).to_f64(),
+                Err(_) => 0.0,
+            };
+            let net_needed = chain_required.max(min_trade);
+            let gross_needed = net_needed / outcome.net_rate;
             let buffered = gross_needed * 1.002;
             if buffered > args.max_collateral {
                 anyhow::bail!(
-                    "chain-verified collateral is {chain_required:.4} XP net (≈{buffered:.4} XP \
-                     gross incl. deposit fees), which exceeds --max-collateral {:.4}; raise the \
-                     ceiling",
+                    "chain-verified collateral is {net_needed:.4} XP net (≈{buffered:.4} XP \
+                     gross incl. deposit fees and the {min_trade:.4} XP minimum-trade floor), \
+                     which exceeds --max-collateral {:.4}; raise the ceiling",
                     args.max_collateral,
                 );
             }
@@ -1015,26 +1129,56 @@ async fn execute_lognormal(
                 );
             }
         },
-        Ok(None) if runtime.is_none() => {
-            anyhow::bail!(
-                "the chain probe could not certify an x* for this candidate (and the offline \
-                 path cannot construct chain-exact hints without it) — adjust the candidate \
-                 (e.g. a smaller move) and retry"
-            );
-        },
-        Err(e) if runtime.is_none() => {
-            anyhow::bail!(
-                "chain probe unavailable ({e}) — the offline lognormal path needs it to \
-                 construct chain-exact hints; retry, or pass --runtime with a deployed \
-                 math-runtime address"
-            );
-        },
-        Ok(None) | Err(_) => {
-            ctx.renderer.warning(
-                "chain probe could not certify an x*; submitting the runtime-preflighted quote \
-                 (the pre-submit simulation still blocks a reverting trade before any gas is \
-                 spent)",
-            );
+        probe_miss @ (Ok(None) | Err(_)) => {
+            // Diagnostic fallback: with a runtime configured, ask its
+            // `check_trade_view` (seeded with the SOLVED x*, never μ_cand)
+            // for a typed verdict. If it accepts, adopt its chain-computed
+            // hints and proceed; otherwise surface the typed rejection.
+            if let Some(rt) = runtime {
+                let q = reader
+                    .quote_trade(rt, candidate, quote.x_star, supplied, supplied)
+                    .await
+                    .map_err(|e| anyhow::anyhow!("diagnostic quote_trade: {e}"))?;
+                if q.on_chain_will_accept {
+                    quote.candidate_hints = q.candidate_hints;
+                    quote.required_collateral = q.required_collateral;
+                    ctx.renderer.warning(
+                        "chain probe could not certify an x*, but the runtime verifier accepts \
+                         the f64 root — submitting the runtime-validated quote (the pre-submit \
+                         simulation still blocks a reverting trade before any gas is spent)",
+                    );
+                } else {
+                    let rejection = q.rejection.as_ref().map(pretty_rejection);
+                    let result = SubmissionResult {
+                        action: "trade",
+                        market: format!("{market:#x}"),
+                        tx_hash: None,
+                        call_count: None,
+                        accepted: false,
+                        rejection,
+                        note: Some(
+                            "chain probe could not certify an x* and the runtime verifier \
+                             rejects the candidate — adjust it (e.g. a smaller move) and retry"
+                                .into(),
+                        ),
+                    };
+                    return ctx.renderer.print(&result);
+                }
+            } else {
+                match probe_miss {
+                    Ok(None) => anyhow::bail!(
+                        "the chain probe could not certify an x* for this candidate (and the \
+                         offline path cannot construct chain-exact hints without it) — adjust \
+                         the candidate (e.g. a smaller move) and retry"
+                    ),
+                    Err(e) => anyhow::bail!(
+                        "chain probe unavailable ({e}) — the offline lognormal path needs it \
+                         to construct chain-exact hints; retry, or pass --runtime with a \
+                         deployed math-runtime address"
+                    ),
+                    Ok(Some(_)) => unreachable!("handled above"),
+                }
+            }
         },
     }
 

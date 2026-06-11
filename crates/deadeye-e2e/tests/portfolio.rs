@@ -16,14 +16,12 @@
 //! settle, [`deadeye_sdk::Portfolio::load`] is invoked with the three
 //! market refs and we assert:
 //!
-//! * `total_exposure_f64() > 0` — the trader has non-zero exposure
-//!   across the portfolio.
-//! * `positions.len() == 3` — every market the trader traded on is
-//!   present.
-//! * `lp_positions.len() == 3` — every market the trader LP'd on is
-//!   present.
-//! * `delta_neutral_hedge_for(market_0).len() == 2` — recommending
-//!   hedges against `market_0` returns the other two markets.
+//! * `total_exposure_f64() > 0` — the trader has non-zero exposure across the
+//!   portfolio.
+//! * `positions.len() == 3` — every market the trader traded on is present.
+//! * `lp_positions.len() == 3` — every market the trader LP'd on is present.
+//! * `delta_neutral_hedge_for(market_0).len() == 2` — recommending hedges
+//!   against `market_0` returns the other two markets.
 //!
 //! ## Gating
 //!

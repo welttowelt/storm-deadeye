@@ -67,43 +67,40 @@
 //!  7. Charlie remove_liquidity (30%)
 //!  8. Dana   add_liquidity (+400)
 //!  9. Alice  trade   → N(46, 4)  σ-ratio ≈ 3.89× stretch    [Scenario A2]
-//!     (from prev σ=√36=6 ⇒ ratio = 6/2 = 3.0×; if prev is σ=√16=4
-//!     we get √16/√4 = 2×. Concretely the prior step's variance is
-//!     resolved at runtime; we keep `assert_sigma_safe` active.)
+//!     (from prev σ=√36=6 ⇒ ratio = 6/2 = 3.0×; if prev is σ=√16=4 we get
+//!     √16/√4 = 2×. Concretely the prior step's variance is resolved at
+//!     runtime; we keep `assert_sigma_safe` active.)
 //! 10. Bob    sell_position_guarded (full unwind)            [Scenario B]
-//! 11. Dana   trade   → Δμ ≈ 3.5σ separation (μ 42 → 3 at σ ≈ 10)
-//!                                                            [Scenario A3]
+//! 11. Dana   trade   → Δμ ≈ 3.5σ separation (μ 42 → 3 at σ ≈ 10) [Scenario A3]
 //! 12. Eve    factory.settle_normal_markets_strict([market], x* = 47)
 //!     + every participant `claim`s.
 //!
 //! ## Invariants asserted between phases
 //!   * **Collateral conservation (pre-settle):** for every trade-phase
-//!     transition, `Σ Δparticipants + Δmarket + Δtreasury == 0` in
-//!     **i128 deltas** (not `saturating_sub`, which would mask
-//!     negative deltas).
-//!   * **LP backing monotonicity:** `Δlp.total_backing_deposited` grows
-//!     by ≥ `min_delta` after add-liquidity.
+//!     transition, `Σ Δparticipants + Δmarket + Δtreasury == 0` in **i128
+//!     deltas** (not `saturating_sub`, which would mask negative deltas).
+//!   * **LP backing monotonicity:** `Δlp.total_backing_deposited` grows by ≥
+//!     `min_delta` after add-liquidity.
 //!   * **No participant ends below dust floor (1 STRK).**
-//!   * **Settlement:** `drained == Σ payouts + Δtreasury` in **i128**
-//!     (relative tol < 1e-3), even when fees are 0.
+//!   * **Settlement:** `drained == Σ payouts + Δtreasury` in **i128** (relative
+//!     tol < 1e-3), even when fees are 0.
 //!   * **Post-claim market drains** to within 1000 base units of zero.
 //!   * **Scenario B (Bob round-trip):** pre-settlement P&L ≤ 1 base unit.
 //!
 //! ## Bug-hunting scenarios
-//!   * **Scenario A / A2 / A3:** drive the σ-ratio and Δμ toward the
-//!     4× / 4σ policy envelope. The off-chain solver runs with
-//!     `MinimizationPolicy::standard()`. `assert_sigma_safe` is the
-//!     guard that catches the saddle-pair pathology *before* it
-//!     reaches the chain.
-//!   * **Scenario B (Bob round-trip):** Bob trades up then sells; the
-//!     combined token P&L must not be positive — the AMM is not
-//!     allowed to pay traders for round-tripping.
+//!   * **Scenario A / A2 / A3:** drive the σ-ratio and Δμ toward the 4× / 4σ
+//!     policy envelope. The off-chain solver runs with
+//!     `MinimizationPolicy::standard()`. `assert_sigma_safe` is the guard that
+//!     catches the saddle-pair pathology *before* it reaches the chain.
+//!   * **Scenario B (Bob round-trip):** Bob trades up then sells; the combined
+//!     token P&L must not be positive — the AMM is not allowed to pay traders
+//!     for round-tripping.
 //!
 //! ## Blocked dependencies
 //! Anything touching `initialize_market` is annotated:
-//!     `// TODO: blocked on initialize_market u256_sub Overflow — see CHAOS_SUITE_STATUS.md`
-//! When the on-chain blocker lifts, the early-return in Phase 2 goes
-//! away and the assertions go live.
+//!     `// TODO: blocked on initialize_market u256_sub Overflow — see
+//! CHAOS_SUITE_STATUS.md` When the on-chain blocker lifts, the early-return in
+//! Phase 2 goes away and the assertions go live.
 //!
 //! The test is `#[ignore]` so CI shows it as skipped until the
 //! blocker resolves — never green by accident.
@@ -1106,7 +1103,8 @@ async fn normal_market_chaos() {
     eprintln!("✅ market deployed: {market:#x}");
 
     // ── Phase 2: admin initializes (deposit initial backing) ──────────
-    // TODO: blocked on initialize_market u256_sub Overflow — see CHAOS_SUITE_STATUS.md
+    // TODO: blocked on initialize_market u256_sub Overflow — see
+    // CHAOS_SUITE_STATUS.md
     let init_outcome =
         initialize_market(&admin_handle, market, env.collateral, INIT_APPROVE_AMOUNT).await;
     match init_outcome {

@@ -14,13 +14,13 @@
 //! ## Conventions
 //!
 //! * `Family` is reused from [`crate::bulk`] — no new tag.
-//! * Position valuation uses `total_collateral` as a conservative
-//!   fallback when the pricing primitives aren't enabled. A future wave
-//!   may swap in an EV-based valuation; the field is named
-//!   `current_value_f64` so the API doesn't shift when that lands.
-//! * `total_strk_balance` is supplied by the caller because the SDK
-//!   doesn't have a hard dependency on a specific ERC-20 reader. The
-//!   constructor accepts `0` if the caller doesn't care.
+//! * Position valuation uses `total_collateral` as a conservative fallback when
+//!   the pricing primitives aren't enabled. A future wave may swap in an
+//!   EV-based valuation; the field is named `current_value_f64` so the API
+//!   doesn't shift when that lands.
+//! * `total_strk_balance` is supplied by the caller because the SDK doesn't
+//!   have a hard dependency on a specific ERC-20 reader. The constructor
+//!   accepts `0` if the caller doesn't care.
 
 use std::collections::BTreeMap;
 
@@ -162,14 +162,11 @@ impl Portfolio {
             if let Ok(pos) = res {
                 let current_value_f64 = position_current_value(&pos);
                 if current_value_f64 > 0.0 {
-                    positions.insert(
-                        m.address,
-                        PositionEntry {
-                            family: m.family,
-                            raw: pos,
-                            current_value_f64,
-                        },
-                    );
+                    positions.insert(m.address, PositionEntry {
+                        family: m.family,
+                        raw: pos,
+                        current_value_f64,
+                    });
                 }
             }
         }
@@ -185,14 +182,11 @@ impl Portfolio {
                 } else {
                     0.0
                 };
-                lp_positions.insert(
-                    m.address,
-                    LpEntry {
-                        family: m.family,
-                        shares_f64: shares,
-                        backing_share_pct: pct,
-                    },
-                );
+                lp_positions.insert(m.address, LpEntry {
+                    family: m.family,
+                    shares_f64: shares,
+                    backing_share_pct: pct,
+                });
             }
         }
 

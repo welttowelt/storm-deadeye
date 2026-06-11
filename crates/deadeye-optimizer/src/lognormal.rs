@@ -25,9 +25,7 @@
 //! (substitute `y = ln x`; the extra `e^{-y}` from the two `1/x` Jacobians
 //! against `dx = e^y dy` integrates to the `exp(σc²/2 − μc)` factor).
 
-use deadeye_collateral::lognormal::{
-    LognormalOptions, lognormal_collateral, lognormal_lambda,
-};
+use deadeye_collateral::lognormal::{LognormalOptions, lognormal_collateral, lognormal_lambda};
 use deadeye_core::{LognormalDistribution, Sq128};
 
 use crate::normal::OptimizerConstraints;
@@ -110,8 +108,8 @@ pub fn lognormal_cross_expectation(mu: f64, sigma: f64, belief_mu: f64, belief_s
     }
     let var_sum = sigma.mul_add(sigma, belief_sigma * belief_sigma);
     let diff = mu - belief_mu;
-    let gaussian = (-0.5 * diff * diff / var_sum).exp()
-        / (2.0 * core::f64::consts::PI * var_sum).sqrt();
+    let gaussian =
+        (-0.5 * diff * diff / var_sum).exp() / (2.0 * core::f64::consts::PI * var_sum).sqrt();
     let combined_var = 1.0 / (1.0 / (sigma * sigma) + 1.0 / (belief_sigma * belief_sigma));
     let combined_mu =
         combined_var * (mu / (sigma * sigma) + belief_mu / (belief_sigma * belief_sigma));
@@ -263,7 +261,11 @@ pub fn optimize_lognormal_trade(input: LognormalOptimizationInput) -> LognormalO
         is_budget_sufficient: (best_mu - input.belief_mu).abs() < sigma_step * 0.5
             && (best_sigma - input.belief_sigma).abs() < sigma_step * 0.5,
         budget_surplus: input.budget - best_coll,
-        roi: if best_coll > 0.0 { best_ev / best_coll } else { 0.0 },
+        roi: if best_coll > 0.0 {
+            best_ev / best_coll
+        } else {
+            0.0
+        },
     }
 }
 
@@ -336,7 +338,10 @@ mod tests {
         let poor = optimize_lognormal_trade(LognormalOptimizationInput::new(
             30.0, 0.30, 0.15, 0.50, 0.25, 200.0,
         ));
-        assert!(rich.belief_utilization >= poor.belief_utilization, "{rich:?} vs {poor:?}");
+        assert!(
+            rich.belief_utilization >= poor.belief_utilization,
+            "{rich:?} vs {poor:?}"
+        );
         assert!(poor.collateral_required <= 30.0 + 1e-9);
     }
 
@@ -346,16 +351,14 @@ mod tests {
             10_000.0, // huge budget
             5.0,      // belief μ far beyond the per-trade cap
             0.05,     // belief σ far below σ/4
-            0.50,
-            0.25,
-            200.0,
+            0.50, 0.25, 200.0,
         ));
         let constraints = OptimizerConstraints::default();
         assert!(result.optimized_sigma >= 0.25 / constraints.max_sigma_ratio - 1e-9);
-        assert!(result.optimized_sigma <= 0.25 * constraints.max_sigma_ratio + 1e-9);
+        assert!(result.optimized_sigma <= 0.25_f64.mul_add(constraints.max_sigma_ratio, 1e-9));
         assert!(
             (result.optimized_mu - 0.50).abs()
-                <= constraints.max_mean_sep_sigmas * 0.25 + 1e-9,
+                <= constraints.max_mean_sep_sigmas.mul_add(0.25, 1e-9),
             "single-trade μ move is capped: {result:?}",
         );
         // A capped move means the belief was NOT fully expressed — the CLI

@@ -17,18 +17,17 @@
 //!
 //! Each family gets a single proptest that:
 //!
-//! 1. Generates a random pair of distributions inside the chain's
-//!    numerical envelope (per `MinimizationPolicy::standard()`).
+//! 1. Generates a random pair of distributions inside the chain's numerical
+//!    envelope (per `MinimizationPolicy::standard()`).
 //! 2. Calls the solver.
 //! 3. Asserts ONE of two outcomes:
-//!    * `Ok(verified)` — the verified minimum's invariants hold
-//!      (non-negative collateral, finite iteration count, AND — for the
-//!      normal family — the **chain-faithful** lambda-scaled stationarity
-//!      `|d̃'(x*)| < tolerance · max(λ_f, λ_g, 1)`, matching the
-//!      post-Wave-0 on-chain verifier in
+//!    * `Ok(verified)` — the verified minimum's invariants hold (non-negative
+//!      collateral, finite iteration count, AND — for the normal family — the
+//!      **chain-faithful** lambda-scaled stationarity `|d̃'(x*)| < tolerance ·
+//!      max(λ_f, λ_g, 1)`, matching the post-Wave-0 on-chain verifier in
 //!      `packages/onchain-normal-math/src/helpers.cairo`).
-//!    * `Err(_)` — the solver returned a typed error. The solver MUST
-//!      NOT panic, hang, or return NaN.
+//!    * `Err(_)` — the solver returned a typed error. The solver MUST NOT
+//!      panic, hang, or return NaN.
 //!
 //! ## Chaos surface coverage
 //!
@@ -36,18 +35,17 @@
 //! cases explicitly:
 //!
 //! * **σ-shrink** (`var_f >> var_g` or vice-versa) — the ratio range
-//!   `0.01..1000` covers ratios up to 10⁵, far beyond the chain's
-//!   typical 4× envelope.
-//! * **Equal-σ μ-shifts** — the variance generator can land on the same
-//!   sampled value for both sides; the |Δμ| range up to 200 σ stresses
-//!   the saddle-pair pathology that broke Wave 0.
-//! * **Opposite-μ + opposite-σ** — independent generators for `mu_f`
-//!   and `mu_g` (negative and positive) plus independent variance
-//!   generators yield "σ widens AND μ moves opposite to σ direction"
-//!   pairs in ~25 % of samples.
-//! * **Wide mean magnitude** — `mu ∈ [-100, 100]` ensures the absolute
-//!   mean guard from `MinimizationPolicy::standard` exercises both
-//!   sides of its 2¹⁰⁰-ish bound without ever tripping it.
+//!   `0.01..1000` covers ratios up to 10⁵, far beyond the chain's typical 4×
+//!   envelope.
+//! * **Equal-σ μ-shifts** — the variance generator can land on the same sampled
+//!   value for both sides; the |Δμ| range up to 200 σ stresses the saddle-pair
+//!   pathology that broke Wave 0.
+//! * **Opposite-μ + opposite-σ** — independent generators for `mu_f` and `mu_g`
+//!   (negative and positive) plus independent variance generators yield "σ
+//!   widens AND μ moves opposite to σ direction" pairs in ~25 % of samples.
+//! * **Wide mean magnitude** — `mu ∈ [-100, 100]` ensures the absolute mean
+//!   guard from `MinimizationPolicy::standard` exercises both sides of its
+//!   2¹⁰⁰-ish bound without ever tripping it.
 //!
 //! ## Determinism
 //!

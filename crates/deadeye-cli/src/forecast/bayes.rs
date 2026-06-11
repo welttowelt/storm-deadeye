@@ -18,8 +18,8 @@
 //!   the market's own state into a prior.
 //! * **Normal space** — weighted, correlation-aware aggregation of component
 //!   `(μ, σ)` beliefs into a single `(mean, sd)` with quantiles and downside.
-//!   This is the bridge to the trade optimizer: the aggregate `mean` and
-//!   `sd²` (variance) feed `deadeye trade quote --mean --variance`.
+//!   This is the bridge to the trade optimizer: the aggregate `mean` and `sd²`
+//!   (variance) feed `deadeye trade quote --mean --variance`.
 //!
 //! Everything here is total and side-effect free so it is trivially testable
 //! and safe to call from the CLI or an agent loop.
@@ -301,7 +301,8 @@ pub(crate) struct EvidenceWeight {
     pub(crate) likelihood_ratio: f64,
     /// Signed log-odds contribution (additive in logit space).
     pub(crate) log_odds: f64,
-    /// Composite quality `[0, 1]` = reliability·relevance·independence·recency·(1−bias).
+    /// Composite quality `[0, 1]` =
+    /// reliability·relevance·independence·recency·(1−bias).
     pub(crate) quality: f64,
 }
 
@@ -472,10 +473,8 @@ pub(crate) fn shrink_to_market(
 ) -> (f64, f64) {
     let e = edge_strength.clamp(0.0, 1.0);
     let mu = e.mul_add(my_mu, (1.0 - e) * market_mu);
-    let var = e.mul_add(
-        my_sigma * my_sigma,
-        (1.0 - e) * market_sigma * market_sigma,
-    ) + e * (1.0 - e) * (my_mu - market_mu).powi(2);
+    let var = e.mul_add(my_sigma * my_sigma, (1.0 - e) * market_sigma * market_sigma)
+        + e * (1.0 - e) * (my_mu - market_mu).powi(2);
     (mu, var.max(0.0).sqrt())
 }
 

@@ -125,13 +125,10 @@ where
         }
         let value = self.inner.call(call, block).await?;
         if let Ok(mut cache) = self.cache.lock() {
-            cache.insert(
-                key,
-                Entry {
-                    value: value.clone(),
-                    expires_at: now + self.ttl,
-                },
-            );
+            cache.insert(key, Entry {
+                value: value.clone(),
+                expires_at: now + self.ttl,
+            });
         }
         Ok(value)
     }

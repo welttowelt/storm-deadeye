@@ -13,17 +13,16 @@
 //! Configure via env vars:
 //!
 //! * `DEADEYE_RUN_INTEGRATION=1` to enable.
-//! * `DEADEYE_DEVNET_B_PID=<pid>` to identify the secondary devnet
-//!   process; the test will `kill -KILL` it half-way through.
+//! * `DEADEYE_DEVNET_B_PID=<pid>` to identify the secondary devnet process; the
+//!   test will `kill -KILL` it half-way through.
 //!
 //! Flow:
 //! 1. Build a `MultiRpcProvider` over both endpoints.
 //! 2. Issue 50 `block_number` calls — every endpoint should serve some.
 //! 3. Kill the secondary devnet.
-//! 4. Issue 50 more `block_number` calls — all must succeed via the
-//!    primary.
-//! 5. Inspect endpoint health. The killed endpoint must be marked
-//!    `Down` (or `HalfOpen` after cooldown expires).
+//! 4. Issue 50 more `block_number` calls — all must succeed via the primary.
+//! 5. Inspect endpoint health. The killed endpoint must be marked `Down` (or
+//!    `HalfOpen` after cooldown expires).
 
 use std::time::{Duration, Instant};
 

@@ -61,8 +61,8 @@ use deadeye_collateral::{MinimizationPolicy, lambda as collateral_lambda, normal
 // pub-use at the bottom of this module.
 use deadeye_core::Distribution as _CollateralPdf;
 use deadeye_core::{NormalDistribution, Sq128, distribution::NormalSqrtHintsRaw, sq128::Sq128Raw};
-use deadeye_optimizer::{NormalOptimizationInput, optimize_normal_trade};
 pub use deadeye_optimizer::normal_sigma_floor;
+use deadeye_optimizer::{NormalOptimizationInput, optimize_normal_trade};
 use deadeye_starknet::{
     Account, ExecutionReceipt, Felt, NormalMarketReader, NormalMarketWriter, NormalTradeQuote,
     Provider, TradeRejectionReason, types::normal::TradeInput,
@@ -176,7 +176,11 @@ fn validate_effective_k_override(value: f64) -> SdkResult<()> {
 ///
 /// Returns `base_k` as a fallback when `initial_backing == 0` (matches the
 /// chain's `Option::None` path: no scaling possible, so no upgrade applied).
-pub(crate) fn live_effective_k(params_k: Sq128, pool_backing: Sq128, initial_backing: Sq128) -> Sq128 {
+pub(crate) fn live_effective_k(
+    params_k: Sq128,
+    pool_backing: Sq128,
+    initial_backing: Sq128,
+) -> Sq128 {
     if initial_backing.is_zero() || initial_backing.is_negative() {
         return params_k;
     }
@@ -195,22 +199,39 @@ pub(crate) fn live_effective_k(params_k: Sq128, pool_backing: Sq128, initial_bac
 /// round-trip the chain's fixed-point values bit-exactly through JSON.
 #[derive(Debug, Clone, Copy, serde::Serialize, serde::Deserialize)]
 pub struct Sq128RawWire {
+    /// Least-significant 64-bit limb.
     pub limb0: u64,
+    /// Second 64-bit limb.
     pub limb1: u64,
+    /// Third 64-bit limb.
     pub limb2: u64,
+    /// Most-significant 64-bit limb.
     pub limb3: u64,
+    /// Sign flag (`true` = negative).
     pub neg: bool,
 }
 
 impl From<Sq128Raw> for Sq128RawWire {
     fn from(raw: Sq128Raw) -> Self {
-        Self { limb0: raw.limb0, limb1: raw.limb1, limb2: raw.limb2, limb3: raw.limb3, neg: raw.neg }
+        Self {
+            limb0: raw.limb0,
+            limb1: raw.limb1,
+            limb2: raw.limb2,
+            limb3: raw.limb3,
+            neg: raw.neg,
+        }
     }
 }
 
 impl From<Sq128RawWire> for Sq128Raw {
     fn from(wire: Sq128RawWire) -> Self {
-        Self { limb0: wire.limb0, limb1: wire.limb1, limb2: wire.limb2, limb3: wire.limb3, neg: wire.neg }
+        Self {
+            limb0: wire.limb0,
+            limb1: wire.limb1,
+            limb2: wire.limb2,
+            limb3: wire.limb3,
+            neg: wire.neg,
+        }
     }
 }
 
@@ -227,16 +248,25 @@ impl From<Sq128RawWire> for Sq128Raw {
 pub struct NormalMarketStateSnapshot {
     /// Market contract address (hex).
     pub market: String,
+    /// Distribution mean, chain-exact.
     pub mean_raw: Sq128RawWire,
+    /// Distribution variance, chain-exact.
     pub variance_raw: Sq128RawWire,
+    /// Distribution sigma, chain-exact.
     pub sigma_raw: Sq128RawWire,
+    /// Immutable base liquidity constant `k`, chain-exact.
     pub base_k_raw: Sq128RawWire,
+    /// Initial backing at deployment, chain-exact.
     pub initial_backing_raw: Sq128RawWire,
+    /// Live pool backing (total deposited), chain-exact.
     pub pool_backing_raw: Sq128RawWire,
-    /// Human mirrors (display only).
+    /// Human mirror of the mean (display only).
     pub mean: f64,
+    /// Human mirror of sigma (display only).
     pub sigma: f64,
+    /// Human mirror of the live effective k (display only).
     pub effective_k: f64,
+    /// Human mirror of the pool backing in XP (display only).
     pub pool_backing_xp: f64,
 }
 
@@ -953,6 +983,12 @@ where
         })
     }
 
+    /// Fully client-side fixed-candidate quote — reads state once, then
+    /// reproduces the AMM's accept/collateral math locally (no runtime, no
+    /// gas). The default preflight behind `trade execute --mean/--variance`.
+    ///
+    /// # Errors
+    /// Propagates provider/read failures and core math errors.
     #[instrument(skip(self), fields(market = %self.reader.address()))]
     pub async fn quote_candidate_offline(
         &self,

@@ -64,16 +64,16 @@ fn integration_enabled() -> bool {
 fn scenarios() -> [(f64, f64, f64); 10] {
     // (belief_mean, belief_sigma, budget), targeting market N(μ=42, σ=8)
     [
-        (45.0, 6.0, 50.0),     // mild μ-shift + σ-shrink
-        (50.0, 4.0, 100.0),    // bullish μ + tight σ
-        (38.0, 10.0, 50.0),    // bearish μ + wider σ
-        (42.0, 2.0, 25.0),     // pure σ-arb (equal μ, tight σ)
-        (42.0, 16.0, 25.0),    // pure σ-arb (equal μ, loose σ)
-        (55.0, 5.0, 150.0),    // strong bullish
-        (30.0, 9.0, 100.0),    // strong bearish + tight σ
-        (44.0, 7.0, 40.0),     // mild bullish
-        (40.0, 6.5, 60.0),     // mild bearish
-        (48.0, 8.0, 75.0),     // bullish μ-only
+        (45.0, 6.0, 50.0),  // mild μ-shift + σ-shrink
+        (50.0, 4.0, 100.0), // bullish μ + tight σ
+        (38.0, 10.0, 50.0), // bearish μ + wider σ
+        (42.0, 2.0, 25.0),  // pure σ-arb (equal μ, tight σ)
+        (42.0, 16.0, 25.0), // pure σ-arb (equal μ, loose σ)
+        (55.0, 5.0, 150.0), // strong bullish
+        (30.0, 9.0, 100.0), // strong bearish + tight σ
+        (44.0, 7.0, 40.0),  // mild bullish
+        (40.0, 6.5, 60.0),  // mild bearish
+        (48.0, 8.0, 75.0),  // bullish μ-only
     ]
 }
 
@@ -134,8 +134,10 @@ async fn offline_optimize_quote_parity_against_runtime() {
     eprintln!("✅ initialized + approved");
 
     // ─── Phase 3: build two `NormalMarket` handles & run all scenarios ──
-    let provider_chain = JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(env.url.clone())));
-    let provider_off = JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(env.url.clone())));
+    let provider_chain =
+        JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(env.url.clone())));
+    let provider_off =
+        JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(env.url.clone())));
     let market_chain = NormalMarket::new(&provider_chain, market);
     let market_off = NormalMarket::new(&provider_off, market);
 
@@ -244,8 +246,7 @@ fn candidates_equal(a: &NormalDistributionRaw, b: &NormalDistributionRaw) -> boo
 }
 
 fn hints_equal(a: &NormalSqrtHintsRaw, b: &NormalSqrtHintsRaw) -> bool {
-    raws_equal(&a.l2_norm_denom, &b.l2_norm_denom)
-        && raws_equal(&a.backing_denom, &b.backing_denom)
+    raws_equal(&a.l2_norm_denom, &b.l2_norm_denom) && raws_equal(&a.backing_denom, &b.backing_denom)
 }
 
 // Self-test of `from_variance` parity → just to compile-time-check the imports.

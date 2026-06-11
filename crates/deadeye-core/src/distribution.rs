@@ -5,8 +5,8 @@
 //! 1. Validates its invariants at construction time.
 //! 2. Carries the canonical [`Sq128Raw`] representation used in on-chain
 //!    calldata.
-//! 3. Implements [`Distribution`] so collateral / SDK code can be generic
-//!    over distribution shape.
+//! 3. Implements [`Distribution`] so collateral / SDK code can be generic over
+//!    distribution shape.
 //!
 //! ## Numerical posture
 //!

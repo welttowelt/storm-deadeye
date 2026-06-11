@@ -8,8 +8,7 @@
 )]
 
 use deadeye_collateral::{MinimizationPolicy, lambda, normal_collateral};
-use deadeye_core::NormalDistribution;
-use deadeye_core::Sq128;
+use deadeye_core::{NormalDistribution, Sq128};
 
 fn gpi(mu1: f64, s1: f64, mu2: f64, s2: f64) -> f64 {
     let sv = (s1 * s1) + (s2 * s2);
@@ -29,7 +28,10 @@ fn main() {
     println!();
 
     // Sweep σ candidates at μ_g = μ_market
-    println!("{:>8} {:>10} {:>10} {:>10} {:>10}", "σ_g", "λ_g", "EV", "cost", "net");
+    println!(
+        "{:>8} {:>10} {:>10} {:>10} {:>10}",
+        "σ_g", "λ_g", "EV", "cost", "net"
+    );
     println!("{}", "─".repeat(54));
 
     let f = NormalDistribution::from_variance(
@@ -59,8 +61,6 @@ fn main() {
 
         let net = raw_ev - cost;
         let marker = if net > 0.0 { " ←" } else { "" };
-        println!(
-            "{s_g:>8.4} {lam_g:>10.4} {raw_ev:>10.4} {cost:>10.4} {net:>10.4}{marker}"
-        );
+        println!("{s_g:>8.4} {lam_g:>10.4} {raw_ev:>10.4} {cost:>10.4} {net:>10.4}{marker}");
     }
 }

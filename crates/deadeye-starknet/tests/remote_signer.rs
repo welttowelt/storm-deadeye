@@ -10,10 +10,9 @@
 //! The test spins up a mock signing endpoint that returns canned r/s for
 //! a fixed hash, drives a `RemoteSigner` against it, and verifies:
 //! 1. The signer produces the expected (r, s).
-//! 2. The remote endpoint received exactly one POST with the expected
-//!    body shape.
-//! 3. Retry logic fires on transient 503 responses and ultimately
-//!    succeeds.
+//! 2. The remote endpoint received exactly one POST with the expected body
+//!    shape.
+//! 3. Retry logic fires on transient 503 responses and ultimately succeeds.
 
 use std::{sync::Arc, time::Duration};
 

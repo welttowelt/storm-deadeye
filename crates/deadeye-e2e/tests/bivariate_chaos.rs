@@ -75,12 +75,12 @@
 //! * Hard `assert_eq!(drift, 0)` on every non-settlement phase.
 //! * LP backing monotonic across add → remove pairs.
 //! * `closed_form_payout = λ · pdf(P; μ, σ, ρ)`.
-//! * ρ-round-trip preservation in `Sq128` (NOT on-chain preservation
-//!   until helpers populate `last_position_per_role` from chain reads).
+//! * ρ-round-trip preservation in `Sq128` (NOT on-chain preservation until
+//!   helpers populate `last_position_per_role` from chain reads).
 //! * Degenerate snap-back: payout ≤ supplied (zero fees).
-//! * Settlement conservation: `|Σ payouts − backing| < 1e-3 · backing`
-//!   (gated on `has_real_helpers`; structure present so the wire-up
-//!   regression is caught when the helpers land).
+//! * Settlement conservation: `|Σ payouts − backing| < 1e-3 · backing` (gated
+//!   on `has_real_helpers`; structure present so the wire-up regression is
+//!   caught when the helpers land).
 //!
 //! ## Status
 //!

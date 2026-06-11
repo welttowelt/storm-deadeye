@@ -31,12 +31,12 @@
 //! This catches:
 //! * Hint-derivation drift (chain re-derives different hints, fails
 //!   `INVALID_HINTS`).
-//! * `x_star` seed choice that lands outside the chain's stationarity
-//!   tolerance (`VerificationFailed::StationaryInvalid`).
-//! * Collateral solver drift between the off-chain Newton solver and
-//!   the chain's Sq128 solver (`CollateralInsufficient`).
-//! * Policy-region disagreements between the optimizer's grid bounds
-//!   and the chain's `min_trade_collateral` / backing constraint.
+//! * `x_star` seed choice that lands outside the chain's stationarity tolerance
+//!   (`VerificationFailed::StationaryInvalid`).
+//! * Collateral solver drift between the off-chain Newton solver and the
+//!   chain's Sq128 solver (`CollateralInsufficient`).
+//! * Policy-region disagreements between the optimizer's grid bounds and the
+//!   chain's `min_trade_collateral` / backing constraint.
 //!
 //! Gated behind `DEADEYE_RUN_INTEGRATION=1` and requires `starknet-devnet`
 //! on `:5050`. Sweeps ~30 scenarios spanning σ-tightening, σ-widening,
@@ -112,39 +112,164 @@ const fn scenarios() -> &'static [Scenario] {
     // "optimizer-rejected", not "disagreed".
     &[
         // ── σ-tightening (σ_b ≪ σ_m=8), different μ-shifts ──────────
-        Scenario { label: "σ↓ μ↑ mild   ", belief_mu: 44.0, belief_sigma: 1.5, budget: 60.0 },
-        Scenario { label: "σ↓ μ=eq      ", belief_mu: 42.0, belief_sigma: 1.5, budget: 60.0 },
-        Scenario { label: "σ↓ μ↓ mild   ", belief_mu: 40.0, belief_sigma: 1.5, budget: 60.0 },
+        Scenario {
+            label: "σ↓ μ↑ mild   ",
+            belief_mu: 44.0,
+            belief_sigma: 1.5,
+            budget: 60.0,
+        },
+        Scenario {
+            label: "σ↓ μ=eq      ",
+            belief_mu: 42.0,
+            belief_sigma: 1.5,
+            budget: 60.0,
+        },
+        Scenario {
+            label: "σ↓ μ↓ mild   ",
+            belief_mu: 40.0,
+            belief_sigma: 1.5,
+            budget: 60.0,
+        },
         // ── σ-widening (σ_b > σ_m=8), different μ-shifts ────────────
-        Scenario { label: "σ↑ μ↑ mild   ", belief_mu: 44.0, belief_sigma: 10.0, budget: 60.0 },
-        Scenario { label: "σ↑ μ=eq      ", belief_mu: 42.0, belief_sigma: 12.0, budget: 60.0 },
-        Scenario { label: "σ↑ μ↓ mild   ", belief_mu: 40.0, belief_sigma: 11.0, budget: 60.0 },
+        Scenario {
+            label: "σ↑ μ↑ mild   ",
+            belief_mu: 44.0,
+            belief_sigma: 10.0,
+            budget: 60.0,
+        },
+        Scenario {
+            label: "σ↑ μ=eq      ",
+            belief_mu: 42.0,
+            belief_sigma: 12.0,
+            budget: 60.0,
+        },
+        Scenario {
+            label: "σ↑ μ↓ mild   ",
+            belief_mu: 40.0,
+            belief_sigma: 11.0,
+            budget: 60.0,
+        },
         // ── σ-near-equal (σ_b ≈ σ_m=8) at different μ-shifts ──────
-        Scenario { label: "σ≈ μ↑ pure   ", belief_mu: 44.0, belief_sigma: 7.0, budget: 60.0 },
-        Scenario { label: "σ≈ μ↑↑ mild  ", belief_mu: 46.0, belief_sigma: 7.0, budget: 60.0 },
-        Scenario { label: "σ≈ μ↓ pure   ", belief_mu: 39.0, belief_sigma: 7.0, budget: 60.0 },
+        Scenario {
+            label: "σ≈ μ↑ pure   ",
+            belief_mu: 44.0,
+            belief_sigma: 7.0,
+            budget: 60.0,
+        },
+        Scenario {
+            label: "σ≈ μ↑↑ mild  ",
+            belief_mu: 46.0,
+            belief_sigma: 7.0,
+            budget: 60.0,
+        },
+        Scenario {
+            label: "σ≈ μ↓ pure   ",
+            belief_mu: 39.0,
+            belief_sigma: 7.0,
+            budget: 60.0,
+        },
         // ── σ-only (μ ≈ μ_m, σ ≠ σ_m) ────────────────────────────────
-        Scenario { label: "σ-only narrow", belief_mu: 42.0, belief_sigma: 1.0, budget: 50.0 },
-        Scenario { label: "σ-only loose ", belief_mu: 42.0, belief_sigma: 14.0, budget: 50.0 },
-        Scenario { label: "σ-only mid↓  ", belief_mu: 42.0, belief_sigma: 2.5, budget: 50.0 },
+        Scenario {
+            label: "σ-only narrow",
+            belief_mu: 42.0,
+            belief_sigma: 1.0,
+            budget: 50.0,
+        },
+        Scenario {
+            label: "σ-only loose ",
+            belief_mu: 42.0,
+            belief_sigma: 14.0,
+            budget: 50.0,
+        },
+        Scenario {
+            label: "σ-only mid↓  ",
+            belief_mu: 42.0,
+            belief_sigma: 2.5,
+            budget: 50.0,
+        },
         // ── Large μ-shift (≥3σ_m), tight belief ──────────────────────
-        Scenario { label: "μ-shift +3σ  ", belief_mu: 54.0, belief_sigma: 2.0, budget: 100.0 },
-        Scenario { label: "μ-shift -3σ  ", belief_mu: 30.0, belief_sigma: 2.0, budget: 100.0 },
-        Scenario { label: "μ-shift +3σ↓", belief_mu: 53.0, belief_sigma: 1.5, budget: 100.0 },
+        Scenario {
+            label: "μ-shift +3σ  ",
+            belief_mu: 54.0,
+            belief_sigma: 2.0,
+            budget: 100.0,
+        },
+        Scenario {
+            label: "μ-shift -3σ  ",
+            belief_mu: 30.0,
+            belief_sigma: 2.0,
+            budget: 100.0,
+        },
+        Scenario {
+            label: "μ-shift +3σ↓",
+            belief_mu: 53.0,
+            belief_sigma: 1.5,
+            budget: 100.0,
+        },
         // ── Micro-budget (close to / below `min_trade_collateral`=1.0) ─
-        Scenario { label: "budget micro1", belief_mu: 44.0, belief_sigma: 1.5, budget: 1.0 },
-        Scenario { label: "budget micro2", belief_mu: 42.0, belief_sigma: 2.0, budget: 2.0 },
-        Scenario { label: "budget micro3", belief_mu: 40.0, belief_sigma: 1.5, budget: 1.5 },
+        Scenario {
+            label: "budget micro1",
+            belief_mu: 44.0,
+            belief_sigma: 1.5,
+            budget: 1.0,
+        },
+        Scenario {
+            label: "budget micro2",
+            belief_mu: 42.0,
+            belief_sigma: 2.0,
+            budget: 2.0,
+        },
+        Scenario {
+            label: "budget micro3",
+            belief_mu: 40.0,
+            belief_sigma: 1.5,
+            budget: 1.5,
+        },
         // ── Huge budget (≫ optimal cost) ─────────────────────────────
-        Scenario { label: "budget huge1 ", belief_mu: 44.0, belief_sigma: 1.5, budget: 1_000.0 },
-        Scenario { label: "budget huge2 ", belief_mu: 42.0, belief_sigma: 2.0, budget: 1_000.0 },
-        Scenario { label: "budget huge3 ", belief_mu: 50.0, belief_sigma: 1.5, budget: 1_000.0 },
+        Scenario {
+            label: "budget huge1 ",
+            belief_mu: 44.0,
+            belief_sigma: 1.5,
+            budget: 1_000.0,
+        },
+        Scenario {
+            label: "budget huge2 ",
+            belief_mu: 42.0,
+            belief_sigma: 2.0,
+            budget: 1_000.0,
+        },
+        Scenario {
+            label: "budget huge3 ",
+            belief_mu: 50.0,
+            belief_sigma: 1.5,
+            budget: 1_000.0,
+        },
         // ── Spread across the envelope ───────────────────────────────
-        Scenario { label: "μ↑ tight σ↓  ", belief_mu: 48.0, belief_sigma: 1.0, budget: 80.0 },
-        Scenario { label: "μ↓ tight σ↓  ", belief_mu: 36.0, belief_sigma: 1.0, budget: 80.0 },
+        Scenario {
+            label: "μ↑ tight σ↓  ",
+            belief_mu: 48.0,
+            belief_sigma: 1.0,
+            budget: 80.0,
+        },
+        Scenario {
+            label: "μ↓ tight σ↓  ",
+            belief_mu: 36.0,
+            belief_sigma: 1.0,
+            budget: 80.0,
+        },
         // ── Degenerate edges ─────────────────────────────────────────
-        Scenario { label: "edge narrow  ", belief_mu: 42.0, belief_sigma: 0.8, budget: 100.0 },
-        Scenario { label: "edge wide    ", belief_mu: 42.0, belief_sigma: 15.0, budget: 100.0 },
+        Scenario {
+            label: "edge narrow  ",
+            belief_mu: 42.0,
+            belief_sigma: 0.8,
+            budget: 100.0,
+        },
+        Scenario {
+            label: "edge wide    ",
+            belief_mu: 42.0,
+            belief_sigma: 15.0,
+            budget: 100.0,
+        },
         // ── Asymmetry probes (Item 3 review, Q4) ─────────────────────
         // The contract is one-directional: when the optimizer accepts,
         // the chain must accept. The reverse failure mode — optimizer
@@ -156,11 +281,36 @@ const fn scenarios() -> &'static [Scenario] {
         //   3. budget right at the λ-scaled cost edge (filter cliff)
         //   4. very-tight σ_b with mild μ-shift (high λ-scaled EV/cost)
         //   5. wide σ_b with μ-shift at exactly 1σ
-        Scenario { label: "σ-arb 1%     ", belief_mu: 42.0, belief_sigma: 7.92, budget: 80.0 },
-        Scenario { label: "σ-arb same-μ ", belief_mu: 42.0, belief_sigma: 7.5, budget: 80.0 },
-        Scenario { label: "budget edge  ", belief_mu: 44.0, belief_sigma: 1.5, budget: 6.0 },
-        Scenario { label: "tight σ μ-mid", belief_mu: 43.0, belief_sigma: 0.5, budget: 100.0 },
-        Scenario { label: "wide σ 1σ    ", belief_mu: 50.0, belief_sigma: 10.0, budget: 100.0 },
+        Scenario {
+            label: "σ-arb 1%     ",
+            belief_mu: 42.0,
+            belief_sigma: 7.92,
+            budget: 80.0,
+        },
+        Scenario {
+            label: "σ-arb same-μ ",
+            belief_mu: 42.0,
+            belief_sigma: 7.5,
+            budget: 80.0,
+        },
+        Scenario {
+            label: "budget edge  ",
+            belief_mu: 44.0,
+            belief_sigma: 1.5,
+            budget: 6.0,
+        },
+        Scenario {
+            label: "tight σ μ-mid",
+            belief_mu: 43.0,
+            belief_sigma: 0.5,
+            budget: 100.0,
+        },
+        Scenario {
+            label: "wide σ 1σ    ",
+            belief_mu: 50.0,
+            belief_sigma: 10.0,
+            budget: 100.0,
+        },
     ]
 }
 
@@ -289,11 +439,7 @@ async fn optimizer_output_must_be_accepted_by_chain() {
     let market = NormalMarket::new(&provider, market_addr);
 
     // Read params once — they're profile-stamped and immutable after deploy.
-    let params = market
-        .reader()
-        .params()
-        .await
-        .expect("read params");
+    let params = market.reader().params().await.expect("read params");
     let current_dist_at_setup = market
         .reader()
         .distribution()
@@ -408,12 +554,9 @@ async fn optimizer_output_must_be_accepted_by_chain() {
                     "  [{label}] ❌ DISAGREE: optimizer accept, chain reject ({rejection})",
                     label = sc.label
                 );
-                outcomes.push((
-                    *sc,
-                    Outcome::Disagreed {
-                        rejection: rejection.clone(),
-                    },
-                ));
+                outcomes.push((*sc, Outcome::Disagreed {
+                    rejection: rejection.clone(),
+                }));
                 disagreed_count += 1;
             },
             Err(e) => {
@@ -536,9 +679,14 @@ async fn optimize_quote_chain_runtime_must_be_accepted_by_chain() {
     // Use a distinct profile id ([`PROFILE_ID_RUNTIME`]) so this test
     // can run in the same process as the offline-variant test without
     // colliding on the factory's per-profile invariants.
-    upsert_normal_profile_for_test(admin.clone(), env.factory, env.collateral, PROFILE_ID_RUNTIME)
-        .await
-        .expect("upsert normal profile");
+    upsert_normal_profile_for_test(
+        admin.clone(),
+        env.factory,
+        env.collateral,
+        PROFILE_ID_RUNTIME,
+    )
+    .await
+    .expect("upsert normal profile");
 
     let (initial_dist, _placeholder) =
         build_initial_normal_inputs(INITIAL_MEAN, INITIAL_VAR, 1_000.0);
@@ -576,11 +724,7 @@ async fn optimize_quote_chain_runtime_must_be_accepted_by_chain() {
         JsonRpcProvider::new(JsonRpcClient::new(HttpTransport::new(env.url.clone())));
     let market = NormalMarket::new(&provider, market_addr);
 
-    let params = market
-        .reader()
-        .params()
-        .await
-        .expect("read params");
+    let params = market.reader().params().await.expect("read params");
     let current_dist_at_setup = market
         .reader()
         .distribution()
@@ -686,12 +830,9 @@ async fn optimize_quote_chain_runtime_must_be_accepted_by_chain() {
                     "  [{label}] ❌ DISAGREE: chain-runtime optimizer accept, chain reject ({rejection})",
                     label = sc.label
                 );
-                outcomes.push((
-                    *sc,
-                    Outcome::Disagreed {
-                        rejection: rejection.clone(),
-                    },
-                ));
+                outcomes.push((*sc, Outcome::Disagreed {
+                    rejection: rejection.clone(),
+                }));
                 disagreed_count += 1;
             },
             Err(e) => {

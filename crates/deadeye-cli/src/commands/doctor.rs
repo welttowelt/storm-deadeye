@@ -12,8 +12,8 @@
 //!   4. gas (STRK) balance > 0
 //!   5. XP balance / initial grant claimed
 //!   6. indexer reachable
-//!   7. (with `--market`) market active, initialised, not settled, and
-//!      its family is on-chain readable
+//!   7. (with `--market`) market active, initialised, not settled, and its
+//!      family is on-chain readable
 //!
 //! Exit code is non-zero when any check fails, so it composes in `&&`
 //! chains and CI gates. Output honours `--output {pretty,plain,json}`.

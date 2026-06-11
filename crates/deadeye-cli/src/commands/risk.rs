@@ -7,11 +7,11 @@
 //!    ("if it resolves at the market mean, you lose Y XP") and CVaR@5% under
 //!    the belief.
 //! 2. **Sizing**: a principled stake from `(edge, bankroll, kelly fraction)`
-//!    instead of hand-tuned belief-σ — keep the forecast and the bet
-//!    decoupled (issue #15's core complaint).
-//! 3. **Lint**: warnings (never blocks) for the classic self-deceptions —
-//!    σ tighter than the market's, candidates moving against the market
-//!    without belief support, stakes disproportionate to the edge.
+//!    instead of hand-tuned belief-σ — keep the forecast and the bet decoupled
+//!    (issue #15's core complaint).
+//! 3. **Lint**: warnings (never blocks) for the classic self-deceptions — σ
+//!    tighter than the market's, candidates moving against the market without
+//!    belief support, stakes disproportionate to the edge.
 
 /// Scoring-rule λ scale: `λ(σ, k) = k·√(2σ√π)` (mirrors
 /// `deadeye_collateral::lambda`).
