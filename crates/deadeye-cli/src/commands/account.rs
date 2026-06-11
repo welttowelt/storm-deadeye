@@ -10,7 +10,7 @@ use starknet_providers::{JsonRpcClient, Provider as _, ProviderError, jsonrpc::H
 use url::Url;
 
 use crate::{
-    cli::AccountCmd,
+    cli::{AccountCmd, AccountDeriveArgs},
     commands::{confirm_or_bail, onboard},
     config,
     context::AppContext,
@@ -24,7 +24,144 @@ pub(crate) async fn run(action: AccountCmd, ctx: &AppContext, confirm: bool) -> 
         AccountCmd::Show => show(ctx).await,
         AccountCmd::List => list(ctx),
         AccountCmd::Deploy => deploy(ctx, confirm).await,
+        AccountCmd::Derive(args) => derive(ctx, args),
     }
+}
+
+/// Derive accounts from an existing profile's mnemonic (`deadeye/hd/v1`,
+/// issue #37): one seed → many independent on-chain accounts, ideal for
+/// per-domain / per-strategy budget isolation. Idempotent — re-running
+/// reports existing derivations instead of overwriting anything.
+fn derive(ctx: &AppContext, args: AccountDeriveArgs) -> Result<()> {
+    let mut cfg = config::load()?;
+    let parent_name = args
+        .from_profile
+        .unwrap_or_else(|| ctx.config.profile_name.clone());
+    let parent = cfg.profiles.get(&parent_name).cloned().with_context(|| {
+        let known = cfg.profiles.keys().cloned().collect::<Vec<_>>().join(", ");
+        format!("no profile named `{parent_name}` — saved profiles: [{known}]")
+    })?;
+    let phrase = parent.mnemonic.clone().with_context(|| {
+        format!(
+            "profile `{parent_name}` has no stored recovery phrase, so nothing can be \
+             derived from it. Re-onboard it with \
+             `deadeye onboard --import --profile {parent_name}` (same phrase, same \
+             address) to store the phrase, then retry."
+        )
+    })?;
+    let class_hash_hex = parent
+        .account_class_hash
+        .clone()
+        .unwrap_or_else(|| wallet::DEFAULT_OZ_ACCOUNT_CLASS_HASH.to_owned());
+    let class_hash =
+        Felt::from_hex(&class_hash_hex).context("stored account class hash is not a felt")?;
+
+    // Resolve the target (index, profile-name) list.
+    let targets: Vec<(u32, String)> = match (args.index, args.count) {
+        (Some(0), _) => bail!(
+            "index 0 is the parent account itself (`{parent_name}`) — derived accounts \
+             start at --index 1"
+        ),
+        (Some(i), None) => {
+            let name = args.profile.unwrap_or_else(|| format!("{parent_name}-{i}"));
+            vec![(i, name)]
+        },
+        (None, Some(0)) => bail!("--count must be ≥ 1"),
+        (None, Some(n)) => {
+            let prefix = args.prefix.unwrap_or_else(|| parent_name.clone());
+            (1..=n).map(|i| (i, format!("{prefix}-{i}"))).collect()
+        },
+        (None, None) => bail!(
+            "pass --index <n> for one account or --count <N> to bulk-derive 1..=N \
+             (e.g. `deadeye account derive --count 5`)"
+        ),
+        (Some(_), Some(_)) => unreachable!("clap conflicts_with"),
+    };
+
+    #[derive(serde::Serialize)]
+    struct DerivedRow {
+        profile: String,
+        index: u32,
+        address: String,
+        status: &'static str,
+        derived_from: String,
+    }
+    let mut rows: Vec<DerivedRow> = Vec::with_capacity(targets.len());
+
+    for (index, name) in targets {
+        let w = wallet::import_at_index(&phrase, class_hash, index)?;
+        let address = format!("{:#066x}", w.address);
+        if let Some(existing) = cfg.profiles.get(&name) {
+            // Idempotency: the same name holding the same account is fine;
+            // a different account under that name must never be clobbered.
+            if existing.address.as_deref() == Some(address.as_str()) {
+                rows.push(DerivedRow {
+                    profile: name,
+                    index,
+                    address,
+                    status: "exists",
+                    derived_from: parent_name.clone(),
+                });
+                continue;
+            }
+            bail!(
+                "profile `{name}` already holds a different account \
+                 ({existing}) — pick another name with --profile/--prefix",
+                existing = existing.address.as_deref().unwrap_or("address unknown"),
+            );
+        }
+        cfg.profiles.insert(name.clone(), config::ProfileConfig {
+            rpc_url: parent.rpc_url.clone(),
+            indexer_url: parent.indexer_url.clone(),
+            chain_id: parent.chain_id.clone(),
+            address: Some(address.clone()),
+            strk_token: parent.strk_token.clone(),
+            private_key: Some(format!("{:#066x}", w.private_key)),
+            // The parent's phrase recovers this account — don't duplicate
+            // seed material across profiles.
+            mnemonic: None,
+            account_class_hash: Some(class_hash_hex.clone()),
+            account_deployed: false,
+            derivation_index: Some(index),
+            derived_from: Some(parent_name.clone()),
+        });
+        rows.push(DerivedRow {
+            profile: name,
+            index,
+            address,
+            status: "created",
+            derived_from: parent_name.clone(),
+        });
+    }
+    config::save(&cfg)?;
+
+    if ctx.renderer.mode() == OutputMode::Json {
+        println!("{}", serde_json::to_string_pretty(&rows)?);
+        return Ok(());
+    }
+    let created = rows.iter().filter(|r| r.status == "created").count();
+    println!(
+        "Derived {created} new account(s) from `{parent_name}` (deadeye/hd/v1; {} already existed):\n",
+        rows.len() - created,
+    );
+    for r in &rows {
+        println!(
+            "  [{}] #{} {:<16} {}",
+            r.status, r.index, r.profile, r.address
+        );
+    }
+    println!(
+        "\nAll of these are recoverable from `{parent_name}`'s recovery phrase alone\n\
+         (re-derive anywhere with `deadeye account derive` or \
+         `deadeye onboard --import --account-index <n>`).\n\n\
+         Next steps, per account:\n  \
+         1. fund the address with a little STRK for gas\n  \
+         2. deadeye account deploy --profile <name>\n  \
+         3. deadeye collateral claim-grant --execute --profile <name>\n\n\
+         Then pass `--profile <name>` to any command to act as that account\n\
+         (`deadeye account list` shows the whole fleet)."
+    );
+    Ok(())
 }
 
 /// Deploy the active profile's account contract so it can send transactions.
@@ -164,6 +301,9 @@ fn list(ctx: &AppContext) -> Result<()> {
                     "rpc_url": p.rpc_url,
                     "deployed": p.account_deployed,
                     "has_key": p.private_key.is_some(),
+                    "has_mnemonic": p.mnemonic.is_some(),
+                    "derivation_index": p.derivation_index,
+                    "derived_from": p.derived_from,
                 })
             })
             .collect();
@@ -185,7 +325,13 @@ fn list(ctx: &AppContext) -> Result<()> {
         } else {
             "not-deployed"
         };
-        println!("  {marker} {name:<12} {addr}  [{net}, {deployed}]");
+        let lineage = match (&p.derived_from, p.derivation_index) {
+            (Some(parent), Some(i)) => format!(", hd #{i} of {parent}"),
+            (None, Some(i)) => format!(", hd #{i}"),
+            _ if p.mnemonic.is_some() => ", seed".to_owned(),
+            _ => String::new(),
+        };
+        println!("  {marker} {name:<12} {addr}  [{net}, {deployed}{lineage}]");
     }
     println!("\nTrade from a specific wallet by passing `--profile <name>` to any command.");
     Ok(())

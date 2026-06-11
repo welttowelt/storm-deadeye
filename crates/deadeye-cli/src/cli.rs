@@ -261,6 +261,11 @@ pub(crate) struct OnboardArgs {
     /// Recover from an existing recovery phrase instead of generating one.
     #[arg(long)]
     pub(crate) import: bool,
+    /// HD derivation index under the phrase (`deadeye/hd/v1`, issue #37).
+    /// 0 = the default single account; `--import --account-index 3` recovers
+    /// the third derived account of an existing seed.
+    #[arg(long, value_name = "N", default_value_t = 0)]
+    pub(crate) account_index: u32,
     /// Account-contract class hash to deploy. Defaults to the bundled
     /// OpenZeppelin class; must be declared on the target network.
     #[arg(long, value_name = "0x...")]
@@ -752,6 +757,46 @@ pub(crate) enum AccountCmd {
     /// deadeye account deploy --profile alice
     /// ```
     Deploy,
+    /// Derive additional accounts from an existing profile's mnemonic —
+    /// one seed, many independent on-chain accounts (`deadeye/hd/v1`).
+    ///
+    /// Each derived account is a real, separate Starknet account (own key,
+    /// own address, own collateral and positions) — ideal for isolating
+    /// budget per market domain or per strategy — while the single parent
+    /// phrase recovers the whole fleet. Idempotent: re-running reports
+    /// existing derivations instead of overwriting.
+    ///
+    /// # Example
+    ///
+    /// ```text
+    /// deadeye account derive --count 5                      # main-1 … main-5
+    /// deadeye account derive --index 7 --profile sports     # one account, named
+    /// deadeye account derive --from-profile main --count 20 --prefix fleet
+    /// deadeye account list                                  # see the fleet
+    /// ```
+    Derive(AccountDeriveArgs),
+}
+
+#[derive(Debug, clap::Args)]
+pub(crate) struct AccountDeriveArgs {
+    /// Parent profile whose mnemonic to derive from (default: the active
+    /// profile).
+    #[arg(long, value_name = "NAME")]
+    pub(crate) from_profile: Option<String>,
+    /// Derive exactly this index (≥ 1; index 0 is the parent itself).
+    #[arg(long, value_name = "N", conflicts_with = "count")]
+    pub(crate) index: Option<u32>,
+    /// Bulk-derive indices 1..=N in one call.
+    #[arg(long, value_name = "N")]
+    pub(crate) count: Option<u32>,
+    /// Profile name for the derived account (single --index only; default
+    /// `<parent>-<index>`).
+    #[arg(long, value_name = "NAME", conflicts_with = "count")]
+    pub(crate) profile: Option<String>,
+    /// Name prefix for bulk derivation (default: the parent profile name,
+    /// producing `<prefix>-1` … `<prefix>-N`).
+    #[arg(long, value_name = "PREFIX", conflicts_with = "index")]
+    pub(crate) prefix: Option<String>,
 }
 
 #[derive(Debug, Subcommand)]

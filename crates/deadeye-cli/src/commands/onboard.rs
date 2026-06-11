@@ -93,7 +93,7 @@ pub(crate) async fn run(args: OnboardArgs, _ctx: &AppContext, confirm: bool) -> 
     // ── 2. Generate or import the wallet ──────────────────────────────
     let w = if args.import {
         let phrase = prompt_line("Enter your BIP-39 recovery phrase:")?;
-        wallet::import(phrase.trim(), class_hash)?
+        wallet::import_at_index(phrase.trim(), class_hash, args.account_index)?
     } else {
         let w = wallet::generate(class_hash)?;
         println!(
@@ -101,8 +101,19 @@ pub(crate) async fn run(args: OnboardArgs, _ctx: &AppContext, confirm: bool) -> 
              way to recover this wallet, and it controls real funds:\n"
         );
         println!("    {}\n", w.mnemonic);
-        w
+        if args.account_index > 0 {
+            wallet::import_at_index(&w.mnemonic, class_hash, args.account_index)?
+        } else {
+            w
+        }
     };
+    if args.account_index > 0 {
+        println!(
+            "Derivation: deadeye/hd/v1 index {} — recoverable from the phrase \
+             with `deadeye onboard --import --account-index {}`.\n",
+            args.account_index, args.account_index
+        );
+    }
 
     // Importing over a profile that already holds a *different* wallet would
     // clobber it too — only allow it when the phrase recovers the same key.
@@ -124,7 +135,7 @@ pub(crate) async fn run(args: OnboardArgs, _ctx: &AppContext, confirm: bool) -> 
     println!("Account class   : {class_hash:#066x}\n");
 
     // ── 2. Persist the wallet into the active profile ─────────────────
-    save_profile(&net, &w)?;
+    save_profile(&net, &w, args.account_index)?;
     println!(
         "Saved wallet to profile `{}` (set as default). The key is stored\n\
          in cleartext at your deadeye config; keep that file private.\n",
@@ -174,7 +185,7 @@ pub(crate) async fn run(args: OnboardArgs, _ctx: &AppContext, confirm: bool) -> 
 }
 
 /// Write the wallet into a profile and mark it the default.
-fn save_profile(net: &NetParams, w: &wallet::Wallet) -> Result<()> {
+fn save_profile(net: &NetParams, w: &wallet::Wallet, account_index: u32) -> Result<()> {
     let mut cfg = config::load()?;
     let profile = cfg.profiles.entry(net.profile.clone()).or_default();
     *profile = ProfileConfig {
@@ -187,6 +198,8 @@ fn save_profile(net: &NetParams, w: &wallet::Wallet) -> Result<()> {
         mnemonic: Some(w.mnemonic.clone()),
         account_class_hash: Some(format!("{:#066x}", w.class_hash)),
         account_deployed: false,
+        derivation_index: (account_index > 0).then_some(account_index),
+        derived_from: None,
     };
     cfg.default_profile = Some(net.profile.clone());
     config::save(&cfg)?;

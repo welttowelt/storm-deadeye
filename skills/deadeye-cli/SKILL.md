@@ -49,6 +49,25 @@ deadeye trade quote <MARKET> --profile alice ...   # trade from a specific walle
 
 Any command takes `--profile <name>`; omit it to use the default (marked `*`).
 
+**Fleet from one seed (HD derivation).** Don't mint N mnemonics to run N
+accounts — derive them all from ONE existing phrase (`deadeye/hd/v1`):
+
+```bash
+deadeye account derive --count 5                    # main-1 … main-5 from the active profile
+deadeye account derive --index 7 --profile sports   # one named account at index 7
+deadeye account derive --from-profile main --count 20 --prefix fleet --output json
+```
+
+Each derived profile is a real, independent on-chain account (own key,
+address, collateral, positions) — use one per market domain or per strategy so
+budgets and risk never commingle — while the single parent phrase recovers the
+entire fleet (`deadeye onboard --import --account-index <n>` reproduces
+account *n* anywhere; derivation is documented in the CLI source and
+deterministic across machines). Derivation is idempotent and never prints or
+copies the seed. Per account, the lifecycle is the usual one: fund the address
+with STRK → `account deploy --profile <name>` → `collateral claim-grant
+--execute --profile <name>` → trade with `--profile <name>`.
+
 Config lives at `~/.config/deadeye/config.toml` (override with `DEADEYE_CONFIG`).
 Each profile carries the RPC, indexer, chain id, address, and key, so commands
 "just work" with no flags. To keep the key out of the file, set

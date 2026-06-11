@@ -65,6 +65,15 @@ pub(crate) struct ProfileConfig {
     /// `true` once the account contract has been deployed on-chain.
     #[serde(default)]
     pub(crate) account_deployed: bool,
+    /// HD derivation index under the parent's mnemonic (`deadeye/hd/v1`,
+    /// issue #37). `None` for directly-onboarded (index-0) wallets.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) derivation_index: Option<u32>,
+    /// Name of the profile whose mnemonic this account derives from. The
+    /// parent's phrase recovers this account; no key material is duplicated
+    /// here beyond the derived private key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) derived_from: Option<String>,
 }
 
 /// Path resolver — returns `~/.config/deadeye/config.toml` unless

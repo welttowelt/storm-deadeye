@@ -13,6 +13,20 @@
 //!          ── OZ account ────▶ counterfactual address
 //! ```
 //!
+//! ## HD derivation (issue #37) — `deadeye/hd/v1`
+//!
+//! One mnemonic can back a whole fleet. Account `i` derives as:
+//!
+//! ```text
+//! index 0   : sk = Felt(SHA-256(seed))                                  (legacy — unchanged)
+//! index i>0 : sk = Felt(SHA-256(seed ‖ "deadeye/hd/v1/" ‖ decimal(i)))
+//! ```
+//!
+//! where `seed = BIP-39 to_seed(passphrase = "")`, `decimal(i)` is the ASCII
+//! base-10 rendering of the index, and `Felt::from_bytes_be` reduces modulo
+//! the STARK prime. The scheme is deliberately spelled out here so any
+//! implementation can reproduce the same addresses from the same phrase.
+//!
 //! This is **not** Argent/Braavos HD derivation (no EIP-2645 grinding), so
 //! a mnemonic minted elsewhere will derive a *different* deadeye address.
 //! Importing a deadeye-generated mnemonic round-trips exactly, which is all
@@ -52,15 +66,29 @@ pub(crate) fn generate(class_hash: Felt) -> Result<Wallet> {
     Ok(from_mnemonic(mnemonic, class_hash))
 }
 
-/// Recover a wallet from an existing BIP-39 phrase.
+/// Recover a wallet from an existing BIP-39 phrase (HD index 0).
+#[cfg_attr(
+    not(test),
+    expect(
+        dead_code,
+        reason = "index-0 convenience kept for API symmetry; onboarding now routes through import_at_index"
+    )
+)]
 pub(crate) fn import(phrase: &str, class_hash: Felt) -> Result<Wallet> {
+    import_at_index(phrase, class_hash, 0)
+}
+
+/// Recover the wallet at HD `index` from an existing BIP-39 phrase — the
+/// `deadeye/hd/v1` scheme (module docs): one seed, many independent
+/// accounts. Index 0 is the legacy single-account derivation.
+pub(crate) fn import_at_index(phrase: &str, class_hash: Felt, index: u32) -> Result<Wallet> {
     let phrase = phrase.split_whitespace().collect::<Vec<_>>().join(" ");
     let word_count = phrase.split(' ').count();
     if !matches!(word_count, 12 | 15 | 18 | 21 | 24) {
         bail!("expected a 12/15/18/21/24-word phrase, got {word_count} words");
     }
     let mnemonic = Mnemonic::parse_normalized(&phrase).context("invalid BIP-39 recovery phrase")?;
-    Ok(from_mnemonic(mnemonic, class_hash))
+    Ok(from_mnemonic_at(mnemonic, class_hash, index))
 }
 
 /// Rebuild a wallet from a stored private key (no mnemonic). Used to deploy or
@@ -78,10 +106,25 @@ pub(crate) fn from_private_key(private_key: Felt, class_hash: Felt) -> Wallet {
     }
 }
 
-/// Derive every wallet field from a parsed mnemonic.
+/// Derive every wallet field from a parsed mnemonic (HD index 0).
 fn from_mnemonic(mnemonic: Mnemonic, class_hash: Felt) -> Wallet {
+    from_mnemonic_at(mnemonic, class_hash, 0)
+}
+
+/// Derive the wallet at HD `index` — the `deadeye/hd/v1` scheme.
+fn from_mnemonic_at(mnemonic: Mnemonic, class_hash: Felt, index: u32) -> Wallet {
     let seed = mnemonic.to_seed("");
-    let digest = Sha256::digest(seed);
+    let digest = if index == 0 {
+        // Legacy single-account derivation — existing wallets keep their
+        // address.
+        Sha256::digest(seed)
+    } else {
+        let mut hasher = Sha256::new();
+        hasher.update(seed);
+        hasher.update(b"deadeye/hd/v1/");
+        hasher.update(index.to_string().as_bytes());
+        hasher.finalize()
+    };
     let mut bytes = [0_u8; 32];
     bytes.copy_from_slice(&digest);
     // Felt::from_bytes_be reduces modulo the STARK field prime, so the
@@ -138,5 +181,46 @@ mod tests {
     #[test]
     fn rejects_bad_phrase() {
         import("not a real mnemonic at all", class_hash()).unwrap_err();
+    }
+
+    #[test]
+    fn hd_index_zero_is_the_legacy_derivation() {
+        let phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+        let legacy = import(phrase, class_hash()).unwrap();
+        let indexed = import_at_index(phrase, class_hash(), 0).unwrap();
+        assert_eq!(legacy.address, indexed.address);
+        assert_eq!(legacy.private_key, indexed.private_key);
+    }
+
+    #[test]
+    fn hd_derivation_is_deterministic_per_index() {
+        let phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+        for index in [1_u32, 7, 42] {
+            let a = import_at_index(phrase, class_hash(), index).unwrap();
+            let b = import_at_index(phrase, class_hash(), index).unwrap();
+            assert_eq!(a.address, b.address, "index {index} must be stable");
+            assert_eq!(a.private_key, b.private_key);
+        }
+    }
+
+    #[test]
+    fn hd_indices_derive_distinct_independent_accounts() {
+        let phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+        let mut seen = std::collections::HashSet::new();
+        for index in 0..20_u32 {
+            let w = import_at_index(phrase, class_hash(), index).unwrap();
+            assert!(seen.insert(w.address), "index {index} collided");
+            assert_ne!(w.private_key, Felt::ZERO);
+        }
+    }
+
+    #[test]
+    fn hd_indices_one_and_ten_do_not_collide_on_ascii_prefix() {
+        // decimal(1) = "1" and decimal(10) = "10" hash differently — the
+        // separator + full-string hash makes the encoding unambiguous.
+        let phrase = "legal winner thank year wave sausage worth useful legal winner thank yellow";
+        let one = import_at_index(phrase, class_hash(), 1).unwrap();
+        let ten = import_at_index(phrase, class_hash(), 10).unwrap();
+        assert_ne!(one.address, ten.address);
     }
 }
