@@ -42,7 +42,7 @@
   "markets": [],
   "extensions": [],
   "collateralToken": {
-    "address": "0x01d77ce77f1d86035c5e27444da7d2fc77de1d384326074f60f973fa0dd80aff",
+    "address": "0x6b363ef72144d0a39a2821eb11d7c4fa760eee4c8d3e81dd5bcc2ae58f7ea64",
     "symbol": "XP",
     "decimals": 18
   }

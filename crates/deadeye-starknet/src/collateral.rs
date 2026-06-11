@@ -50,7 +50,7 @@ use crate::{
 /// Mainnet `XP` collateral token address (pinned from
 /// `deployment-mainnet.json`).
 pub const MAINNET_XP_TOKEN_ADDRESS: Felt =
-    Felt::from_hex_unchecked("0x01d77ce77f1d86035c5e27444da7d2fc77de1d384326074f60f973fa0dd80aff");
+    Felt::from_hex_unchecked("0x6b363ef72144d0a39a2821eb11d7c4fa760eee4c8d3e81dd5bcc2ae58f7ea64");
 
 /// ABI-decoded `core::integer::u256` returned from view calls.
 ///
@@ -436,7 +436,7 @@ mod tests {
         // if this constant ever drifts, the test fixture below will
         // need to be updated explicitly.
         let expected =
-            Felt::from_hex("0x01d77ce77f1d86035c5e27444da7d2fc77de1d384326074f60f973fa0dd80aff")
+            Felt::from_hex("0x6b363ef72144d0a39a2821eb11d7c4fa760eee4c8d3e81dd5bcc2ae58f7ea64")
                 .unwrap();
         assert_eq!(MAINNET_XP_TOKEN_ADDRESS, expected);
     }
