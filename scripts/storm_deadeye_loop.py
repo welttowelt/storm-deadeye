@@ -63,6 +63,13 @@ OFFICIAL_ECON_HINTS = (
     "census.gov",
 )
 
+WORLD_CUP_POST_RESULT_ROLES = {
+    "post_result",
+    "match_result",
+    "official_match_result",
+    "official_result",
+}
+
 
 class LoopError(RuntimeError):
     """Expected operator-loop failure."""
@@ -344,8 +351,23 @@ def validate_candidate(candidate: dict[str, Any], market_meta: dict[str, Any]) -
         role_ok = any(str(item.get("source_role") or "").lower() in {"official_measurement", "quantitative_input", "leading_indicator", "market_prior"} for item in evidence if isinstance(item, dict))
         if not (role_ok or any(hint in urls for hint in OFFICIAL_ECON_HINTS)):
             errors.append("economics candidate needs official/primary evidence hint")
-    if "world cup" in title and len(evidence) < 2:
-        errors.append("World Cup candidate needs at least two evidence items")
+    if "world cup" in title:
+        if len(evidence) < 2:
+            errors.append("World Cup candidate needs at least two evidence items")
+        post_result_ok = bool(candidate.get("world_cup_post_result"))
+        for item in evidence:
+            if not isinstance(item, dict):
+                continue
+            role = str(item.get("source_role") or "").lower()
+            stage = str(item.get("event_stage") or "").lower()
+            if (
+                item.get("post_result") is True
+                or role in WORLD_CUP_POST_RESULT_ROLES
+                or stage in {"post_result", "match_completed"}
+            ):
+                post_result_ok = True
+        if not post_result_ok:
+            errors.append("World Cup candidate needs post-result evidence marker")
     return errors
 
 

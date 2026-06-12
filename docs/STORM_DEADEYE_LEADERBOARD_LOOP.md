@@ -67,7 +67,10 @@ Candidates are JSONL entries in
 
 The runner rejects candidates without a rationale, evidence, a supported family,
 or category-specific evidence hints. Economics candidates need an official or
-primary-source hint; World Cup candidates need at least two evidence items.
+primary-source hint. World Cup candidates need at least two evidence items and
+a post-result marker such as `world_cup_post_result: true`, evidence
+`post_result: true`, `source_role: "official_match_result"`, or
+`event_stage: "match_completed"`.
 
 ## Gap-Impact Screen
 

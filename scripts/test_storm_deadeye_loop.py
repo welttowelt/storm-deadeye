@@ -73,6 +73,26 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         candidate["evidence"] = []
         self.assertIn("missing evidence list", loop.validate_candidate(candidate, market))
 
+    def test_world_cup_candidate_requires_post_result_marker(self):
+        market = {"marketType": "lognormal", "category": "World Cup", "title": "When will France be eliminated from the 2026 World Cup?"}
+        candidate = {
+            "id": "wc-1",
+            "market": "0x1",
+            "family": "lognormal",
+            "belief": 3.3,
+            "belief_sigma": 0.27,
+            "rationale": "Two current market-prior sources imply a wider distribution than the curve.",
+            "evidence": [
+                {"claim": "Quarterfinal odds imply path risk.", "source": "Odds source"},
+                {"claim": "Power rating source implies team strength.", "source": "Rating source"},
+            ],
+        }
+        self.assertIn("World Cup candidate needs post-result evidence marker", loop.validate_candidate(candidate, market))
+        candidate["evidence"].append(
+            {"claim": "Match completed and final score is official.", "source": "FIFA", "source_role": "official_match_result"}
+        )
+        self.assertEqual(loop.validate_candidate(candidate, market), [])
+
     def test_concentration_guard_blocks_third_market_lot(self):
         market = {
             "address": "0x1",
