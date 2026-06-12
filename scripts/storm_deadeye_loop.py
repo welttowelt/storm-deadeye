@@ -45,6 +45,8 @@ GAS_HARD_STOP = 25.0
 MIN_RATIONALE_CHARS = 40
 MIN_EXECUTE_EV = 10.0
 CAMPAIGN_LOSS_HALT_XP = 1500.0
+MAX_LOTS_PER_MARKET = 2
+MAX_LOTS_PER_SETTLEMENT = 2
 
 SECRET_RE = re.compile(
     r"mnemonic|private[_ -]?key|recovery phrase|secret[_ -]?key|BEGIN [A-Z ]*PRIVATE",
@@ -347,6 +349,78 @@ def validate_candidate(candidate: dict[str, Any], market_meta: dict[str, Any]) -
     return errors
 
 
+def position_lot_count(position: dict[str, Any]) -> int:
+    if not position.get("hasPosition", True):
+        return 0
+    for key in ("deltaCount", "lots", "lotCount"):
+        value = position.get(key)
+        if value is not None:
+            try:
+                return max(0, int(value))
+            except (TypeError, ValueError):
+                pass
+    return 1
+
+
+def settlement_key(market: dict[str, Any]) -> str:
+    resolution = market.get("resolution") or {}
+    parts = [
+        market.get("title"),
+        market.get("category"),
+        resolution.get("metric"),
+        resolution.get("units"),
+        resolution.get("source") or market.get("resolutionSource"),
+        (resolution.get("criteria") or market.get("resolutionCriteria") or "")[:160],
+    ]
+    return slugify(" ".join(str(part) for part in parts if part))
+
+
+def candidate_lot_limit(candidate: dict[str, Any], key: str, default: int) -> int:
+    value = candidate.get(key, default)
+    try:
+        requested = int(value)
+    except (TypeError, ValueError):
+        requested = default
+    return max(1, min(default, requested))
+
+
+def concentration_errors(
+    candidate: dict[str, Any],
+    market_meta: dict[str, Any],
+    positions: list[dict[str, Any]],
+    markets: list[dict[str, Any]],
+) -> list[str]:
+    errors: list[str] = []
+    market_limit = candidate_lot_limit(candidate, "max_market_lots", MAX_LOTS_PER_MARKET)
+    settlement_limit = candidate_lot_limit(candidate, "max_settlement_lots", MAX_LOTS_PER_SETTLEMENT)
+    candidate_market = canonical_address(candidate.get("market"))
+    candidate_settlement = settlement_key(market_meta)
+    market_lots = 0
+    settlement_lots = 0
+    for position in positions:
+        lots = position_lot_count(position)
+        if lots <= 0:
+            continue
+        position_market = canonical_address(position.get("marketAddress") or position.get("market"))
+        if position_market == candidate_market:
+            market_lots += lots
+        position_meta = market_meta_by_address(markets, position_market)
+        if position_meta and settlement_key(position_meta) == candidate_settlement:
+            settlement_lots += lots
+    post_market_lots = market_lots + 1
+    post_settlement_lots = settlement_lots + 1
+    if post_market_lots > market_limit:
+        errors.append(
+            f"market concentration cap: existing_lots={market_lots}, post_trade_lots={post_market_lots}, cap={market_limit}"
+        )
+    if post_settlement_lots > settlement_limit:
+        errors.append(
+            "settlement concentration cap: "
+            f"existing_lots={settlement_lots}, post_trade_lots={post_settlement_lots}, cap={settlement_limit}"
+        )
+    return errors
+
+
 def run_smoke(smoke_script: Path, smoke_market: str) -> dict[str, Any]:
     started = utc_now()
     if smoke_script.exists():
@@ -472,6 +546,7 @@ def execute_candidate(
 def process_candidates(
     candidates: list[dict[str, Any]],
     markets: list[dict[str, Any]],
+    positions: list[dict[str, Any]],
     account: dict[str, Any],
     collateral: dict[str, Any],
     stats: dict[str, Any],
@@ -513,6 +588,7 @@ def process_candidates(
             processed_ids.add(candidate_id)
             continue
         errors = validate_candidate(candidate, market_meta)
+        errors.extend(concentration_errors(candidate, market_meta, positions, markets))
         if errors:
             processed.append({"id": candidate_id, "status": "failed", "reason": "; ".join(errors)})
             processed_ids.add(candidate_id)
@@ -684,6 +760,7 @@ def main(argv: list[str] | None = None) -> int:
         processed = process_candidates(
             candidates,
             monitoring["markets"]["items"],
+            monitoring["positions"],
             account,
             collateral,
             monitoring["stats"],

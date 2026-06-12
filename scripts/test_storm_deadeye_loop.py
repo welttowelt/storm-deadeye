@@ -73,6 +73,26 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         candidate["evidence"] = []
         self.assertIn("missing evidence list", loop.validate_candidate(candidate, market))
 
+    def test_concentration_guard_blocks_third_market_lot(self):
+        market = {
+            "address": "0x1",
+            "marketType": "normal",
+            "category": "Economics",
+            "title": "US Inflation in June 2026 (CPI YoY)",
+            "resolution": {"metric": "CPI YoY", "units": "%"},
+        }
+        candidate = {"id": "cpi-1", "market": "0x01"}
+        positions = [{"marketAddress": "0x1", "hasPosition": True, "deltaCount": 2}]
+        errors = loop.concentration_errors(candidate, market, positions, [market])
+        self.assertTrue(any("market concentration cap" in error for error in errors))
+        self.assertTrue(any("settlement concentration cap" in error for error in errors))
+
+    def test_concentration_guard_allows_first_lot_on_new_market(self):
+        market = {"address": "0x2", "marketType": "lognormal", "title": "France World Cup wins"}
+        candidate = {"id": "fra-1", "market": "0x2"}
+        positions = [{"marketAddress": "0x1", "hasPosition": True, "deltaCount": 2}]
+        self.assertEqual(loop.concentration_errors(candidate, market, positions, [market]), [])
+
     def test_summary_key_captures_health_and_candidate_changes(self):
         summary = {
             "rankings": {
