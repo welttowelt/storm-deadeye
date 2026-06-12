@@ -1,7 +1,9 @@
 #!/usr/bin/env python3
 import sys
 import unittest
+from types import SimpleNamespace
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import storm_deadeye_loop as loop
@@ -58,6 +60,10 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         ]
         self.assertEqual(loop.discover_filter_slugs(markets), ["cpi", "economics", "france-2026", "inflation", "world-cup"])
 
+    def test_world_cup_detection_uses_category_even_without_title(self):
+        market = {"marketType": "lognormal", "category": "World Cup", "title": "When will France be eliminated?"}
+        self.assertTrue(loop.is_world_cup_market(market))
+
     def test_candidate_validation_requires_evidence(self):
         market = {"marketType": "normal", "category": "Economics", "title": "US Inflation CPI"}
         candidate = {
@@ -93,6 +99,22 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         )
         self.assertEqual(loop.validate_candidate(candidate, market), [])
 
+    def test_world_cup_candidate_requires_marker_when_category_only(self):
+        market = {"marketType": "lognormal", "category": "World Cup", "title": "When will France be eliminated?"}
+        candidate = {
+            "id": "wc-2",
+            "market": "0x2",
+            "family": "lognormal",
+            "belief": 3.3,
+            "belief_sigma": 0.27,
+            "rationale": "Two current market-prior sources imply a wider distribution than the curve.",
+            "evidence": [
+                {"claim": "Odds source implies path risk.", "source": "Odds source"},
+                {"claim": "Rating source implies team strength.", "source": "Rating source"},
+            ],
+        }
+        self.assertIn("World Cup candidate needs post-result evidence marker", loop.validate_candidate(candidate, market))
+
     def test_concentration_guard_blocks_third_market_lot(self):
         market = {
             "address": "0x1",
@@ -126,6 +148,48 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(key["rank"], 4)
         self.assertEqual(key["unhealthy_filters"], ["economics"])
         self.assertEqual(key["processed"], [{"id": "a", "status": "dry_run_ok"}])
+
+    def test_execute_mode_rechecks_fresh_gas_before_candidate_write(self):
+        market = {
+            "address": "0x1",
+            "marketType": "normal",
+            "category": "Economics",
+            "title": "US Inflation CPI",
+            "isActive": True,
+            "state": {"isInitialized": True},
+        }
+        candidate = {
+            "id": "cpi-gas-stop",
+            "market": "0x1",
+            "family": "normal",
+            "belief": 3.8,
+            "belief_sigma": 0.16,
+            "budget": 100.0,
+            "rationale": "BLS and nowcast evidence imply a cooler CPI print than the current curve.",
+            "evidence": [{"claim": "CPI source", "source": "BLS", "url": "https://www.bls.gov/cpi/"}],
+        }
+        args = SimpleNamespace(execute=True, trade_journal=Path("/tmp/storm-deadeye-test-journal.jsonl"))
+        with (
+            mock.patch.object(
+                loop,
+                "account_snapshot",
+                return_value={"account": {"strk_balance_strk": 24.0}, "collateral": {"balance_xp": 19800.0}},
+            ),
+            mock.patch.object(loop, "deadeye_json", side_effect=AssertionError("write path should stop before doctor")),
+        ):
+            processed = loop.process_candidates(
+                [candidate],
+                [market],
+                [],
+                {"strk_balance_strk": 26.0},
+                {"balance_xp": 19800.0},
+                {"totalPnl": 83.0},
+                {},
+                args,
+                Path("/tmp/storm-deadeye-test-events.jsonl"),
+            )
+        self.assertEqual(processed[0]["status"], "write_stopped")
+        self.assertIn("fresh STRK balance", processed[0]["reason"])
 
 
 if __name__ == "__main__":

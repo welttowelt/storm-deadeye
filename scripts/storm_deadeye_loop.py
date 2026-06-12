@@ -241,6 +241,33 @@ def discover_filter_slugs(markets: list[dict[str, Any]]) -> list[str]:
     return sorted(slugs)
 
 
+def market_search_text(market: dict[str, Any]) -> str:
+    resolution = market.get("resolution") or {}
+    parts: list[str] = [
+        str(market.get("title") or ""),
+        str(market.get("category") or ""),
+        str(market.get("domain") or ""),
+        str(market.get("resolutionSource") or ""),
+        str(market.get("resolutionCriteria") or ""),
+        str(resolution.get("source") or ""),
+        str(resolution.get("criteria") or ""),
+        str(resolution.get("metric") or ""),
+    ]
+    for key in ("topics", "tags"):
+        values = market.get(key) or []
+        if isinstance(values, list):
+            parts.extend(str(item) for item in values)
+        else:
+            parts.append(str(values))
+    return " ".join(parts).lower()
+
+
+def is_world_cup_market(market: dict[str, Any]) -> bool:
+    text = market_search_text(market)
+    slug = slugify(text)
+    return "world cup" in text or "fifa world cup" in text or "world-cup" in slug
+
+
 def compute_rank(rows: list[dict[str, Any]], trader: str, own_pnl: float | None = None) -> dict[str, Any]:
     own = canonical_address(trader)
     top_pnl = float(rows[0].get("totalPnl", 0.0)) if rows else 0.0
@@ -351,7 +378,7 @@ def validate_candidate(candidate: dict[str, Any], market_meta: dict[str, Any]) -
         role_ok = any(str(item.get("source_role") or "").lower() in {"official_measurement", "quantitative_input", "leading_indicator", "market_prior"} for item in evidence if isinstance(item, dict))
         if not (role_ok or any(hint in urls for hint in OFFICIAL_ECON_HINTS)):
             errors.append("economics candidate needs official/primary evidence hint")
-    if "world cup" in title:
+    if is_world_cup_market(market_meta):
         if len(evidence) < 2:
             errors.append("World Cup candidate needs at least two evidence items")
         post_result_ok = bool(candidate.get("world_cup_post_result"))
@@ -620,6 +647,20 @@ def process_candidates(
             processed_ids.add(candidate_id)
             continue
         try:
+            if args.execute:
+                fresh_snap = account_snapshot()
+                fresh_account = fresh_snap.get("account") or {}
+                fresh_collateral = fresh_snap.get("collateral") or {}
+                strk_balance = float(fresh_account.get("strk_balance_strk", strk_balance))
+                balance_xp = float(fresh_collateral.get("balance_xp", balance_xp))
+                tier = gas_tier(strk_balance)
+                if tier == "hard_stop":
+                    processed.append({
+                        "id": candidate_id,
+                        "status": "write_stopped",
+                        "reason": f"fresh STRK balance {strk_balance:.6f} below {GAS_HARD_STOP:g} hard stop",
+                    })
+                    break
             budget = select_ladder_budget(
                 candidate.get("budget"),
                 balance_xp,

@@ -63,12 +63,63 @@ class StormGapAnalyzerTests(unittest.TestCase):
         self.assertTrue(any("below 10 XP floor" in blocker for blocker in blockers))
         self.assertTrue(any("market concentration cap" in blocker for blocker in blockers))
 
+    def test_runner_blockers_detect_world_cup_from_category(self):
+        probe = gap.Probe("france", "0x1", "lognormal", 3.3, 0.27, 100.0)
+        market = {"address": "0x1", "category": "World Cup", "title": "When will France be eliminated?"}
+        quote = {"on_chain_will_accept": True, "expected_value": 12.0}
+        blockers = gap.runner_blockers_for_probe(probe, market, [market], [], quote)
+        self.assertIn("World Cup probe has no post-result evidence marker", blockers)
+
     def test_rank_summary_computes_own_gap(self):
         totals = {"0xaaa": 100.0, "0xbbb": 80.0, "0xccc": 120.0}
         summary = gap.rank_summary(totals, "0xbbb")
         self.assertEqual(summary["rank"], 3)
         self.assertEqual(summary["gap"], 40.0)
         self.assertEqual(summary["top_trader"], "0xccc")
+
+    def test_classify_runner_candidate_when_no_blockers(self):
+        item = gap.classify_opportunity(
+            runner_blockers=[],
+            mark_gap_improvement=15.0,
+            belief_gap_improvement=20.0,
+            expected_value=12.0,
+        )
+        self.assertEqual(item["status"], "runner_candidate")
+        self.assertEqual(item["priority"], 5)
+
+    def test_classify_durable_watch_before_paint_trap(self):
+        item = gap.classify_opportunity(
+            runner_blockers=["World Cup probe has no post-result evidence marker"],
+            mark_gap_improvement=100.0,
+            belief_gap_improvement=75.0,
+            expected_value=4.0,
+        )
+        self.assertEqual(item["status"], "durable_watch")
+
+    def test_classify_paint_trap_when_mark_exceeds_belief(self):
+        item = gap.classify_opportunity(
+            runner_blockers=["standalone EV 2.000000 below 10 XP floor"],
+            mark_gap_improvement=76.0,
+            belief_gap_improvement=2.5,
+            expected_value=2.0,
+        )
+        self.assertEqual(item["status"], "paint_trap")
+
+    def test_sort_key_defaults_to_belief_gap(self):
+        durable = {
+            "scoreboard": {"gap_improvement": 5.0},
+            "belief_scoreboard": {"gap_improvement": 80.0},
+            "quote": {"expected_value": 3.0},
+            "opportunity": {"priority": 4},
+        }
+        paint = {
+            "scoreboard": {"gap_improvement": 70.0},
+            "belief_scoreboard": {"gap_improvement": 2.0},
+            "quote": {"expected_value": 2.0},
+            "opportunity": {"priority": 1},
+        }
+        self.assertGreater(gap.sort_key(durable, "belief_gap"), gap.sort_key(paint, "belief_gap"))
+        self.assertGreater(gap.sort_key(paint, "mark_gap"), gap.sort_key(durable, "mark_gap"))
 
 
 if __name__ == "__main__":

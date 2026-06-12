@@ -24,6 +24,10 @@ import storm_deadeye_loop as loop
 DEFAULT_INDEXER_LIMIT = 100
 DEFAULT_BUDGET = 100.0
 DEFAULT_BANKROLL = 19832.0
+DEFAULT_SORT_BY = "belief_gap"
+DURABLE_WATCH_GAP_XP = 50.0
+PAINT_TRAP_MARK_GAP_XP = 25.0
+PAINT_TRAP_TOLERANCE_XP = 5.0
 
 WORLD_CUP_POD_20260612 = [
     {"label": "France lower/wider", "title_contains": "France", "belief": 3.3346, "belief_sigma": 0.2787},
@@ -362,6 +366,14 @@ def analyze_probe(
     top_delta = predicted.get(top_trader, before["top_pnl"]) - before["top_pnl"]
     belief_top_delta = belief_predicted.get(top_trader, before["top_pnl"]) - before["top_pnl"]
     runner_blockers = runner_blockers_for_probe(probe, market, markets, own_positions, quote)
+    mark_gap_improvement = before["gap"] - after["gap"]
+    belief_gap_improvement = before["gap"] - belief_after["gap"]
+    opportunity = classify_opportunity(
+        runner_blockers=runner_blockers,
+        mark_gap_improvement=mark_gap_improvement,
+        belief_gap_improvement=belief_gap_improvement,
+        expected_value=own_new_lot_ev,
+    )
     return {
         "label": probe.label,
         "market": probe.market,
@@ -381,7 +393,7 @@ def analyze_probe(
             "after_rank": after["rank"],
             "before_gap": before["gap"],
             "after_gap": after["gap"],
-            "gap_improvement": before["gap"] - after["gap"],
+            "gap_improvement": mark_gap_improvement,
             "own_before_pnl": before["own_pnl"],
             "own_new_lot_pnl": own_new_lot_pnl,
             "own_after_pnl": after["own_pnl"],
@@ -394,7 +406,7 @@ def analyze_probe(
             "after_rank": belief_after["rank"],
             "before_gap": before["gap"],
             "after_gap": belief_after["gap"],
-            "gap_improvement": before["gap"] - belief_after["gap"],
+            "gap_improvement": belief_gap_improvement,
             "own_new_lot_ev": own_new_lot_ev,
             "own_after_pnl": belief_after["own_pnl"],
             "top_trader": top_trader,
@@ -407,6 +419,7 @@ def analyze_probe(
             "would_pass_current_runner": not runner_blockers,
             "blockers": runner_blockers,
         },
+        "opportunity": opportunity,
         "model": {
             "type": (
                 "lognormal_indexer_curve_floor"
@@ -440,10 +453,83 @@ def runner_blockers_for_probe(
         "family": probe.family,
     }
     blockers.extend(loop.concentration_errors(candidate, market, own_positions, markets))
-    title = str(market.get("title") or "").lower()
-    if "world cup" in title:
+    if loop.is_world_cup_market(market):
         blockers.append("World Cup probe has no post-result evidence marker")
     return blockers
+
+
+def classify_opportunity(
+    *,
+    runner_blockers: list[str],
+    mark_gap_improvement: float,
+    belief_gap_improvement: float,
+    expected_value: float,
+) -> dict[str, Any]:
+    if not runner_blockers:
+        return {
+            "status": "runner_candidate",
+            "priority": 5,
+            "action": "draft a queued candidate with full evidence; the runner must re-check all live guards",
+            "reasons": [
+                "passes analyzer quote/concentration/preflight screen",
+                f"belief gap improvement {belief_gap_improvement:.3f} XP",
+                f"standalone EV {expected_value:.3f} XP",
+            ],
+        }
+    if belief_gap_improvement >= DURABLE_WATCH_GAP_XP:
+        return {
+            "status": "durable_watch",
+            "priority": 4,
+            "action": "monitor for evidence or market movement that clears runner blockers",
+            "reasons": [
+                f"belief gap improvement {belief_gap_improvement:.3f} XP",
+                "do not bypass current blockers",
+            ],
+        }
+    paint_ceiling = max(expected_value, 0.0) + PAINT_TRAP_TOLERANCE_XP
+    if mark_gap_improvement >= PAINT_TRAP_MARK_GAP_XP and belief_gap_improvement <= paint_ceiling:
+        return {
+            "status": "paint_trap",
+            "priority": 1,
+            "action": "do not execute unless Oli approves a known snapshot sprint",
+            "reasons": [
+                f"mark gap improvement {mark_gap_improvement:.3f} XP",
+                f"belief gap improvement only {belief_gap_improvement:.3f} XP",
+            ],
+        }
+    if belief_gap_improvement > 0.0:
+        return {
+            "status": "weak_watch",
+            "priority": 2,
+            "action": "keep in watchlist; wait for stronger EV or evidence",
+            "reasons": [f"belief gap improvement {belief_gap_improvement:.3f} XP"],
+        }
+    return {
+        "status": "avoid",
+        "priority": 0,
+        "action": "skip under current belief",
+        "reasons": [f"belief gap improvement {belief_gap_improvement:.3f} XP"],
+    }
+
+
+def sort_key(item: dict[str, Any], sort_by: str) -> tuple[float, float, float, float]:
+    scoreboard = item.get("scoreboard") or {}
+    belief = item.get("belief_scoreboard") or {}
+    quote = item.get("quote") or {}
+    opportunity = item.get("opportunity") or {}
+    gate = item.get("runner_gate") or {}
+    mark_gap = float(scoreboard.get("gap_improvement") or -1e9)
+    belief_gap = float(belief.get("gap_improvement") or -1e9)
+    ev = float(quote.get("expected_value") or -1e9)
+    priority = float(opportunity.get("priority") or 0.0)
+    gate_pass = 1.0 if gate.get("would_pass_current_runner") else 0.0
+    if sort_by == "mark_gap":
+        return (mark_gap, belief_gap, priority, ev)
+    if sort_by == "ev":
+        return (ev, belief_gap, priority, mark_gap)
+    if sort_by == "runner_gate":
+        return (gate_pass, priority, belief_gap, ev)
+    return (belief_gap, priority, ev, mark_gap)
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
@@ -456,6 +542,12 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--bankroll", type=float, default=DEFAULT_BANKROLL)
     parser.add_argument("--limit", type=int, default=DEFAULT_INDEXER_LIMIT)
     parser.add_argument("--output", type=Path, help="Optional JSON output path.")
+    parser.add_argument(
+        "--sort-by",
+        choices=["belief_gap", "mark_gap", "ev", "runner_gate"],
+        default=DEFAULT_SORT_BY,
+        help="Result ordering; default ranks durable belief movement first.",
+    )
     return parser
 
 
@@ -482,18 +574,13 @@ def main(argv: list[str] | None = None) -> int:
             continue
         traders = fetch_indexer(indexer_url, f"/api/markets/{probe.market}/traders")
         results.append(analyze_probe(probe, market, markets, rankings, traders, own_positions, trader, quote))
-    results.sort(
-        key=lambda item: (
-            float(item.get("scoreboard", {}).get("gap_improvement") or -1e9),
-            float(item.get("quote", {}).get("expected_value") or -1e9),
-        ),
-        reverse=True,
-    )
+    results.sort(key=lambda item: sort_key(item, args.sort_by), reverse=True)
     payload = {
         "generated_at": loop.utc_now(),
         "trader": loop.canonical_address(trader),
         "indexer_url": indexer_url,
         "preset": args.preset,
+        "sort_by": args.sort_by,
         "results": results,
     }
     text = json.dumps(payload, indent=2, sort_keys=True)

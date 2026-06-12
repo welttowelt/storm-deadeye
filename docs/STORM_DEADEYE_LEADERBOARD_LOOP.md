@@ -4,16 +4,22 @@ Goal: reach and hold rank #1 on every healthy Deadeye indexer leaderboard while
 preserving a 25 STRK hard gas reserve, warning below 100 STRK, and stopping
 live writes after a 1500 XP campaign loss or drawdown.
 
-## Number-One Goal
+## Clear Goal
 
-Storm Deadeye wins in three phases:
+Storm Deadeye's goal is to become and stay rank #1 on every healthy Deadeye
+leaderboard by converting evidence-backed mispricing into realized leaderboard
+P&L, without risking the wallet's gas floor or spending the last 1000 XP.
 
-1. Beat the overall board first. Current target is the live #1 P&L plus a
-   buffer, not just a rank tie. Every candidate should state its expected
-   contribution to the current gap.
-2. Hold every healthy filtered board once the indexer exposes it. A filtered
+The climb runs in this order:
+
+1. Beat the overall board first. The target is live #1 P&L plus a buffer, not a
+   rank tie. Every candidate states its expected contribution to the current
+   gap.
+2. Hold each healthy filtered board once the indexer exposes it. A filtered
    board returning HTTP 503 is unhealthy and monitored, not counted as empty.
-3. Add coverage trades only after P&L leadership is stable. Markets-traded or
+3. Turn durable watchlist items into trades only when evidence, quote EV, and
+   runner gates clear. World Cup pre-result pressure stays watch-only.
+4. Add coverage trades only after P&L leadership is stable. Markets-traded or
    total-trades coverage must stay positive-EV and obey the same evidence gate.
 
 Live execution is only for Storm-vetted leaderboard candidates. The runner does
@@ -92,12 +98,24 @@ The analyzer quotes probe beliefs and reports two views:
 - `belief_scoreboard`: expected movement under the probe belief, using
   read-only position valuation for existing positions and quote EV for the new
   lot.
+- `opportunity`: operator label for the probe:
+  - `runner_candidate`: quote/concentration/preflight screen passes; draft a
+    queued candidate only if the record has full evidence and budget. The
+    execution runner still re-checks all live guards.
+  - `durable_watch`: being right would close meaningful gap, but current gates
+    still block execution.
+  - `paint_trap`: display gap improves far more than belief gap; skip unless
+    Oli separately approves a known snapshot sprint.
+  - `weak_watch`: positive but too small for the current climb.
+  - `avoid`: belief view does not help the rank gap.
 
 The `runner_gate` section reports whether the probe would pass current runner
 guards and lists blockers such as low standalone EV, concentration, or missing
 World Cup post-result evidence. It is a review signal only. A positive
 gap-improvement estimate does not bypass the execution runner's evidence,
 quote, dry-run, 10 XP EV floor, concentration, gas, XP, or trade-cap guards.
+By default results are sorted by `belief_gap`, so durable rank pressure is shown
+before temporary display movement.
 
 ## Execution Mode
 
