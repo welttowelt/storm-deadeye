@@ -43,6 +43,8 @@ GAS_WARN = 100.0
 GAS_STRONG_WARN = 50.0
 GAS_HARD_STOP = 25.0
 MIN_RATIONALE_CHARS = 40
+MIN_EXECUTE_EV = 10.0
+CAMPAIGN_LOSS_HALT_XP = 1500.0
 
 SECRET_RE = re.compile(
     r"mnemonic|private[_ -]?key|recovery phrase|secret[_ -]?key|BEGIN [A-Z ]*PRIVATE",
@@ -267,9 +269,18 @@ def available_xp(balance_xp: float) -> float:
     return max(0.0, balance_xp - XP_RESERVE)
 
 
-def select_ladder_budget(requested: float | None, balance_xp: float) -> float:
+def select_ladder_budget(
+    requested: float | None,
+    balance_xp: float,
+    *,
+    require_requested: bool = False,
+) -> float:
     cap = available_xp(balance_xp)
-    if requested is not None:
+    if requested is None:
+        if require_requested:
+            raise LoopError("candidate budget is required for live execution")
+        cap = min(cap, XP_LADDER[0])
+    else:
         cap = min(cap, float(requested))
     allowed = [value for value in XP_LADDER if value <= cap]
     if not allowed:
@@ -281,6 +292,22 @@ def trade_history_last_hour(state: dict[str, Any], ts: int | None = None) -> lis
     ts = ts or now_ts()
     history = state.get("trade_history") or []
     return [entry for entry in history if ts - int(entry.get("timestamp", 0)) <= 3600]
+
+
+def update_campaign_loss_guard(state: dict[str, Any], stats: dict[str, Any]) -> dict[str, Any]:
+    current_pnl = float(stats.get("totalPnl", 0.0) if stats else 0.0)
+    campaign = state.setdefault("campaign", {})
+    campaign.setdefault("start_pnl", current_pnl)
+    campaign["high_water_pnl"] = max(float(campaign.get("high_water_pnl", current_pnl)), current_pnl)
+    campaign["current_pnl"] = current_pnl
+    campaign["loss_from_start"] = max(0.0, float(campaign["start_pnl"]) - current_pnl)
+    campaign["drawdown_from_high_water"] = max(0.0, float(campaign["high_water_pnl"]) - current_pnl)
+    campaign["loss_halt_xp"] = CAMPAIGN_LOSS_HALT_XP
+    campaign["loss_halt"] = (
+        campaign["loss_from_start"] >= CAMPAIGN_LOSS_HALT_XP
+        or campaign["drawdown_from_high_water"] >= CAMPAIGN_LOSS_HALT_XP
+    )
+    return campaign
 
 
 def validate_candidate(candidate: dict[str, Any], market_meta: dict[str, Any]) -> list[str]:
@@ -447,6 +474,7 @@ def process_candidates(
     markets: list[dict[str, Any]],
     account: dict[str, Any],
     collateral: dict[str, Any],
+    stats: dict[str, Any],
     state: dict[str, Any],
     args: argparse.Namespace,
     events_path: Path,
@@ -457,6 +485,16 @@ def process_candidates(
     strk_balance = float(account.get("strk_balance_strk", 0.0))
     if gas_tier(strk_balance) == "hard_stop":
         return [{"id": None, "status": "write_stopped", "reason": f"STRK balance {strk_balance:.6f} below {GAS_HARD_STOP:g} hard stop"}]
+    campaign = update_campaign_loss_guard(state, stats)
+    if args.execute and campaign["loss_halt"]:
+        return [{
+            "id": None,
+            "status": "write_stopped",
+            "reason": (
+                f"campaign XP loss halt tripped: loss_from_start={campaign['loss_from_start']:.6f}, "
+                f"drawdown={campaign['drawdown_from_high_water']:.6f}, halt={CAMPAIGN_LOSS_HALT_XP:g}"
+            ),
+        }]
     hour_history = trade_history_last_hour(state)
     executed_this_loop = 0
     for candidate in candidates:
@@ -484,15 +522,20 @@ def process_candidates(
             processed_ids.add(candidate_id)
             continue
         try:
-            budget = select_ladder_budget(candidate.get("budget"), balance_xp)
+            budget = select_ladder_budget(
+                candidate.get("budget"),
+                balance_xp,
+                require_requested=bool(args.execute),
+            )
             doctor = deadeye_json(["doctor", "--market", str(candidate["market"])], timeout=60)
             if not doctor.get("all_ok"):
                 raise LoopError("doctor was not all_ok for market")
             quote = quote_candidate(candidate, budget, balance_xp, market_meta)
             if not quote.get("on_chain_will_accept"):
                 raise LoopError(f"quote rejected: {quote.get('rejection')}")
-            if float(quote.get("expected_value") or 0.0) <= float(candidate.get("min_expected_value", 0.0)):
-                raise LoopError("quote expected value did not clear candidate threshold")
+            min_ev = max(MIN_EXECUTE_EV, float(candidate.get("min_expected_value", MIN_EXECUTE_EV)))
+            if float(quote.get("expected_value") or 0.0) < min_ev:
+                raise LoopError(f"quote expected value did not clear {min_ev:g} XP threshold")
             receipt = execute_candidate(
                 candidate,
                 budget,
@@ -511,6 +554,7 @@ def process_candidates(
                 "family": str(candidate.get("family") or market_meta.get("marketType")).lower(),
                 "budget": budget,
                 "expected_value": quote.get("expected_value"),
+                "min_expected_value": min_ev,
                 "max_collateral": receipt.get("max_collateral"),
                 "submitted": receipt.get("submitted"),
             }
@@ -519,7 +563,13 @@ def process_candidates(
                 executed_this_loop += 1
                 hour_history.append({"timestamp": event["timestamp"], "candidate_id": candidate_id})
                 state.setdefault("trade_history", []).append({"timestamp": event["timestamp"], "candidate_id": candidate_id})
-            processed.append({"id": candidate_id, "status": status, "budget": budget, "expected_value": quote.get("expected_value")})
+            processed.append({
+                "id": candidate_id,
+                "status": status,
+                "budget": budget,
+                "expected_value": quote.get("expected_value"),
+                "min_expected_value": min_ev,
+            })
             processed_ids.add(candidate_id)
         except Exception as exc:  # noqa: BLE001 - failures are recorded for the operator loop.
             processed.append({"id": candidate_id, "status": "failed", "reason": str(exc)})
@@ -636,6 +686,7 @@ def main(argv: list[str] | None = None) -> int:
             monitoring["markets"]["items"],
             account,
             collateral,
+            monitoring["stats"],
             state,
             args,
             args.events,
@@ -647,6 +698,7 @@ def main(argv: list[str] | None = None) -> int:
             "account": account,
             "collateral": collateral,
             "gas_tier": gas_tier(float(account.get("strk_balance_strk", 0.0))),
+            "campaign": state.get("campaign", {}),
             "markets": {k: v for k, v in monitoring["markets"].items() if k != "items"},
             "rankings": monitoring["rankings"],
             "stats": monitoring["stats"],

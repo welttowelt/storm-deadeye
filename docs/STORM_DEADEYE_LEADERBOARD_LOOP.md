@@ -1,7 +1,24 @@
 # Storm Deadeye Leaderboard Loop
 
 Goal: reach and hold rank #1 on every healthy Deadeye indexer leaderboard while
-preserving a 25 STRK hard gas reserve and warning below 100 STRK.
+preserving a 25 STRK hard gas reserve, warning below 100 STRK, and stopping
+live writes after a 1500 XP campaign loss or drawdown.
+
+## Number-One Goal
+
+Storm Deadeye wins in three phases:
+
+1. Beat the overall board first. Current target is the live #1 P&L plus a
+   buffer, not just a rank tie. Every candidate should state its expected
+   contribution to the current gap.
+2. Hold every healthy filtered board once the indexer exposes it. A filtered
+   board returning HTTP 503 is unhealthy and monitored, not counted as empty.
+3. Add coverage trades only after P&L leadership is stable. Markets-traded or
+   total-trades coverage must stay positive-EV and obey the same evidence gate.
+
+Live execution is only for Storm-vetted leaderboard candidates. The runner does
+not invent forecasts; pods or agents queue candidates with sources, rationale,
+belief, sigma, budget, and minimum EV.
 
 The loop is implemented by `scripts/storm_deadeye_loop.py`. It is an operator
 runner, not a forecasting oracle: it monitors leaderboards every tick and can
@@ -81,6 +98,11 @@ pause, unpause, or runtime-deploy commands.
 - 100 STRK warning, 50 STRK strong warning.
 - 1000 XP reserve.
 - XP quote ladder: 100, 250, 500, 1000, 2000, 4000.
+- Missing dry-run budgets default to the smallest rung, 100 XP.
+- Live `--execute` requires an explicit candidate budget.
+- Minimum expected value floor: 10 XP. Candidates may raise this, never lower it.
+- Campaign loss halt: stop live writes after 1500 XP loss from campaign start or
+  1500 XP drawdown from high-water P&L.
 - Max 3 executed trades per 10-minute loop.
 - Max 12 executed trades per hour.
 - `doctor --market` must pass before each candidate.

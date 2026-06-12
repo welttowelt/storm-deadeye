@@ -30,8 +30,22 @@ class StormDeadeyeLoopTests(unittest.TestCase):
     def test_ladder_budget_preserves_reserve(self):
         self.assertEqual(loop.select_ladder_budget(4000, 19914.0), 4000.0)
         self.assertEqual(loop.select_ladder_budget(275, 1300.0), 250.0)
+        self.assertEqual(loop.select_ladder_budget(None, 19914.0), 100.0)
         with self.assertRaises(loop.LoopError):
             loop.select_ladder_budget(100, 1050.0)
+        with self.assertRaises(loop.LoopError):
+            loop.select_ladder_budget(None, 19914.0, require_requested=True)
+
+    def test_campaign_loss_guard(self):
+        state = {}
+        guard = loop.update_campaign_loss_guard(state, {"totalPnl": 50.0})
+        self.assertFalse(guard["loss_halt"])
+        guard = loop.update_campaign_loss_guard(state, {"totalPnl": -1451.0})
+        self.assertTrue(guard["loss_halt"])
+        self.assertGreaterEqual(guard["loss_from_start"], 1500.0)
+
+    def test_min_execute_ev_floor_constant(self):
+        self.assertEqual(loop.MIN_EXECUTE_EV, 10.0)
 
     def test_trade_history_hour_window(self):
         state = {"trade_history": [{"timestamp": 100}, {"timestamp": 3601}, {"timestamp": 7200}]}
