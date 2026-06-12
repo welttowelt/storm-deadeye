@@ -12,6 +12,7 @@ use serde_json::json;
 
 use crate::{
     cli::{FamilyArg, MarketsCmd},
+    commands::runtime_resolver,
     context::{AppContext, CliProvider, parse_address},
     render::{
         MarketFeeConfigView, MarketInfoView, MarketLpInfoView, MarketParamsView, MarketRow,
@@ -119,41 +120,12 @@ async fn info(ctx: &AppContext, address: &str) -> Result<()> {
     ctx.renderer.print(&MarketInfoView { summary })
 }
 
-/// Probe each family's `params()` call until one succeeds.
+/// Shared family detection used by market reads and write-path resolvers.
 pub(crate) async fn detect_family(
     client: &DeadeyeClient<CliProvider>,
     market: Felt,
 ) -> Result<Family> {
-    // Try in the order most commonly observed in the indexer.
-    if NormalMarketReader::new(client.provider(), market)
-        .params()
-        .await
-        .is_ok()
-    {
-        return Ok(Family::Normal);
-    }
-    if LognormalMarketReader::new(client.provider(), market)
-        .params()
-        .await
-        .is_ok()
-    {
-        return Ok(Family::Lognormal);
-    }
-    if MultinoulliMarketReader::new(client.provider(), market)
-        .params()
-        .await
-        .is_ok()
-    {
-        return Ok(Family::Multinoulli);
-    }
-    if BivariateMarketReader::new(client.provider(), market)
-        .params()
-        .await
-        .is_ok()
-    {
-        return Ok(Family::Bivariate);
-    }
-    anyhow::bail!("no family responded to `get_params` — is the address a Deadeye AMM contract?")
+    runtime_resolver::detect_family(client, market).await
 }
 
 fn params_view(p: AmmParamsRaw) -> MarketParamsView {

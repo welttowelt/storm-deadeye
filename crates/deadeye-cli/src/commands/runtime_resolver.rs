@@ -11,6 +11,7 @@
 //! about which flag / env var would fix it.
 
 use anyhow::{Context as _, Result, bail};
+use deadeye_deployer::Deployment;
 use deadeye_sdk::{
     DeadeyeClient,
     bulk::Family,
@@ -95,6 +96,10 @@ pub(crate) async fn detect_family<P>(client: &DeadeyeClient<P>, market: Felt) ->
 where
     P: deadeye_starknet::Provider,
 {
+    if let Some(family) = detect_family_from_factory(client, market).await {
+        return Ok(family);
+    }
+
     let provider = client.provider();
     if NormalMarketReader::new(provider, market)
         .distribution()
@@ -125,6 +130,30 @@ where
         return Ok(Family::Bivariate);
     }
     bail!("could not detect market family for {market:#x} — pass `--family <name>`")
+}
+
+async fn detect_family_from_factory<P>(client: &DeadeyeClient<P>, market: Felt) -> Option<Family>
+where
+    P: deadeye_starknet::Provider,
+{
+    let factory = Deployment::mainnet().ok()?.factory_felt().ok()?;
+    let market_type = client
+        .factory(factory)
+        .reader()
+        .market_type_for_market(market)
+        .await
+        .ok()?;
+    family_from_discriminant(market_type)
+}
+
+const fn family_from_discriminant(market_type: u8) -> Option<Family> {
+    match market_type {
+        1 => Some(Family::Normal),
+        2 => Some(Family::Multinoulli),
+        4 => Some(Family::Lognormal),
+        5 => Some(Family::Bivariate),
+        _ => None,
+    }
 }
 
 /// Decide the family: explicit flag wins, else auto-detect.

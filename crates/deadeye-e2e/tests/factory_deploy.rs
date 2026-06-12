@@ -16,7 +16,7 @@ use deadeye_testkit::default_mainnet_rpc;
 use starknet_core::types::Felt;
 use starknet_providers::{JsonRpcClient, jsonrpc::HttpTransport};
 
-const MAINNET_FACTORY: &str = "0x0224716CC051F21fe7a7e7e0e4a74B13fd09c21b5F31A860861688aC40828dDE";
+const MAINNET_FACTORY: &str = "0x00a7f815C7921687b3cDe2e58e1006621a4E424a78C76df6134698Ba83eB29f6";
 
 fn integration_enabled() -> bool {
     std::env::var("DEADEYE_RUN_INTEGRATION").is_ok()
