@@ -40,6 +40,29 @@ class StormGapAnalyzerTests(unittest.TestCase):
         self.assertLess(pnl, 0.0)
         self.assertAlmostEqual(pnl, -5.8571032836741495, places=9)
 
+    def test_cpi_preset_builds_normal_probe(self):
+        markets = [
+            {
+                "address": "0x5f",
+                "title": "US Inflation in June 2026 (CPI YoY)",
+                "marketType": "normal",
+            }
+        ]
+        specs = gap.load_probe_specs(None, "cpi-nowcast-20260612")
+        probes = gap.build_probes(markets, specs, 100.0)
+        self.assertEqual(len(probes), 1)
+        self.assertEqual(probes[0].family, "normal")
+        self.assertEqual(probes[0].belief, 4.05)
+
+    def test_runner_blockers_include_ev_floor_and_concentration(self):
+        probe = gap.Probe("cpi", "0x1", "normal", 4.05, 0.24, 100.0)
+        market = {"address": "0x1", "title": "US Inflation in June 2026 (CPI YoY)"}
+        quote = {"on_chain_will_accept": True, "expected_value": 6.44}
+        positions = [{"marketAddress": "0x1", "hasPosition": True, "deltaCount": 2}]
+        blockers = gap.runner_blockers_for_probe(probe, market, [market], positions, quote)
+        self.assertTrue(any("below 10 XP floor" in blocker for blocker in blockers))
+        self.assertTrue(any("market concentration cap" in blocker for blocker in blockers))
+
 
 if __name__ == "__main__":
     unittest.main()

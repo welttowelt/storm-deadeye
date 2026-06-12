@@ -38,6 +38,21 @@ WORLD_CUP_POD_20260612 = [
     {"label": "Netherlands higher/wider", "title_contains": "Netherlands", "belief": 3.1939, "belief_sigma": 0.2909},
 ]
 
+CPI_NOWCAST_20260612 = [
+    {
+        "label": "CPI June Cleveland nowcast wider",
+        "title_contains": "US Inflation in June 2026",
+        "family": "normal",
+        "belief": 4.05,
+        "belief_sigma": 0.24,
+    },
+]
+
+PRESETS = {
+    "world-cup-pod-20260612": WORLD_CUP_POD_20260612,
+    "cpi-nowcast-20260612": CPI_NOWCAST_20260612,
+}
+
 
 @dataclass
 class Probe:
@@ -122,8 +137,8 @@ def find_market(markets: list[dict[str, Any]], probe: dict[str, Any]) -> dict[st
 
 def load_probe_specs(path: Path | None, preset: str | None) -> list[dict[str, Any]]:
     specs: list[dict[str, Any]] = []
-    if preset == "world-cup-pod-20260612":
-        specs.extend(WORLD_CUP_POD_20260612)
+    if preset and preset != "none":
+        specs.extend(PRESETS[preset])
     if path:
         with path.open("r", encoding="utf-8") as fh:
             for line_no, line in enumerate(fh, 1):
@@ -145,7 +160,7 @@ def build_probes(markets: list[dict[str, Any]], specs: list[dict[str, Any]], def
     for spec in specs:
         market = find_market(markets, spec)
         family = str(spec.get("family") or market.get("marketType") or "").lower()
-        if family != "lognormal":
+        if family not in {"normal", "lognormal"}:
             continue
         probes.append(
             Probe(
@@ -190,11 +205,51 @@ def fetch_indexer(base_url: str, path: str) -> Any:
     return payload
 
 
+def position_value_at(market: str, family: str, trader: str, at: float) -> float | None:
+    try:
+        payload = loop.deadeye_json(
+            [
+                "position",
+                "value",
+                market,
+                "--family",
+                family,
+                "--trader",
+                trader,
+                "--at",
+                f"{at:.12g}",
+            ],
+            timeout=60,
+        )
+    except Exception:
+        return None
+    value = payload.get("total_position_value")
+    return None if value is None else float(value)
+
+
+def existing_row_pnl_at(
+    row: dict[str, Any],
+    probe: Probe,
+    live_mean: float,
+    effective_k: float,
+) -> float | None:
+    if probe.family == "lognormal":
+        return lognormal_row_pnl_at(row, live_mean, effective_k)
+    if probe.family == "normal":
+        trader = str(row.get("trader") or "")
+        if not trader:
+            return None
+        return position_value_at(probe.market, probe.family, trader, live_mean)
+    return None
+
+
 def analyze_probe(
     probe: Probe,
     market: dict[str, Any],
+    markets: list[dict[str, Any]],
     rankings: list[dict[str, Any]],
     traders: list[dict[str, Any]],
+    own_positions: list[dict[str, Any]],
     own_trader: str,
     quote: dict[str, Any],
 ) -> dict[str, Any]:
@@ -213,8 +268,8 @@ def analyze_probe(
             continue
         trader = loop.canonical_address(row.get("trader"))
         current_actual = row.get("unrealizedPnl")
-        predicted_pnl = lognormal_row_pnl_at(row, post_live_mean, effective_k)
-        current_model = lognormal_row_pnl_at(row, current_live_mean, effective_k)
+        predicted_pnl = existing_row_pnl_at(row, probe, post_live_mean, effective_k)
+        current_model = existing_row_pnl_at(row, probe, current_live_mean, effective_k)
         if current_actual is None or predicted_pnl is None:
             continue
         delta = predicted_pnl - float(current_actual)
@@ -246,6 +301,7 @@ def analyze_probe(
 
     top_trader = before_top[0]
     top_delta = predicted.get(top_trader, before_top[1]) - before_top[1]
+    runner_blockers = runner_blockers_for_probe(probe, market, markets, own_positions, quote)
     return {
         "label": probe.label,
         "market": probe.market,
@@ -274,8 +330,16 @@ def analyze_probe(
             "after_top_trader": after_top[0],
             "after_top_pnl": after_top[1],
         },
+        "runner_gate": {
+            "would_pass_current_runner": not runner_blockers,
+            "blockers": runner_blockers,
+        },
         "model": {
-            "type": "lognormal_indexer_curve_floor",
+            "type": (
+                "lognormal_indexer_curve_floor"
+                if probe.family == "lognormal"
+                else "normal_position_value_existing_curve_estimated_new_lot"
+            ),
             "current_live_mean": current_live_mean,
             "post_live_mean": post_live_mean,
             "effective_k": effective_k,
@@ -284,9 +348,34 @@ def analyze_probe(
     }
 
 
+def runner_blockers_for_probe(
+    probe: Probe,
+    market: dict[str, Any],
+    markets: list[dict[str, Any]],
+    own_positions: list[dict[str, Any]],
+    quote: dict[str, Any],
+) -> list[str]:
+    blockers: list[str] = []
+    if not quote.get("on_chain_will_accept"):
+        blockers.append(f"quote rejected: {quote.get('rejection')}")
+    expected_value = float(quote.get("expected_value") or 0.0)
+    if expected_value < loop.MIN_EXECUTE_EV:
+        blockers.append(f"standalone EV {expected_value:.6f} below {loop.MIN_EXECUTE_EV:g} XP floor")
+    candidate = {
+        "id": probe.label,
+        "market": probe.market,
+        "family": probe.family,
+    }
+    blockers.extend(loop.concentration_errors(candidate, market, own_positions, markets))
+    title = str(market.get("title") or "").lower()
+    if "world cup" in title:
+        blockers.append("World Cup probe has no post-result evidence marker")
+    return blockers
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Read-only Storm Deadeye leaderboard gap analyzer.")
-    parser.add_argument("--preset", choices=["world-cup-pod-20260612"], default="world-cup-pod-20260612")
+    parser.add_argument("--preset", choices=[*PRESETS.keys(), "none"], default="world-cup-pod-20260612")
     parser.add_argument("--probes", type=Path, help="Optional JSONL probe file.")
     parser.add_argument("--indexer-url", help="Override Deadeye indexer URL.")
     parser.add_argument("--trader", help="Override own trader address.")
@@ -307,6 +396,7 @@ def main(argv: list[str] | None = None) -> int:
         raise loop.LoopError("missing indexer URL or trader")
     markets = fetch_indexer(indexer_url, "/api/markets")
     rankings = fetch_indexer(indexer_url, f"/api/rankings?limit={int(args.limit)}")
+    own_positions = fetch_indexer(indexer_url, f"/api/positions/{loop.canonical_address(trader)}")
     specs = load_probe_specs(args.probes, args.preset)
     probes = build_probes(markets, specs, args.budget)
     by_address = {loop.canonical_address(market.get("address")): market for market in markets}
@@ -318,7 +408,7 @@ def main(argv: list[str] | None = None) -> int:
             results.append({"label": probe.label, "market": probe.market, "quote": quote, "error": "quote rejected"})
             continue
         traders = fetch_indexer(indexer_url, f"/api/markets/{probe.market}/traders")
-        results.append(analyze_probe(probe, market, rankings, traders, trader, quote))
+        results.append(analyze_probe(probe, market, markets, rankings, traders, own_positions, trader, quote))
     results.sort(
         key=lambda item: (
             float(item.get("scoreboard", {}).get("gap_improvement") or -1e9),

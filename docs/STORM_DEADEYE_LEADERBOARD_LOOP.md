@@ -80,11 +80,19 @@ Use the read-only analyzer before proposing any rank-gap strategy:
 python3 scripts/storm_gap_analyzer.py --preset world-cup-pod-20260612
 ```
 
-The analyzer quotes probe beliefs and estimates how the indexer leaderboard mark
-would move for current leaders and for a new Storm Deadeye lot. It is a review
-signal only. A positive gap-improvement estimate does not bypass the execution
-runner's evidence, quote, dry-run, 10 XP EV floor, concentration, gas, XP, or
-trade-cap guards.
+For CPI/economics:
+
+```bash
+python3 scripts/storm_gap_analyzer.py --preset cpi-nowcast-20260612
+```
+
+The analyzer quotes probe beliefs and estimates how the indexer leaderboard
+mark would move for current leaders and for a new Storm Deadeye lot. The
+`runner_gate` section reports whether the probe would pass current runner
+guards and lists blockers such as low standalone EV, concentration, or missing
+World Cup post-result evidence. It is a review signal only. A positive
+gap-improvement estimate does not bypass the execution runner's evidence,
+quote, dry-run, 10 XP EV floor, concentration, gas, XP, or trade-cap guards.
 
 ## Execution Mode
 
