@@ -69,6 +69,20 @@ The runner rejects candidates without a rationale, evidence, a supported family,
 or category-specific evidence hints. Economics candidates need an official or
 primary-source hint; World Cup candidates need at least two evidence items.
 
+## Gap-Impact Screen
+
+Use the read-only analyzer before proposing any rank-gap strategy:
+
+```bash
+python3 scripts/storm_gap_analyzer.py --preset world-cup-pod-20260612
+```
+
+The analyzer quotes probe beliefs and estimates how the indexer leaderboard mark
+would move for current leaders and for a new Storm Deadeye lot. It is a review
+signal only. A positive gap-improvement estimate does not bypass the execution
+runner's evidence, quote, dry-run, 10 XP EV floor, concentration, gas, XP, or
+trade-cap guards.
+
 ## Execution Mode
 
 Dry-run queued candidates:
@@ -113,7 +127,7 @@ pause, unpause, or runtime-deploy commands.
 ## Tests
 
 ```bash
-python3 -m unittest scripts/test_storm_deadeye_loop.py
+python3 -m unittest scripts/test_storm_deadeye_loop.py scripts/test_storm_gap_analyzer.py
 ```
 
 Live monitor smoke:
