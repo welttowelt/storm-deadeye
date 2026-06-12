@@ -227,6 +227,36 @@ def position_value_at(market: str, family: str, trader: str, at: float) -> float
     return None if value is None else float(value)
 
 
+def position_expected_under_belief(
+    market: str,
+    family: str,
+    trader: str,
+    belief: float,
+    belief_sigma: float,
+) -> float | None:
+    try:
+        payload = loop.deadeye_json(
+            [
+                "position",
+                "value",
+                market,
+                "--family",
+                family,
+                "--trader",
+                trader,
+                "--belief",
+                f"{belief:.12g}",
+                "--belief-sigma",
+                f"{belief_sigma:.12g}",
+            ],
+            timeout=90,
+        )
+    except Exception:
+        return None
+    value = payload.get("expected_pnl")
+    return None if value is None else float(value)
+
+
 def existing_row_pnl_at(
     row: dict[str, Any],
     probe: Probe,
@@ -241,6 +271,19 @@ def existing_row_pnl_at(
             return None
         return position_value_at(probe.market, probe.family, trader, live_mean)
     return None
+
+
+def rank_summary(totals: dict[str, float], own: str) -> dict[str, Any]:
+    sorted_rows = sorted(totals.items(), key=lambda item: item[1], reverse=True)
+    top = sorted_rows[0] if sorted_rows else ("", 0.0)
+    own_pnl = totals.get(own, 0.0)
+    return {
+        "rank": next((idx for idx, item in enumerate(sorted_rows, 1) if item[0] == own), None),
+        "gap": 0.0 if top[0] == own else max(0.0, top[1] - own_pnl),
+        "own_pnl": own_pnl,
+        "top_trader": top[0],
+        "top_pnl": top[1],
+    }
 
 
 def analyze_probe(
@@ -262,7 +305,9 @@ def analyze_probe(
         for row in rankings
     }
     predicted = dict(current_totals)
+    belief_predicted = dict(current_totals)
     trader_deltas: list[dict[str, Any]] = []
+    belief_deltas: list[dict[str, Any]] = []
     for row in traders:
         if not row.get("hasPosition"):
             continue
@@ -283,24 +328,39 @@ def analyze_probe(
                 "delta": delta,
             }
         )
+        belief_pnl = position_expected_under_belief(
+            probe.market,
+            probe.family,
+            str(row.get("trader")),
+            probe.belief,
+            probe.belief_sigma,
+        )
+        if belief_pnl is not None:
+            belief_delta = belief_pnl - float(current_actual)
+            belief_predicted[trader] = belief_predicted.get(trader, 0.0) + belief_delta
+            belief_deltas.append(
+                {
+                    "trader": trader,
+                    "current_indexer_pnl": float(current_actual),
+                    "belief_expected_pnl": belief_pnl,
+                    "delta": belief_delta,
+                }
+            )
 
     spend_xp = float(quote.get("padded_collateral") or quote.get("required_collateral") or probe.budget)
     own_new_lot_pnl = new_lot_display_pnl(state, quote, spend_xp)
     own = loop.canonical_address(own_trader)
     predicted[own] = predicted.get(own, 0.0) + own_new_lot_pnl
+    own_new_lot_ev = float(quote.get("expected_value") or 0.0)
+    belief_predicted[own] = belief_predicted.get(own, 0.0) + own_new_lot_ev
 
-    before_sorted = sorted(current_totals.items(), key=lambda item: item[1], reverse=True)
-    after_sorted = sorted(predicted.items(), key=lambda item: item[1], reverse=True)
-    own_before = current_totals.get(own, 0.0)
-    own_after = predicted.get(own, own_before)
-    before_top = before_sorted[0] if before_sorted else ("", 0.0)
-    after_top = after_sorted[0] if after_sorted else ("", 0.0)
-    before_gap = max(0.0, before_top[1] - own_before)
-    after_gap = 0.0 if after_top[0] == own else max(0.0, after_top[1] - own_after)
-    after_rank = next((idx for idx, item in enumerate(after_sorted, 1) if item[0] == own), None)
+    before = rank_summary(current_totals, own)
+    after = rank_summary(predicted, own)
+    belief_after = rank_summary(belief_predicted, own)
 
-    top_trader = before_top[0]
-    top_delta = predicted.get(top_trader, before_top[1]) - before_top[1]
+    top_trader = before["top_trader"]
+    top_delta = predicted.get(top_trader, before["top_pnl"]) - before["top_pnl"]
+    belief_top_delta = belief_predicted.get(top_trader, before["top_pnl"]) - before["top_pnl"]
     runner_blockers = runner_blockers_for_probe(probe, market, markets, own_positions, quote)
     return {
         "label": probe.label,
@@ -317,18 +377,31 @@ def analyze_probe(
             "candidate_sigma": quote.get("candidate_sigma"),
         },
         "scoreboard": {
-            "before_rank": next((idx for idx, item in enumerate(before_sorted, 1) if item[0] == own), None),
-            "after_rank": after_rank,
-            "before_gap": before_gap,
-            "after_gap": after_gap,
-            "gap_improvement": before_gap - after_gap,
-            "own_before_pnl": own_before,
+            "before_rank": before["rank"],
+            "after_rank": after["rank"],
+            "before_gap": before["gap"],
+            "after_gap": after["gap"],
+            "gap_improvement": before["gap"] - after["gap"],
+            "own_before_pnl": before["own_pnl"],
             "own_new_lot_pnl": own_new_lot_pnl,
-            "own_after_pnl": own_after,
+            "own_after_pnl": after["own_pnl"],
             "top_trader": top_trader,
             "top_delta": top_delta,
-            "after_top_trader": after_top[0],
-            "after_top_pnl": after_top[1],
+            "after_top_trader": after["top_trader"],
+            "after_top_pnl": after["top_pnl"],
+        },
+        "belief_scoreboard": {
+            "after_rank": belief_after["rank"],
+            "before_gap": before["gap"],
+            "after_gap": belief_after["gap"],
+            "gap_improvement": before["gap"] - belief_after["gap"],
+            "own_new_lot_ev": own_new_lot_ev,
+            "own_after_pnl": belief_after["own_pnl"],
+            "top_trader": top_trader,
+            "top_delta": belief_top_delta,
+            "after_top_trader": belief_after["top_trader"],
+            "after_top_pnl": belief_after["top_pnl"],
+            "trader_deltas": sorted(belief_deltas, key=lambda item: abs(float(item["delta"])), reverse=True)[:8],
         },
         "runner_gate": {
             "would_pass_current_runner": not runner_blockers,

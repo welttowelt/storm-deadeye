@@ -63,6 +63,13 @@ class StormGapAnalyzerTests(unittest.TestCase):
         self.assertTrue(any("below 10 XP floor" in blocker for blocker in blockers))
         self.assertTrue(any("market concentration cap" in blocker for blocker in blockers))
 
+    def test_rank_summary_computes_own_gap(self):
+        totals = {"0xaaa": 100.0, "0xbbb": 80.0, "0xccc": 120.0}
+        summary = gap.rank_summary(totals, "0xbbb")
+        self.assertEqual(summary["rank"], 3)
+        self.assertEqual(summary["gap"], 40.0)
+        self.assertEqual(summary["top_trader"], "0xccc")
+
 
 if __name__ == "__main__":
     unittest.main()

@@ -86,9 +86,14 @@ For CPI/economics:
 python3 scripts/storm_gap_analyzer.py --preset cpi-nowcast-20260612
 ```
 
-The analyzer quotes probe beliefs and estimates how the indexer leaderboard
-mark would move for current leaders and for a new Storm Deadeye lot. The
-`runner_gate` section reports whether the probe would pass current runner
+The analyzer quotes probe beliefs and reports two views:
+
+- `scoreboard`: estimated current mark-to-market display movement.
+- `belief_scoreboard`: expected movement under the probe belief, using
+  read-only position valuation for existing positions and quote EV for the new
+  lot.
+
+The `runner_gate` section reports whether the probe would pass current runner
 guards and lists blockers such as low standalone EV, concentration, or missing
 World Cup post-result evidence. It is a review signal only. A positive
 gap-improvement estimate does not bypass the execution runner's evidence,
