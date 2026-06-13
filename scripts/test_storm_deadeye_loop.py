@@ -538,7 +538,7 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         script = Path("/tmp/storm-deadeye-smoke-retry.sh")
         results = [
             loop.CmdResult(["zsh", str(script), "0x1"], 1, "PASS version\n== RESULT: FAIL ==\n", ""),
-            loop.CmdResult(["zsh", str(script), "0x1"], 0, "PASS version\n== RESULT: ALL-PASS ==\n", ""),
+            loop.CmdResult(["zsh", str(script), "0x1"], 0, "PASS  version: deadeye 0.1.20\n== RESULT: ALL-PASS ==\n", ""),
         ]
         with (
             mock.patch.object(Path, "exists", return_value=True),
@@ -551,8 +551,16 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(len(smoke["attempts"]), 2)
         self.assertEqual(smoke["attempts"][0]["returncode"], 1)
         self.assertEqual(smoke["attempts"][1]["returncode"], 0)
+        self.assertEqual(smoke["version"], "deadeye 0.1.20")
         self.assertEqual(run_cmd.call_count, 2)
         sleep.assert_called_once_with(loop.SMOKE_SCRIPT_RETRY_DELAY_SECONDS)
+
+    def test_smoke_output_version_extracts_deadeye_version(self):
+        self.assertEqual(
+            loop.smoke_output_version("PASS  version: deadeye 0.1.20\n== RESULT: ALL-PASS =="),
+            "deadeye 0.1.20",
+        )
+        self.assertIsNone(loop.smoke_output_version("PASS version\n== RESULT: ALL-PASS =="))
 
     def test_run_cmd_retries_read_only_cli_blip(self):
         procs = [
@@ -579,7 +587,7 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             "generated_at": "2026-06-12T13:52:35Z",
             "execute_mode": True,
             "mailbox_updated": False,
-            "smoke": {"ok": True, "script": "/tmp/smoke.sh"},
+            "smoke": {"ok": True, "script": "/tmp/smoke.sh", "version": "deadeye 0.1.20"},
             "gas_tier": "ok",
             "account": {
                 "address": "0x4418",
@@ -650,6 +658,7 @@ class StormDeadeyeLoopTests(unittest.TestCase):
 
         compact = loop.compact_last_summary(summary)
         self.assertEqual(compact["overall"]["rank"], 9)
+        self.assertEqual(compact["smoke_version"], "deadeye 0.1.20")
         self.assertEqual(compact["strk_balance"], 1042.0)
         self.assertEqual(compact["xp_balance"], 19832.0)
         self.assertEqual(compact["healthy_views"]["filters"], ["economics"])

@@ -893,6 +893,7 @@ def run_smoke(smoke_script: Path, smoke_market: str) -> dict[str, Any]:
                     "ok": True,
                     "started_at": started,
                     "script": str(smoke_script),
+                    "version": smoke_output_version(result.stdout + "\n" + result.stderr),
                     "attempts": attempts,
                     "summary": result.stdout.strip().splitlines()[-1:],
                 }
@@ -910,6 +911,11 @@ def run_smoke(smoke_script: Path, smoke_market: str) -> dict[str, Any]:
     if not doctor.get("all_ok"):
         raise LoopError("built-in smoke doctor was not all_ok")
     return {"ok": True, "started_at": started, "script": "built-in", "version": version.stdout.strip()}
+
+
+def smoke_output_version(text: str) -> str | None:
+    match = re.search(r"\bdeadeye\s+[0-9][^\s]*", text)
+    return match.group(0) if match else None
 
 
 def monitor(indexer_url: str, trader: str) -> dict[str, Any]:
@@ -1705,6 +1711,7 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "execute_mode": bool(summary.get("execute_mode")),
         "mailbox_updated": bool(summary.get("mailbox_updated", False)),
         "smoke_ok": smoke.get("ok") if smoke else None,
+        "smoke_version": smoke.get("version") if smoke else None,
         "gas_tier": summary.get("gas_tier"),
         "strk_balance": account.get("strk_balance_strk"),
         "xp_balance": collateral.get("balance_xp"),
