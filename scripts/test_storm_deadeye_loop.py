@@ -2207,7 +2207,22 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     "item_blockers": {},
                     "note": "Pre-window readiness only.",
                 },
-                "capture_plan": {"rows": [{"id": "official_result"}]},
+                "capture_plan": {
+                    "rows": [
+                        {
+                            "id": "official_result",
+                            "source_role": "official_match_result",
+                            "primary_url": "https://www.fifa.com/match",
+                            "source_options": ["https://www.fifa.com/match"],
+                            "claim_template": "FIFA shows final score Germany <score> Curacao.",
+                            "claim_must_include": [
+                                {"label": "completion_marker"},
+                                {"label": "numeric_score_value"},
+                            ],
+                            "capture_utc_must_be_at_or_after": "2026-06-14T20:00:00Z",
+                        }
+                    ]
+                },
                 "source_reachability": {
                     "checked": True,
                     "checked_at": "2026-06-13T07:16:53Z",
@@ -2240,6 +2255,12 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(packet_status["next_action"], "wait_for_result_window")
         self.assertEqual(packet_status["missing_ids"], ["official_result"])
         self.assertEqual(packet_status["capture_plan_rows"], 1)
+        self.assertEqual(packet_status["next_capture_rows"][0]["id"], "official_result")
+        self.assertEqual(packet_status["next_capture_rows"][0]["source_role"], "official_match_result")
+        self.assertEqual(
+            packet_status["next_capture_rows"][0]["claim_marker_labels"],
+            ["completion_marker", "numeric_score_value"],
+        )
         self.assertTrue(packet_status["pre_window_readiness"]["ready_for_result_window"])
         self.assertEqual(packet_status["pre_window_readiness"]["blockers"], [])
         self.assertEqual(packet_status["source_reachability"]["reachable_count"], 9)
@@ -2268,7 +2289,17 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     "blockers": [],
                     "item_blockers": {},
                 },
-                "capture_plan": {"rows": [{"id": "official_result"}]},
+                "capture_plan": {
+                    "rows": [
+                        {
+                            "id": "official_result",
+                            "source_role": "official_match_result",
+                            "primary_url": "https://www.fifa.com/match",
+                            "claim_template": "FIFA shows final score Germany <score> Curacao.",
+                            "claim_must_include": [{"label": "completion_marker"}],
+                        }
+                    ]
+                },
                 "source_reachability": {"checked": True, "reachable_count": 9, "unreachable_count": 0},
             }), encoding="utf-8")
             templates = [
@@ -2593,7 +2624,17 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     "blocker_count": 29,
                 },
                 "capture_readiness": {"ready_for_template_update": False},
-                "capture_plan": {"rows": [{"id": "official_result"}]},
+                "capture_plan": {
+                    "rows": [
+                        {
+                            "id": "official_result",
+                            "source_role": "official_match_result",
+                            "primary_url": "https://www.fifa.com/match",
+                            "claim_template": "FIFA shows final score Germany <score> Curacao.",
+                            "claim_must_include": [{"label": "completion_marker"}],
+                        }
+                    ]
+                },
                 "source_reachability": {
                     "checked": True,
                     "reachable_count": 9,
@@ -2637,6 +2678,10 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertIn("evidence_packet", text)
         self.assertIn("wait_for_result_window", text)
         self.assertIn("official_result", text)
+        self.assertIn("next_capture_rows", text)
+        self.assertIn("official_match_result", text)
+        self.assertIn("Message to scout_claude", text)
+        self.assertIn("final-whistle score", text)
         self.assertIn("actual post-result candidate package", text)
         self.assertNotIn("candidate/script changes", text)
 

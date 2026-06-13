@@ -589,6 +589,32 @@ def evidence_packet_path_for_template(state_dir: Path, template: dict[str, Any])
     return state_dir / f"{slug}-post-result-evidence-packet.json"
 
 
+def evidence_packet_next_capture_rows(packet: dict[str, Any], missing_ids: list[str]) -> list[dict[str, Any]]:
+    missing = {str(item) for item in missing_ids}
+    rows: list[dict[str, Any]] = []
+    for row in (packet.get("capture_plan") or {}).get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        item_id = str(row.get("id") or "")
+        if item_id not in missing:
+            continue
+        marker_labels = []
+        for marker in row.get("claim_must_include") or []:
+            if isinstance(marker, dict) and marker.get("label"):
+                marker_labels.append(marker.get("label"))
+        rows.append({
+            "id": item_id,
+            "source_role": row.get("source_role"),
+            "primary_url": row.get("primary_url"),
+            "source_options_count": len(row.get("source_options") or []),
+            "claim_template": row.get("claim_template"),
+            "claim_marker_labels": marker_labels,
+            "capture_utc_must_be_at_or_after": row.get("capture_utc_must_be_at_or_after"),
+            "read_only_command": row.get("read_only_command"),
+        })
+    return rows
+
+
 def evidence_packet_status_for_template(
     state_dir: Path,
     template: dict[str, Any],
@@ -628,6 +654,7 @@ def evidence_packet_status_for_template(
         and source_age_seconds is not None
         and source_age_seconds > source_max_age_seconds
     )
+    missing_ids = capture_status.get("missing_ids") or []
     return {
         "exists": True,
         "path": str(packet_path),
@@ -635,9 +662,10 @@ def evidence_packet_status_for_template(
         "result_window_open": bool(packet.get("result_window_open")),
         "next_action": capture_status.get("next_action"),
         "ready_for_template_update": bool(capture_readiness.get("ready_for_template_update")),
-        "missing_ids": capture_status.get("missing_ids") or [],
+        "missing_ids": missing_ids,
         "blocker_count": capture_status.get("blocker_count"),
         "capture_plan_rows": len((packet.get("capture_plan") or {}).get("rows") or []),
+        "next_capture_rows": evidence_packet_next_capture_rows(packet, missing_ids),
         "pre_window_readiness": {
             "ready_for_result_window": bool(pre_window_readiness.get("ready_for_result_window")),
             "required_ids": pre_window_readiness.get("required_ids") or [],
@@ -2887,6 +2915,7 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
                     "missing_ids": packet.get("missing_ids"),
                     "blocker_count": packet.get("blocker_count"),
                     "capture_plan_rows": packet.get("capture_plan_rows"),
+                    "next_capture_rows": packet.get("next_capture_rows"),
                     "pre_window_readiness": packet.get("pre_window_readiness"),
                     "source_reachability": packet.get("source_reachability"),
                 }
@@ -2895,6 +2924,9 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
                 due_item["evidence_packet"] = packet_status
             due.append(due_item)
         lines.insert(9, "Post-result evidence due: " + json.dumps(due, sort_keys=True))
+        lines.append(
+            "Message to scout_claude: post-result evidence is due now; please ACK with official result/final-whistle score, confirmed lineups, injuries/suspensions, odds movement, and ratings/model movement only. Do not propose pre-result execution."
+        )
     with mailbox.open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
         fh.write("\n")

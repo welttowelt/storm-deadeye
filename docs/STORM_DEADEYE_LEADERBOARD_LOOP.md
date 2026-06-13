@@ -71,6 +71,11 @@ After a template's `result_not_before_utc` has passed, `last_summary` also
 reports `post_result_evidence_due` when official result evidence is still
 missing. That field is part of the mailbox-change key, so the hourly loop can
 surface result-evidence work as soon as the configured result window opens.
+Due packet status includes `next_capture_rows`: the missing evidence row id,
+source role, primary URL, claim template, required claim-marker labels, and any
+read-only local command. The mailbox due entry also asks `scout_claude` for
+only the official result/final-whistle score, lineups, injuries/suspensions,
+odds movement, and ratings/model movement.
 Before the window, `last_summary.pre_window_evidence_readiness` reports whether
 the local evidence packet is actually ready for final-whistle capture. A ready
 packet stays quiet. For the next result window only, packet loss, unreadable
