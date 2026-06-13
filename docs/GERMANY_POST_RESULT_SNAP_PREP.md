@@ -244,7 +244,7 @@ anything into the template:
 python3 scripts/storm_worldcup_evidence_packet.py \
   --packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json \
   --capture-row official_result \
-  --claim "FIFA shows the match completed at full time with final score Germany <score> Curacao." \
+  --claim "FIFA shows the match completed at final whistle/full time with final score Germany <score> Curacao." \
   --source "FIFA match centre" \
   --url "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464" \
   --capture-utc "<UTC timestamp at or after 2026-06-14T20:00:00Z>" \

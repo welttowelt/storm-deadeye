@@ -119,7 +119,7 @@ def fill_packet_evidence_before_window(result: dict):
 
 def fill_realistic_germany_result_evidence(result: dict):
     claims = {
-        "official_result": "FIFA shows the match completed at full time with final score Germany 3-0 Curacao.",
+        "official_result": "FIFA shows the match completed at final whistle/full time with final score Germany 3-0 Curacao.",
         "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
         "injuries_suspensions": "Post-match report checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
         "odds_move": "Post-result Germany outright odds and path odds movement versus baseline Germany 1.06 with post_result_value updated odds Germany 1.04 captured.",
@@ -234,7 +234,7 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         )
         self.assertEqual(
             plan_rows["official_result"]["claim_template"],
-            "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
+            "FIFA shows the match completed at final whistle/full time with final score Germany <score> Curacao.",
         )
         self.assertIn("--capture-row official_result", plan_rows["official_result"]["capture_command"])
         self.assertIn("'FIFA match centre'", plan_rows["official_result"]["capture_command"])
@@ -243,7 +243,7 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
             plan_rows["official_result"]["capture_command"],
         )
         self.assertIn(
-            "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
+            "FIFA shows the match completed at final whistle/full time with final score Germany <score> Curacao.",
             plan_rows["official_result"]["capture_command"],
         )
         self.assertNotIn("<specific claim>", plan_rows["official_result"]["capture_command"])
@@ -284,6 +284,28 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertEqual(reachability["probes"], [])
         self.assertFalse(result["pre_window_readiness"]["ready_for_result_window"])
         self.assertIn("source_reachability_not_checked", result["pre_window_readiness"]["blockers"])
+
+    def test_validate_packet_refreshes_generated_capture_plan(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            built = packet.build_packet(template_path, now="2026-06-13T20:05:00Z")
+            for row in built["capture_plan"]["rows"]:
+                if row["id"] == "official_result":
+                    row["claim_template"] = "old generated claim"
+                    row["capture_command"] = "old generated command"
+            packet_path.write_text(json.dumps(built), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-13T20:06:00Z")
+
+        rows = {row["id"]: row for row in validated["capture_plan"]["rows"]}
+        self.assertEqual(
+            rows["official_result"]["claim_template"],
+            "FIFA shows the match completed at final whistle/full time with final score Germany <score> Curacao.",
+        )
+        self.assertIn("final whistle/full time", rows["official_result"]["capture_command"])
 
     def test_source_checked_packet_is_pre_window_ready_but_not_queue_approved(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -382,7 +404,7 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
                 if row["id"] == "official_result":
                     row["claim_template"] = "<specific claim>"
                     row["capture_command"] = row["capture_command"].replace(
-                        "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
+                        "FIFA shows the match completed at final whistle/full time with final score Germany <score> Curacao.",
                         "<specific claim>",
                     )
 
@@ -905,7 +927,7 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
             captured = packet.capture_evidence_row(
                 packet_path,
                 "official_result",
-                claim="FIFA shows the match completed at full time with final score Germany 3-0 Curacao.",
+                claim="FIFA shows the match completed at final whistle/full time with final score Germany 3-0 Curacao.",
                 source="FIFA match centre",
                 url="https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
                 capture_utc="2026-06-14T20:06:00Z",
@@ -947,7 +969,7 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
                 packet.capture_evidence_row(
                     packet_path,
                     "official_result",
-                    claim="FIFA shows the match completed at full time with final score Germany 3-0 Curacao.",
+                    claim="FIFA shows the match completed at final whistle/full time with final score Germany 3-0 Curacao.",
                     source="FIFA match centre",
                     url="https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
                     capture_utc="2026-06-14T19:59:00Z",

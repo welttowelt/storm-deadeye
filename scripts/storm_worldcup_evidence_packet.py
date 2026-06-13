@@ -52,7 +52,7 @@ CAPTURE_NOTES = {
     "quote_scout": "Run the local read-only quote scout after the result or market state shifts.",
 }
 CLAIM_TEMPLATES = {
-    "official_result": "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
+    "official_result": "FIFA shows the match completed at final whistle/full time with final score Germany <score> Curacao.",
     "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
     "injuries_suspensions": "Post-match source checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
     "odds_move": "Post-result Germany odds movement versus the pre-result baseline with post_result_value <updated odds/delta> captured.",
@@ -708,6 +708,15 @@ def refresh_packet_status(
     window_open = result_window_open_from_packet(packet, now=checked_at)
     if window_open is not None:
         packet["result_window_open"] = window_open
+    template_info = packet.get("template") or {}
+    packet["capture_plan"] = capture_plan(
+        {
+            "market": template_info.get("market"),
+            "result_not_before_utc": template_info.get("result_not_before_utc"),
+            "pre_result_baseline": packet.get("pre_result_baseline") or {},
+        },
+        packet.get("evidence_placeholders") or [],
+    )
     if check_sources:
         packet["source_reachability"] = source_reachability_report(
             packet.get("evidence_placeholders") or [],
