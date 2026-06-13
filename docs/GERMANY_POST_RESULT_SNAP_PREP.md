@@ -96,8 +96,11 @@ these claim markers:
   pre-result comparison.
 - `ratings_move`: rating or model, post-result timing, movement/change, and
   baseline or pre-result comparison.
-- `market_state`: market/Deadeye plus state, mu, sigma, or distribution.
-- `quote_scout`: quote plus scout, EV, or expected value.
+- `market_state`: market/Deadeye state from `deadeye markets show`, a
+  generated/captured timestamp, and concrete `mu=<value>` plus
+  `sigma=<value>`.
+- `quote_scout`: quote plus scout/EV, artifact/output, generated timestamp,
+  and runner-pass row count.
 
 The test suite includes a synthetic realistic filled Germany packet proving
 these strict gates can clear when all required post-window evidence rows are

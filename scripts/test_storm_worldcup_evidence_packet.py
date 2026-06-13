@@ -99,7 +99,7 @@ def fill_packet_evidence(result: dict):
         "injuries_suspensions": "Injuries, suspensions, bookings, and absences checked for path impact.",
         "odds_move": "Post-result Germany odds movement versus the pre-result baseline Germany 1.06 captured.",
         "ratings_move": "Post-result ratings/model movement versus baseline FIFA ranks Germany 10 and Curacao 82 captured.",
-        "market_state": "Fresh post-result Deadeye market state distribution captured.",
+        "market_state": "Fresh post-result Deadeye market state from deadeye markets show generated_at 2026-06-14T20:06:30Z with mu=3.2291 and sigma=0.2702 captured.",
         "quote_scout": "Fresh active-portfolio quote scout EV output gap-analysis-active-portfolio-ladder-quote-4000-20260614T200700Z.json generated_at 2026-06-14T20:07:00Z with runner_pass_rows 0 captured after result/state shift.",
     }
     for item in result["evidence_placeholders"]:
@@ -124,7 +124,7 @@ def fill_realistic_germany_result_evidence(result: dict):
         "injuries_suspensions": "Match report checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
         "odds_move": "Post-result Germany outright odds and path odds movement versus baseline Germany 1.06 captured.",
         "ratings_move": "Post-result ratings model movement for Germany versus baseline ranks Germany 10 and Curacao 82 captured.",
-        "market_state": "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+        "market_state": "Fresh post-result Deadeye market state from deadeye markets show generated_at 2026-06-14T20:06:30Z with mu=3.2291 and sigma=0.2702 captured.",
         "quote_scout": "Fresh active-portfolio quote scout EV and expected value output gap-analysis-active-portfolio-ladder-quote-4000-20260614T200700Z.json generated_at 2026-06-14T20:07:00Z with runner_pass_rows 0 captured after result/state shift.",
     }
     urls = {
@@ -255,12 +255,18 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertIn("storm_gap_analyzer.py", plan_rows["quote_scout"]["read_only_command"])
         self.assertEqual(
             plan_rows["market_state"]["claim_template"],
-            "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+            "Fresh post-result Deadeye market state from deadeye markets show generated_at <timestamp> with mu=<mu> and sigma=<sigma> captured.",
         )
         self.assertIn(
-            "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+            "Fresh post-result Deadeye market state from deadeye markets show generated_at <timestamp> with mu=<mu> and sigma=<sigma> captured.",
             plan_rows["market_state"]["capture_command"],
         )
+        self.assertIn("mu_value", [
+            marker["label"] for marker in plan_rows["market_state"]["claim_must_include"]
+        ])
+        self.assertIn("sigma_value", [
+            marker["label"] for marker in plan_rows["market_state"]["claim_must_include"]
+        ])
         self.assertIn("--capture-row market_state", plan_rows["market_state"]["capture_command"])
         self.assertIn("--url local-cli", plan_rows["market_state"]["capture_command"])
         self.assertIn("--capture-row quote_scout", plan_rows["quote_scout"]["capture_command"])
@@ -596,6 +602,40 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         )
         self.assertEqual(validated["capture_status"]["missing_ids"], ["quote_scout"])
 
+    def test_market_state_capture_requires_values_command_and_time(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_realistic_germany_result_evidence(result)
+            for item in result["evidence_placeholders"]:
+                if item["id"] == "market_state":
+                    item["claim"] = "Fresh post-result Deadeye market state distribution with mu and sigma captured."
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:08:00Z")
+
+        self.assertFalse(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertIn(
+            "market_state:claim_missing_artifact_or_command",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertIn(
+            "market_state:claim_missing_generated_at",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertIn(
+            "market_state:claim_missing_mu_value",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertIn(
+            "market_state:claim_missing_sigma_value",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertEqual(validated["capture_status"]["missing_ids"], ["market_state"])
+
     def test_capture_plan_includes_baseline_values_for_move_rows(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             template_path = Path(tmpdir) / "germany.json"
@@ -816,7 +856,7 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
             captured = packet.capture_evidence_row(
                 packet_path,
                 "market_state",
-                claim="Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+                claim="Fresh post-result Deadeye market state from deadeye markets show generated_at 2026-06-14T20:06:30Z with mu=3.2291 and sigma=0.2702 captured.",
                 source="deadeye markets show",
                 url="local-cli",
                 capture_utc="2026-06-14T20:07:00Z",

@@ -57,7 +57,7 @@ CLAIM_TEMPLATES = {
     "injuries_suspensions": "Post-match source checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
     "odds_move": "Post-result Germany odds movement versus the pre-result baseline captured.",
     "ratings_move": "Post-result ratings/model movement for Germany versus baseline captured.",
-    "market_state": "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+    "market_state": "Fresh post-result Deadeye market state from deadeye markets show generated_at <timestamp> with mu=<mu> and sigma=<sigma> captured.",
     "quote_scout": "Fresh active-portfolio quote scout output <artifact> generated_at <timestamp> with runner_pass_rows <count> captured after result/state shift.",
 }
 REQUIRED_CLAIM_KEYWORDS = {
@@ -85,7 +85,11 @@ REQUIRED_CLAIM_KEYWORDS = {
     ),
     "market_state": (
         ("market", ("market", "deadeye")),
-        ("state", ("state", "mu", "sigma", "distribution")),
+        ("state", ("state", "distribution")),
+        ("mu", ("mu", "mean")),
+        ("sigma", ("sigma",)),
+        ("artifact_or_command", ("deadeye markets show", "artifact", "output", "local-cli")),
+        ("generated_at", ("generated_at", "generated at", "captured_at", "captured at")),
     ),
     "quote_scout": (
         ("quote", ("quote",)),
@@ -98,6 +102,9 @@ REQUIRED_CLAIM_KEYWORDS = {
 CAPTURED_STATUSES = {"captured", "complete", "filled"}
 PLACEHOLDER_VALUES = {"", "TO_FILL", "<MARKET>"}
 SCORE_VALUE_RE = re.compile(r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b")
+NUMBER_PATTERN = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?"
+MARKET_STATE_MU_VALUE_RE = re.compile(rf"\b(?:mu|mean)\s*(?:=|:)\s*{NUMBER_PATTERN}\b", re.IGNORECASE)
+MARKET_STATE_SIGMA_VALUE_RE = re.compile(rf"\b(?:sigma|sd)\s*(?:=|:)\s*{NUMBER_PATTERN}\b", re.IGNORECASE)
 DEFAULT_SOURCE_TIMEOUT_SECONDS = 8.0
 
 
@@ -282,6 +289,11 @@ def claim_keyword_blockers(item_id: str, claim: Any) -> list[str]:
             blockers.append(f"{item_id}:claim_missing_{label}")
     if item_id == "official_result" and not SCORE_VALUE_RE.search(text):
         blockers.append(f"{item_id}:claim_missing_score_value")
+    if item_id == "market_state":
+        if not MARKET_STATE_MU_VALUE_RE.search(str(claim or "")):
+            blockers.append(f"{item_id}:claim_missing_mu_value")
+        if not MARKET_STATE_SIGMA_VALUE_RE.search(str(claim or "")):
+            blockers.append(f"{item_id}:claim_missing_sigma_value")
     return blockers
 
 
@@ -475,6 +487,11 @@ def claim_template_blockers(item_id: str, claim_template: Any) -> list[str]:
             blockers.append(f"{item_id}:claim_template_missing_{label}")
     if item_id == "official_result" and "<score>" not in lowered and not SCORE_VALUE_RE.search(text):
         blockers.append(f"{item_id}:claim_template_missing_score_placeholder")
+    if item_id == "market_state":
+        if "<mu>" not in lowered and not MARKET_STATE_MU_VALUE_RE.search(text):
+            blockers.append(f"{item_id}:claim_template_missing_mu_placeholder")
+        if "<sigma>" not in lowered and not MARKET_STATE_SIGMA_VALUE_RE.search(text):
+            blockers.append(f"{item_id}:claim_template_missing_sigma_placeholder")
     return blockers
 
 
@@ -863,6 +880,15 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
             marker_groups.append({
                 "label": "numeric_score_value",
                 "accepted_pattern": r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b",
+            })
+        if item_id == "market_state":
+            marker_groups.append({
+                "label": "mu_value",
+                "accepted_pattern": rf"\b(?:mu|mean)\s*(?:=|:)\s*{NUMBER_PATTERN}\b",
+            })
+            marker_groups.append({
+                "label": "sigma_value",
+                "accepted_pattern": rf"\b(?:sigma|sd)\s*(?:=|:)\s*{NUMBER_PATTERN}\b",
             })
         baseline_terms = baseline_value_terms(template, item_id)
         if baseline_terms:
