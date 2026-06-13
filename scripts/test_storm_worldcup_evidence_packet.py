@@ -199,6 +199,14 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertEqual(validated["capture_status"]["missing_ids"], [])
         self.assertEqual(validated["capture_status"]["captured_ids"], list(packet.REQUIRED_EVIDENCE_IDS))
 
+    def test_official_result_claim_accepts_final_whistle_marker(self):
+        blockers = packet.claim_keyword_blockers(
+            "official_result",
+            "Official final score and final whistle marker captured for Germany vs Curacao.",
+        )
+
+        self.assertEqual(blockers, [])
+
     def test_validate_packet_recomputes_stale_result_window_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

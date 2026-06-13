@@ -38,7 +38,7 @@ candidate. The template stays disabled until all of these are true:
 Capture these before promoting or queueing:
 
 - Official result, `source_role: "official_match_result"`: final score,
-  completed/final marker, source URL, capture UTC.
+  final-whistle/full-time/completed marker, source URL, capture UTC.
 - Lineups, `source_role: "official_lineups"`: starting XI, substitutions,
   notable absences, source URL, capture UTC.
 - Injuries/suspensions, `source_role: "team_news"`: pre-match and in-match
@@ -56,7 +56,7 @@ Capture these before promoting or queueing:
 Required packet claims must be specific, not generic. The validator checks for
 these claim markers:
 
-- `official_result`: completion marker plus score.
+- `official_result`: final-whistle/full-time/completed marker plus score.
 - `confirmed_lineups`: lineup or starting XI.
 - `injuries_suspensions`: injury, suspension, booking, or absence.
 - `odds_move`: odds.

@@ -38,7 +38,7 @@ EXPECTED_SOURCE_ROLES = {
 }
 REQUIRED_CLAIM_KEYWORDS = {
     "official_result": (
-        ("completion_marker", ("completed", "final", "full-time", "full time")),
+        ("completion_marker", ("completed", "final", "full-time", "full time", "final whistle", "final-whistle", "ft")),
         ("score", ("score",)),
     ),
     "confirmed_lineups": (
@@ -115,7 +115,7 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
             "source": "FIFA match centre",
             "url": official_url,
             "post_result": False,
-            "claim": "TO_FILL: official completed-match marker, final score, and capture UTC.",
+            "claim": "TO_FILL: official final-whistle/full-time marker, final score, and capture UTC.",
             "capture_utc": "TO_FILL",
         },
         {
