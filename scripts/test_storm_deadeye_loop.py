@@ -1583,6 +1583,23 @@ class StormDeadeyeLoopTests(unittest.TestCase):
 
     def test_mailbox_update_names_post_result_evidence_due(self):
         with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text(json.dumps({
+                "capture_status": {
+                    "next_action": "wait_for_result_window",
+                    "missing_ids": ["official_result"],
+                    "blocker_count": 29,
+                },
+                "capture_readiness": {"ready_for_template_update": False},
+                "capture_plan": {"rows": [{"id": "official_result"}]},
+                "source_reachability": {
+                    "checked": True,
+                    "reachable_count": 9,
+                    "unreachable_count": 0,
+                    "advisory_only": True,
+                },
+            }), encoding="utf-8")
             mailbox = Path(tmpdir) / "mailbox.md"
             mailbox.write_text("# Mailbox\n", encoding="utf-8")
             state = {}
@@ -1598,9 +1615,10 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                 "collateral": {"balance_xp": 19832.0},
                 "gas_tier": "ok",
                 "processed_candidates": [],
+                "state_dir": str(state_dir),
                 "templates": [
                     {
-                        "id": "germany-template",
+                        "id": "germany-post-result-snap-template-20260612",
                         "label": "Germany higher",
                         "result_not_before_utc": "2026-06-12T00:00:00Z",
                         "blockers": ["missing_official_result_evidence"],
@@ -1614,7 +1632,12 @@ class StormDeadeyeLoopTests(unittest.TestCase):
 
         self.assertTrue(updated)
         self.assertIn("Post-result evidence due", text)
-        self.assertIn("germany-template", text)
+        self.assertIn("germany-post-result-snap-template-20260612", text)
+        self.assertIn("evidence_packet", text)
+        self.assertIn("wait_for_result_window", text)
+        self.assertIn("official_result", text)
+        self.assertIn("actual post-result candidate package", text)
+        self.assertNotIn("candidate/script changes", text)
 
     def test_load_template_status_reports_placeholder_blockers(self):
         with tempfile.TemporaryDirectory() as tmpdir:

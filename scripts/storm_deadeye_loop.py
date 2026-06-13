@@ -1987,20 +1987,39 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
         ),
         f"Next gate: {'review processed candidates and post strategy result' if processed else 'continue monitoring and queue evidence-backed candidates'}.",
         "Reviewed-by:",
-        "Message to other agent: Claude_Storm, review any new candidate/script changes in your separate worktree.",
+        (
+            "Message to other agent: Claude_Storm, hold routine prep reviews; "
+            "review only an actual post-result candidate package with evidence "
+            "packet, quote/runner state, and dry-run path."
+        ),
     ]
     if processed:
         lines.insert(9, "Processed candidates: " + json.dumps(processed, sort_keys=True))
     if due_templates:
-        due = [
-            {
+        due = []
+        for item in due_templates:
+            due_item = {
                 "id": item.get("id"),
                 "label": item.get("label"),
                 "opportunity_status": item.get("opportunity_status"),
                 "result_not_before_utc": item.get("result_not_before_utc"),
             }
-            for item in due_templates
-        ]
+            packet = item.get("evidence_packet")
+            if isinstance(packet, dict):
+                packet_status = {
+                    "exists": packet.get("exists"),
+                    "path": packet.get("path"),
+                    "next_action": packet.get("next_action"),
+                    "ready_for_template_update": packet.get("ready_for_template_update"),
+                    "missing_ids": packet.get("missing_ids"),
+                    "blocker_count": packet.get("blocker_count"),
+                    "capture_plan_rows": packet.get("capture_plan_rows"),
+                    "source_reachability": packet.get("source_reachability"),
+                }
+                if packet.get("error"):
+                    packet_status["error"] = packet.get("error")
+                due_item["evidence_packet"] = packet_status
+            due.append(due_item)
         lines.insert(9, "Post-result evidence due: " + json.dumps(due, sort_keys=True))
     with mailbox.open("a", encoding="utf-8") as fh:
         fh.write("\n".join(lines))
