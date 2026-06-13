@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -64,6 +65,7 @@ REQUIRED_CLAIM_KEYWORDS = {
 }
 CAPTURED_STATUSES = {"captured", "complete", "filled"}
 PLACEHOLDER_VALUES = {"", "TO_FILL", "<MARKET>"}
+SCORE_VALUE_RE = re.compile(r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b")
 
 
 def utc_now() -> str:
@@ -207,6 +209,8 @@ def claim_keyword_blockers(item_id: str, claim: Any) -> list[str]:
     for label, terms in REQUIRED_CLAIM_KEYWORDS.get(item_id, ()):
         if not any(term in text for term in terms):
             blockers.append(f"{item_id}:claim_missing_{label}")
+    if item_id == "official_result" and not SCORE_VALUE_RE.search(text):
+        blockers.append(f"{item_id}:claim_missing_score_value")
     return blockers
 
 

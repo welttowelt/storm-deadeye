@@ -89,7 +89,7 @@ def write_germany_template(path: Path):
 
 def fill_packet_evidence(result: dict):
     claims = {
-        "official_result": "Official final score and completed marker captured for Germany vs Curacao.",
+        "official_result": "Official final score Germany 3-0 Curacao and completed marker captured.",
         "confirmed_lineups": "Confirmed lineups, starting XI, substitutes, and late absences captured.",
         "injuries_suspensions": "Injuries, suspensions, bookings, and absences checked for path impact.",
         "odds_move": "Post-result Germany odds movement versus the pre-result baseline captured.",
@@ -253,10 +253,18 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
     def test_official_result_claim_accepts_final_whistle_marker(self):
         blockers = packet.claim_keyword_blockers(
             "official_result",
-            "Official final score and final whistle marker captured for Germany vs Curacao.",
+            "Official final score Germany 3-0 Curacao and final whistle marker captured.",
         )
 
         self.assertEqual(blockers, [])
+
+    def test_official_result_claim_requires_score_value(self):
+        blockers = packet.claim_keyword_blockers(
+            "official_result",
+            "Official final score and final whistle marker captured for Germany vs Curacao.",
+        )
+
+        self.assertIn("official_result:claim_missing_score_value", blockers)
 
     def test_validate_packet_recomputes_stale_result_window_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:

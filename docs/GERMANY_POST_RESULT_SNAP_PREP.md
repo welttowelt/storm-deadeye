@@ -56,7 +56,8 @@ Capture these before promoting or queueing:
 Required packet claims must be specific, not generic. The validator checks for
 these claim markers:
 
-- `official_result`: final-whistle/full-time/completed marker plus score.
+- `official_result`: final-whistle/full-time/completed marker plus a concrete
+  score value such as `3-0` or `3:0`.
 - `confirmed_lineups`: lineup or starting XI.
 - `injuries_suspensions`: injury, suspension, booking, or absence.
 - `odds_move`: odds.
