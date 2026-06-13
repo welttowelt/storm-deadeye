@@ -215,6 +215,25 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
                 "https://inside.fifa.com/fifa-world-ranking/CUW?gender=men",
             ],
         )
+        plan_rows = {row["id"]: row for row in result["capture_plan"]["rows"]}
+        self.assertEqual(result["capture_plan"]["result_not_before_utc"], "2026-06-14T20:00:00Z")
+        self.assertEqual(
+            plan_rows["official_result"]["capture_utc_must_be_at_or_after"],
+            "2026-06-14T20:00:00Z",
+        )
+        self.assertEqual(plan_rows["official_result"]["source_role"], "official_match_result")
+        self.assertEqual(
+            plan_rows["official_result"]["primary_url"],
+            "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
+        )
+        self.assertIn(
+            {"label": "numeric_score_value", "accepted_pattern": r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b"},
+            plan_rows["official_result"]["claim_must_include"],
+        )
+        self.assertIn("deadeye markets show 0x1e7", plan_rows["market_state"]["read_only_command"])
+        self.assertIn("storm_gap_analyzer.py", plan_rows["quote_scout"]["read_only_command"])
+        self.assertIn("--validate-packet", result["capture_plan"]["validation_command"])
+        self.assertIn("storm_deadeye_loop.py", result["capture_plan"]["runner_command"])
 
     def test_packet_preserves_numeric_pre_result_odds_snapshot(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -39,6 +39,15 @@ EXPECTED_SOURCE_ROLES = {
     "quote_scout": "deadeye_quote_scout",
 }
 LOCAL_SOURCE_EVIDENCE_IDS = {"market_state", "quote_scout"}
+CAPTURE_NOTES = {
+    "official_result": "Capture the official completed/full-time marker and numeric final score from the official match page.",
+    "confirmed_lineups": "Capture confirmed starting XIs, substitutes, and late absences from the official match page.",
+    "injuries_suspensions": "Capture injuries, suspensions, bookings, or absences that can change Germany's later tournament path.",
+    "odds_move": "Capture post-result odds movement versus the stored pre-result odds baseline.",
+    "ratings_move": "Capture post-result ratings/model movement versus the stored ratings baseline.",
+    "market_state": "Run the local read-only market-state command after the result or market state shifts.",
+    "quote_scout": "Run the local read-only quote scout after the result or market state shifts.",
+}
 REQUIRED_CLAIM_KEYWORDS = {
     "official_result": (
         ("completion_marker", ("completed", "final", "full-time", "full time", "final whistle", "final-whistle", "ft")),
@@ -429,6 +438,61 @@ def read_only_commands(template: dict[str, Any]) -> list[str]:
     ]
 
 
+def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -> dict[str, Any]:
+    market = template.get("market") or "<market>"
+    result_not_before = template.get("result_not_before_utc") or "TO_FILL"
+    local_commands = {
+        "market_state": f"deadeye markets show {market} --output json",
+        "quote_scout": "python3 scripts/storm_gap_analyzer.py --preset active-portfolio-20260612 --budget 4000 --budget-ladder --quote-only --sort-by ev",
+    }
+    rows: list[dict[str, Any]] = []
+    by_id = {str(item.get("id")): item for item in placeholders}
+    for item_id in REQUIRED_EVIDENCE_IDS:
+        item = by_id.get(item_id) or {}
+        marker_groups = [
+            {
+                "label": label,
+                "accepted_terms": list(terms),
+            }
+            for label, terms in REQUIRED_CLAIM_KEYWORDS.get(item_id, ())
+        ]
+        if item_id == "official_result":
+            marker_groups.append({
+                "label": "numeric_score_value",
+                "accepted_pattern": r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b",
+            })
+        rows.append({
+            "id": item_id,
+            "source_role": item.get("source_role") or EXPECTED_SOURCE_ROLES.get(item_id),
+            "primary_url": item.get("url"),
+            "source_options": item.get("source_options") or [],
+            "post_window_only": True,
+            "capture_utc_must_be_at_or_after": result_not_before,
+            "set_fields": {
+                "status": "captured",
+                "post_result": True,
+                "capture_utc": "current UTC timestamp after source check",
+            },
+            "claim_must_include": marker_groups,
+            "capture_note": CAPTURE_NOTES[item_id],
+            "read_only_command": local_commands.get(item_id),
+        })
+    return {
+        "result_not_before_utc": result_not_before,
+        "sequence": [
+            "wait until result_window_open is true",
+            "fill all public evidence rows from source_options using the expected source_role",
+            "run the local read-only market_state and quote_scout commands after the result or market state shifts",
+            "validate the packet and require capture_readiness.ready_for_template_update true",
+            "apply the packet to the disabled template, then use the Storm runner for promotion gates",
+        ],
+        "rows": rows,
+        "validation_command": "python3 scripts/storm_worldcup_evidence_packet.py --validate-packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json",
+        "apply_command": "python3 scripts/storm_worldcup_evidence_packet.py --apply-to-template ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json --template ~/.local/state/storm-deadeye/templates/germany-post-result-snap-template-20260612.json",
+        "runner_command": "python3 scripts/storm_deadeye_loop.py --run-smoke --mailbox --refresh-active-portfolio-scout --active-portfolio-scout-max-age-minutes 0",
+    }
+
+
 def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, Any]:
     template = loop.load_json(template_path, {})
     if not isinstance(template, dict):
@@ -443,6 +507,7 @@ def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, An
         except (TypeError, ValueError):
             window_open = False
     blockers = status.get("blockers") or []
+    placeholders = evidence_placeholders(template)
     packet = {
         "generated_at": generated_at,
         "packet_status": "draft_post_result_evidence_packet",
@@ -465,7 +530,8 @@ def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, An
         "pre_result_baseline": template.get("pre_result_baseline") or {},
         "post_result_capture_required": template.get("post_result_capture_required") or [],
         "source_urls": source_urls(template),
-        "evidence_placeholders": evidence_placeholders(template),
+        "evidence_placeholders": placeholders,
+        "capture_plan": capture_plan(template, placeholders),
         "read_only_commands_after_result": read_only_commands(template),
         "template_update_requirements_after_capture": [
             "copy captured evidence rows into the source template",

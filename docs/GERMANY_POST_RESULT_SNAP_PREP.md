@@ -62,6 +62,12 @@ fallbacks after the result lands; do not replace them with ad hoc sources unless
 the replacement is captured in the packet URL and still satisfies the row's
 expected `source_role`.
 
+The packet also includes `capture_plan`. Use it as the source-of-truth fill
+order at the window: it repeats the result-window timestamp, row-level source
+roles, ordered source fallbacks, required claim markers, and the local read-only
+commands for `market_state` and `quote_scout`. If a row does not satisfy its
+`capture_plan.rows[].claim_must_include` markers, do not promote the template.
+
 Required packet claims must be specific, not generic. The validator checks for
 these claim markers:
 
@@ -187,8 +193,9 @@ edit. Every required evidence row must have a `capture_utc` at or after
 `result_not_before_utc`; pre-window captures are rejected even if validation is
 run after the window opens. Check `capture_status.next_action`,
 `capture_status.missing_ids`, and the row-level
-`capture_status.rows[].blockers` to see what is still missing. This still does
-not approve queueing or execution.
+`capture_status.rows[].blockers` to see what is still missing. Check
+`capture_plan.rows[]` for the exact source-role, source fallback, and claim
+marker expected for each row. This still does not approve queueing or execution.
 
 After validation passes, copy the captured evidence into the local template:
 
