@@ -100,7 +100,7 @@ def fill_packet_evidence(result: dict):
         "odds_move": "Post-result Germany odds movement versus the pre-result baseline Germany 1.06 captured.",
         "ratings_move": "Post-result ratings/model movement versus baseline FIFA ranks Germany 10 and Curacao 82 captured.",
         "market_state": "Fresh post-result Deadeye market state distribution captured.",
-        "quote_scout": "Fresh active-portfolio quote scout EV captured after result/state shift.",
+        "quote_scout": "Fresh active-portfolio quote scout EV output gap-analysis-active-portfolio-ladder-quote-4000-20260614T200700Z.json generated_at 2026-06-14T20:07:00Z with runner_pass_rows 0 captured after result/state shift.",
     }
     for item in result["evidence_placeholders"]:
         item["status"] = "captured"
@@ -125,7 +125,7 @@ def fill_realistic_germany_result_evidence(result: dict):
         "odds_move": "Post-result Germany outright odds and path odds movement versus baseline Germany 1.06 captured.",
         "ratings_move": "Post-result ratings model movement for Germany versus baseline ranks Germany 10 and Curacao 82 captured.",
         "market_state": "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
-        "quote_scout": "Fresh active-portfolio quote scout EV and expected value captured after result/state shift.",
+        "quote_scout": "Fresh active-portfolio quote scout EV and expected value output gap-analysis-active-portfolio-ladder-quote-4000-20260614T200700Z.json generated_at 2026-06-14T20:07:00Z with runner_pass_rows 0 captured after result/state shift.",
     }
     urls = {
         "official_result": "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
@@ -566,6 +566,36 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         )
         self.assertEqual(validated["capture_status"]["missing_ids"], ["ratings_move"])
 
+    def test_quote_scout_capture_requires_artifact_time_and_runner_pass_count(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_realistic_germany_result_evidence(result)
+            for item in result["evidence_placeholders"]:
+                if item["id"] == "quote_scout":
+                    item["claim"] = "Fresh active-portfolio quote scout EV captured after result/state shift."
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:08:00Z")
+
+        self.assertFalse(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertIn(
+            "quote_scout:claim_missing_artifact",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertIn(
+            "quote_scout:claim_missing_generated_at",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertIn(
+            "quote_scout:claim_missing_runner_pass_rows",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertEqual(validated["capture_status"]["missing_ids"], ["quote_scout"])
+
     def test_capture_plan_includes_baseline_values_for_move_rows(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             template_path = Path(tmpdir) / "germany.json"
@@ -858,7 +888,7 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
                 "--capture-row",
                 "quote_scout",
                 "--claim",
-                "Fresh active-portfolio quote scout EV and expected value captured after result/state shift.",
+                "Fresh active-portfolio quote scout EV and expected value output gap-analysis-active-portfolio-ladder-quote-4000-20260614T200700Z.json generated_at 2026-06-14T20:07:00Z with runner_pass_rows 0 captured after result/state shift.",
                 "--source",
                 "storm_gap_analyzer",
                 "--url",

@@ -58,7 +58,7 @@ CLAIM_TEMPLATES = {
     "odds_move": "Post-result Germany odds movement versus the pre-result baseline captured.",
     "ratings_move": "Post-result ratings/model movement for Germany versus baseline captured.",
     "market_state": "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
-    "quote_scout": "Fresh active-portfolio quote scout EV and expected value captured after result/state shift.",
+    "quote_scout": "Fresh active-portfolio quote scout output <artifact> generated_at <timestamp> with runner_pass_rows <count> captured after result/state shift.",
 }
 REQUIRED_CLAIM_KEYWORDS = {
     "official_result": (
@@ -90,6 +90,9 @@ REQUIRED_CLAIM_KEYWORDS = {
     "quote_scout": (
         ("quote", ("quote",)),
         ("scout_or_ev", ("scout", "ev", "expected value")),
+        ("artifact", ("artifact", "output", "gap-analysis")),
+        ("generated_at", ("generated_at", "generated at")),
+        ("runner_pass_rows", ("runner_pass_rows", "runner pass", "runner-pass")),
     ),
 }
 CAPTURED_STATUSES = {"captured", "complete", "filled"}
