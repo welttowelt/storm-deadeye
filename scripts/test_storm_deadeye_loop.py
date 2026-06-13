@@ -1411,6 +1411,78 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(len(result["failures"]), 1)
         self.assertEqual(result["failures"][0]["address"], "0x2")
 
+    def test_world_cup_market_groups_include_all_active_world_cup_markets_and_templates(self):
+        markets = [
+            {
+                "address": "0x01",
+                "isActive": True,
+                "marketType": "lognormal",
+                "category": "World Cup",
+                "title": "When will Germany be eliminated from the 2026 World Cup?",
+                "state": {"isInitialized": True, "isPaused": False},
+            },
+            {
+                "address": "0x02",
+                "isActive": True,
+                "marketType": "normal",
+                "category": "Economics",
+                "title": "US Inflation",
+                "state": {"isInitialized": True, "isPaused": False},
+            },
+            {
+                "address": "0x03",
+                "isActive": False,
+                "marketType": "lognormal",
+                "category": "World Cup",
+                "title": "When will Spain be eliminated from the 2026 World Cup?",
+            },
+        ]
+        templates = [
+            {"id": "germany-template", "market": "0x1", "result_not_before_utc": "2026-06-14T20:00:00Z"},
+            {"id": "argentina-template", "market": "0x04", "result_not_before_utc": "2026-06-17T04:00:00Z"},
+        ]
+
+        groups = loop.world_cup_market_groups(markets, templates)
+
+        self.assertEqual(set(groups), {"0x1", "0x4"})
+        self.assertIn("When will Germany be eliminated from the 2026 World Cup?", groups["0x1"])
+        self.assertIn("template:germany-template", groups["0x1"])
+        self.assertEqual(groups["0x4"], ["template:argentina-template"])
+
+    def test_fetch_world_cup_market_states_is_read_only_and_nonfatal(self):
+        markets = [
+            {
+                "address": "0x01",
+                "isActive": True,
+                "category": "World Cup",
+                "title": "When will Germany be eliminated from the 2026 World Cup?",
+                "state": {"isInitialized": True, "isPaused": False},
+            },
+            {
+                "address": "0x02",
+                "isActive": True,
+                "category": "World Cup",
+                "title": "When will France be eliminated from the 2026 World Cup?",
+                "state": {"isInitialized": True, "isPaused": False},
+            },
+        ]
+
+        def fake_deadeye_json(args, *, timeout=60, attempts=1):
+            if args == ["markets", "show", "0x1"]:
+                return {"state": {"mu": 3.1, "sigma": 0.2}}
+            if args == ["markets", "show", "0x2"]:
+                raise loop.LoopError("temporary read failure")
+            raise AssertionError(args)
+
+        with mock.patch.object(loop, "deadeye_json", side_effect=fake_deadeye_json):
+            result = loop.fetch_world_cup_market_states(markets)
+
+        self.assertEqual(len(result["markets"]), 1)
+        self.assertEqual(result["markets"][0]["address"], "0x1")
+        self.assertIn("Germany", result["markets"][0]["watch_ids"][0])
+        self.assertEqual(len(result["failures"]), 1)
+        self.assertEqual(result["failures"][0]["address"], "0x2")
+
     def test_watched_template_market_state_key_ignores_volatile_fields(self):
         watched_a = [
             {
@@ -1569,6 +1641,82 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertFalse(refresh.call_args.kwargs["force"])
         self.assertNotIn("reason", repeat)
 
+    def test_world_cup_market_state_change_forces_scout_refresh_once(self):
+        watched = [
+            {
+                "address": "0x01",
+                "watch_ids": ["Germany World Cup"],
+                "market": {"state": {"mu": 3.1, "sigma": 0.2}},
+            }
+        ]
+        changed = json.loads(json.dumps(watched))
+        changed[0]["market"]["state"]["mu"] = 3.2
+        state = {"last_world_cup_market_state_key": loop.world_cup_market_state_key(watched)}
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "refreshed", "attempted": True},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                world_cup_market_states=changed,
+            )
+
+        self.assertEqual(result["reason"], "world_cup_market_state_shift")
+        self.assertEqual(result["reasons"], ["world_cup_market_state_shift"])
+        self.assertEqual(result["world_cup_market_state_shift"]["changed_markets"], ["0x1"])
+        self.assertTrue(refresh.call_args.kwargs["force"])
+        self.assertEqual(state["last_world_cup_market_state_key"], loop.world_cup_market_state_key(changed))
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            repeat = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                world_cup_market_states=changed,
+            )
+
+        self.assertEqual(repeat["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertNotIn("reason", repeat)
+
+    def test_first_world_cup_market_state_records_baseline_without_force(self):
+        watched = [
+            {
+                "address": "0x01",
+                "watch_ids": ["Germany World Cup"],
+                "market": {"state": {"mu": 3.1, "sigma": 0.2}},
+            }
+        ]
+        state = {}
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                world_cup_market_states=watched,
+            )
+
+        self.assertEqual(result["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertNotIn("reason", result)
+        self.assertEqual(state["last_world_cup_market_state_key"], loop.world_cup_market_state_key(watched))
+
     def test_market_state_refresh_failure_retries_later(self):
         markets = [
             {
@@ -1641,6 +1789,28 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(
             key["active_portfolio_scout_refresh"],
             {"status": "refreshed", "reasons": ["watched_template_market_state_shift"]},
+        )
+
+    def test_summary_key_records_world_cup_market_state_forced_scout_refresh(self):
+        summary = {
+            "rankings": {
+                "overall": {"rank": 10, "gap_to_first": 915.922009, "pnl": 79.244219},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "gas_tier": "ok",
+            "active_portfolio_scout_refresh": {
+                "status": "refreshed",
+                "reasons": ["world_cup_market_state_shift"],
+            },
+        }
+
+        key = loop.summary_key(summary)
+
+        self.assertEqual(
+            key["active_portfolio_scout_refresh"],
+            {"status": "refreshed", "reasons": ["world_cup_market_state_shift"]},
         )
 
     def test_post_result_scout_refresh_key_is_stable(self):

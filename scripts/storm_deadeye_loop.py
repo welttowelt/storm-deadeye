@@ -61,6 +61,7 @@ SMOKE_SCRIPT_ATTEMPTS = 2
 SMOKE_SCRIPT_RETRY_DELAY_SECONDS = 5.0
 MARKET_STATE_FINGERPRINT_VERSION = 2
 WATCHED_TEMPLATE_MARKET_STATE_FINGERPRINT_VERSION = 1
+WORLD_CUP_MARKET_STATE_FINGERPRINT_VERSION = 1
 MARKET_FINGERPRINT_KEYS = {
     "address",
     "backing",
@@ -1699,6 +1700,50 @@ def fetch_watched_template_market_states(templates: list[dict[str, Any]]) -> dic
     return {"markets": watched, "failures": failures}
 
 
+def world_cup_market_groups(
+    markets: list[dict[str, Any]],
+    templates: list[dict[str, Any]] | None = None,
+) -> dict[str, list[str]]:
+    groups: dict[str, list[str]] = {}
+    for market in markets:
+        if not isinstance(market, dict):
+            continue
+        if not market_is_tradeable(market) or not is_world_cup_market(market):
+            continue
+        address = canonical_address(market.get("address"))
+        if not address:
+            continue
+        label = str(market.get("title") or market.get("id") or "discovered_world_cup_market")
+        groups.setdefault(address, []).append(label)
+    for address, template_ids in watched_template_market_groups(templates or []).items():
+        groups.setdefault(address, []).extend(f"template:{template_id}" for template_id in template_ids)
+    return {address: sorted(set(labels)) for address, labels in sorted(groups.items())}
+
+
+def fetch_world_cup_market_states(
+    markets: list[dict[str, Any]],
+    templates: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    watched: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for address, watch_ids in world_cup_market_groups(markets, templates).items():
+        try:
+            market_state = deadeye_json(["markets", "show", address], timeout=45, attempts=3)
+        except Exception as exc:  # noqa: BLE001 - read-only watch failures should not stop the loop.
+            failures.append({
+                "address": address,
+                "watch_ids": watch_ids,
+                "error": str(exc)[:240],
+            })
+            continue
+        watched.append({
+            "address": address,
+            "watch_ids": watch_ids,
+            "market": market_state,
+        })
+    return {"markets": watched, "failures": failures}
+
+
 def watched_template_market_state_key(watched_markets: list[dict[str, Any]]) -> dict[str, Any]:
     items: list[dict[str, Any]] = []
     for watched in watched_markets:
@@ -1720,7 +1765,55 @@ def watched_template_market_state_key(watched_markets: list[dict[str, Any]]) -> 
     }
 
 
+def world_cup_market_state_key(watched_markets: list[dict[str, Any]]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for watched in watched_markets:
+        if not isinstance(watched, dict):
+            continue
+        address = canonical_address(watched.get("address"))
+        if not address:
+            continue
+        items.append({
+            "address": address,
+            "watch_ids": sorted(str(item) for item in (watched.get("watch_ids") or [])),
+            "market": scrub_market_fingerprint_value(watched.get("market") or {}),
+        })
+    items.sort(key=lambda item: str(item.get("address")))
+    return {
+        "version": WORLD_CUP_MARKET_STATE_FINGERPRINT_VERSION,
+        "markets": items,
+        "total": len(items),
+    }
+
+
 def watched_template_market_state_refresh_summary(
+    previous_key: dict[str, Any] | None,
+    current_key: dict[str, Any] | None,
+) -> dict[str, Any]:
+    previous_items = {
+        str(item.get("address")): item
+        for item in (previous_key or {}).get("markets", [])
+        if isinstance(item, dict)
+    }
+    current_items = {
+        str(item.get("address")): item
+        for item in (current_key or {}).get("markets", [])
+        if isinstance(item, dict)
+    }
+    changed = sorted(
+        address
+        for address in set(previous_items) | set(current_items)
+        if previous_items.get(address) != current_items.get(address)
+    )
+    return {
+        "previous_total": (previous_key or {}).get("total"),
+        "total": (current_key or {}).get("total"),
+        "changed_markets": changed[:20],
+        "changed_markets_truncated": len(changed) > 20,
+    }
+
+
+def world_cup_market_state_refresh_summary(
     previous_key: dict[str, Any] | None,
     current_key: dict[str, Any] | None,
 ) -> dict[str, Any]:
@@ -1766,6 +1859,7 @@ def maybe_refresh_active_portfolio_scout(
     due_templates: list[dict[str, Any]],
     markets: list[dict[str, Any]] | None = None,
     watched_template_market_states: list[dict[str, Any]] | None = None,
+    world_cup_market_states: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     due_key = post_result_scout_refresh_key(due_templates)
     due_state_key = "last_post_result_scout_refresh_key"
@@ -1802,7 +1896,32 @@ def maybe_refresh_active_portfolio_scout(
         and previous_watched_version == WATCHED_TEMPLATE_MARKET_STATE_FINGERPRINT_VERSION
         and previous_watched_key != watched_key
     )
-    force_refresh = force_due_refresh or force_market_refresh or force_watched_refresh
+    world_cup_key = (
+        world_cup_market_state_key(world_cup_market_states)
+        if world_cup_market_states is not None
+        else None
+    )
+    world_cup_state_key = "last_world_cup_market_state_key"
+    if world_cup_key is not None and not world_cup_key.get("markets"):
+        state.pop(world_cup_state_key, None)
+    previous_world_cup_key = state.get(world_cup_state_key)
+    previous_world_cup_version = (
+        (previous_world_cup_key or {}).get("version")
+        if isinstance(previous_world_cup_key, dict)
+        else None
+    )
+    force_world_cup_refresh = (
+        bool(world_cup_key and world_cup_key.get("markets"))
+        and previous_world_cup_key is not None
+        and previous_world_cup_version == WORLD_CUP_MARKET_STATE_FINGERPRINT_VERSION
+        and previous_world_cup_key != world_cup_key
+    )
+    force_refresh = (
+        force_due_refresh
+        or force_market_refresh
+        or force_watched_refresh
+        or force_world_cup_refresh
+    )
     refresh = refresh_active_portfolio_scout_if_stale(
         state_dir,
         max_age_minutes=max_age_minutes,
@@ -1821,6 +1940,12 @@ def maybe_refresh_active_portfolio_scout(
             previous_watched_key,
             watched_key,
         )
+    if force_world_cup_refresh:
+        reasons.append("world_cup_market_state_shift")
+        refresh["world_cup_market_state_shift"] = world_cup_market_state_refresh_summary(
+            previous_world_cup_key,
+            world_cup_key,
+        )
     if reasons:
         refresh["reasons"] = reasons
         refresh["reason"] = reasons[0] if len(reasons) == 1 else "+".join(reasons)
@@ -1831,6 +1956,8 @@ def maybe_refresh_active_portfolio_scout(
             state[market_state_key] = market_key
         if watched_key and watched_key.get("markets"):
             state[watched_state_key] = watched_key
+        if world_cup_key and world_cup_key.get("markets"):
+            state[world_cup_state_key] = world_cup_key
     return refresh
 
 
@@ -1865,7 +1992,11 @@ def scout_key(summary: dict[str, Any]) -> dict[str, Any] | None:
 def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
     refresh = summary.get("active_portfolio_scout_refresh") or {}
     reasons = refresh.get("reasons") or []
-    signal_reasons = {"market_state_shift", "watched_template_market_state_shift"}
+    signal_reasons = {
+        "market_state_shift",
+        "watched_template_market_state_shift",
+        "world_cup_market_state_shift",
+    }
     if refresh.get("status") != "failed" and signal_reasons.intersection(reasons):
         return {
             "status": refresh.get("status"),
@@ -2091,6 +2222,8 @@ def format_active_portfolio_scout_refresh(summary: dict[str, Any]) -> str:
         prefix_parts.append("market state shift")
     if "watched_template_market_state_shift" in reasons:
         prefix_parts.append("watched template market state shift")
+    if "world_cup_market_state_shift" in reasons:
+        prefix_parts.append("World Cup market state shift")
     prefix = "; ".join(prefix_parts)
     prefix = f"{prefix}; " if prefix else ""
     if status == "fresh":
@@ -2324,20 +2457,23 @@ def main(argv: list[str] | None = None) -> int:
             raise LoopError("account show did not return trader and indexer URL")
         monitoring = monitor(indexer_url, trader)
         if args.refresh_active_portfolio_scout:
-            watched_template_market_state_reads = fetch_watched_template_market_states(templates)
-            watched_template_market_states = watched_template_market_state_reads["markets"]
-            if not watched_template_market_states and watched_template_market_state_reads.get("failures"):
-                watched_template_market_states = None
+            world_cup_market_state_reads = fetch_world_cup_market_states(
+                monitoring["markets"]["items"],
+                templates,
+            )
+            world_cup_market_states = world_cup_market_state_reads["markets"]
+            if not world_cup_market_states and world_cup_market_state_reads.get("failures"):
+                world_cup_market_states = None
             scout_refresh = maybe_refresh_active_portfolio_scout(
                 state,
                 args.state.parent,
                 max_age_minutes=args.active_portfolio_scout_max_age_minutes,
                 due_templates=due_templates,
                 markets=monitoring["markets"]["items"],
-                watched_template_market_states=watched_template_market_states,
+                world_cup_market_states=world_cup_market_states,
             )
-            if watched_template_market_state_reads.get("failures"):
-                scout_refresh["watched_template_market_state_failures"] = watched_template_market_state_reads["failures"]
+            if world_cup_market_state_reads.get("failures"):
+                scout_refresh["world_cup_market_state_failures"] = world_cup_market_state_reads["failures"]
         template_promotion = None
         if args.promote_ready_templates:
             template_promotion = promote_ready_templates(args.templates, args.candidates, append=True)

@@ -102,6 +102,13 @@ python3 scripts/storm_deadeye_loop.py --run-smoke --mailbox
 Active-portfolio scout refresh timestamps and fresh/refreshed status are not
 mailbox-change triggers on their own. The mailbox stays quiet when a routine
 hourly refresh produces the same coverage, pass count, and top signal shape.
+When active-portfolio scouting is enabled, the runner also records sanitized
+market-state fingerprints and forces a full quote-only scout after a real
+market-state shift. For World Cup markets, it performs explicit read-only
+`deadeye markets show` checks across all active tradeable World Cup markets
+discovered from the indexer list plus prepared post-result templates, so a
+post-result repricing can trigger a scout even if filtered leaderboard views are
+still mirrored or unavailable.
 
 ## Candidate Queue
 
