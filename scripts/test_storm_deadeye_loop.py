@@ -1378,6 +1378,8 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                 "ok": False,
                 "smoke_script": "/tmp/claude/smoke.sh",
                 "minimum_version": "deadeye 0.1.20",
+                "accepted_version_regex": r"^deadeye 0\.1\.(2[0-9]|[3-9][0-9])$",
+                "fix_hint": "Add a deadeye --version gate before market reads.",
                 "network_free": True,
                 "real_deadeye_invoked": False,
                 "cases": [
@@ -1431,6 +1433,11 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(compact["active_portfolio_scout"]["runner_pass_rows"], 0)
         self.assertEqual(compact["processed_candidates"], [{"id": "candidate-1", "status": "dry_run_ok"}])
         self.assertFalse(compact["external_smoke_floor"]["ok"])
+        self.assertEqual(
+            compact["external_smoke_floor"]["fix_hint"],
+            "Add a deadeye --version gate before market reads.",
+        )
+        self.assertIn("0\\.1\\.", compact["external_smoke_floor"]["accepted_version_regex"])
         self.assertEqual(compact["external_smoke_floor"]["cases"][0]["mode"], "stale")
         self.assertEqual(compact["external_smoke_floor"]["cases"][0]["post_version_command_count"], 1)
         self.assertEqual(compact["next_template_window"]["id"], "germany-template")

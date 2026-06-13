@@ -57,6 +57,9 @@ class VerifyExternalSmokeFloorTests(unittest.TestCase):
         stale = next(case for case in result["cases"] if case["mode"] == "stale")
         self.assertFalse(stale["ok"])
         self.assertIn("ran commands after version check", stale["reason"])
+        self.assertEqual(result["minimum_version"], verifier.MINIMUM_VERSION)
+        self.assertEqual(result["accepted_version_regex"], verifier.ACCEPTED_VERSION_REGEX)
+        self.assertIn("version gate", result["fix_hint"])
 
     def test_script_that_rejects_good_version_fails(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -76,6 +79,15 @@ class VerifyExternalSmokeFloorTests(unittest.TestCase):
         good = next(case for case in result["cases"] if case["mode"] == "good")
         self.assertFalse(good["ok"])
         self.assertIn("good deadeye 0.1.20 path failed", good["reason"])
+
+    def test_missing_script_returns_floor_hint(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            result = verifier.verify_smoke_script(Path(tmpdir) / "missing-smoke.sh", timeout=3)
+
+        self.assertFalse(result["ok"])
+        self.assertEqual(result["minimum_version"], verifier.MINIMUM_VERSION)
+        self.assertEqual(result["accepted_version_regex"], verifier.ACCEPTED_VERSION_REGEX)
+        self.assertIn("version gate", result["fix_hint"])
 
 
 if __name__ == "__main__":

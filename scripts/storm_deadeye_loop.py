@@ -3017,6 +3017,10 @@ def compact_external_smoke_floor(result: Any) -> dict[str, Any] | None:
         "real_deadeye_invoked": bool(result.get("real_deadeye_invoked")),
         "cases": cases,
     }
+    if result.get("accepted_version_regex"):
+        compact["accepted_version_regex"] = str(result.get("accepted_version_regex"))[:240]
+    if result.get("fix_hint"):
+        compact["fix_hint"] = str(result.get("fix_hint"))[:240]
     if result.get("error"):
         compact["error"] = str(result.get("error"))[:240]
     return compact

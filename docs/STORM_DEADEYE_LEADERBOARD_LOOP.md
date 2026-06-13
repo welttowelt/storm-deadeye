@@ -174,6 +174,12 @@ the real CLI, RPC, indexer, wallet config, or any on-chain path. It passes only
 when `deadeye 0.1.20` reaches the read-only probes and stale, missing, or
 unparseable version output fails before any market reads.
 
+The accepted external-smoke floor regex is:
+
+```zsh
+^deadeye 0\.1\.(2[0-9]|[3-9][0-9]|[1-9][0-9]{2,})$|^deadeye 0\.([2-9]|[1-9][0-9]+)\.[0-9]+$|^deadeye ([1-9][0-9]*)\.[0-9]+\.[0-9]+$
+```
+
 To include that acceptance status in a normal sanitized loop summary without
 making it a routine mailbox-change trigger:
 

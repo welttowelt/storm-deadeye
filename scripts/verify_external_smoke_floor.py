@@ -22,6 +22,16 @@ from typing import Any
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_SMOKE_SCRIPT = REPO_ROOT.parent / "deadeye-claude-smoke" / "smoke.sh"
 DEFAULT_MARKET = "0x5e678bd092173e9ef0945f348d09e6c1c22f78e06c0ef380441444359193500"
+MINIMUM_VERSION = "deadeye 0.1.20"
+ACCEPTED_VERSION_REGEX = (
+    r"^deadeye 0\.1\.(2[0-9]|[3-9][0-9]|[1-9][0-9]{2,})$"
+    r"|^deadeye 0\.([2-9]|[1-9][0-9]+)\.[0-9]+$"
+    r"|^deadeye ([1-9][0-9]*)\.[0-9]+\.[0-9]+$"
+)
+FIX_HINT = (
+    "Add a deadeye --version gate before market reads; accept only "
+    f"{MINIMUM_VERSION}+ and exit nonzero for missing, unparseable, or stale output."
+)
 
 
 FAKE_DEADEYE = """#!/usr/bin/env python3
@@ -160,6 +170,9 @@ def verify_smoke_script(smoke_script: Path, market: str = DEFAULT_MARKET, timeou
             "ok": False,
             "smoke_script": str(smoke_script),
             "error": "smoke script does not exist",
+            "minimum_version": MINIMUM_VERSION,
+            "accepted_version_regex": ACCEPTED_VERSION_REGEX,
+            "fix_hint": FIX_HINT,
             "cases": [],
         }
     cases = [run_case(smoke_script, mode, market, timeout) for mode in ("good", "stale", "missing", "unparseable")]
@@ -172,9 +185,11 @@ def verify_smoke_script(smoke_script: Path, market: str = DEFAULT_MARKET, timeou
     return {
         "ok": ok,
         "smoke_script": str(smoke_script),
-        "minimum_version": "deadeye 0.1.20",
+        "minimum_version": MINIMUM_VERSION,
+        "accepted_version_regex": ACCEPTED_VERSION_REGEX,
         "network_free": True,
         "real_deadeye_invoked": False,
+        "fix_hint": None if ok else FIX_HINT,
         "cases": evaluated,
     }
 
