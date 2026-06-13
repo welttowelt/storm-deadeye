@@ -2526,6 +2526,38 @@ def unavailable_view_slugs(views: dict[str, Any]) -> list[str]:
     )
 
 
+def post_result_due_key_items(
+    templates: list[dict[str, Any]],
+    *,
+    state_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    due = post_result_evidence_due(
+        templates,
+        state_dir=state_dir,
+    )
+    result: list[dict[str, Any]] = []
+    for item in due:
+        key_item: dict[str, Any] = {
+            "id": item.get("id"),
+            "opportunity_status": item.get("opportunity_status"),
+        }
+        packet = item.get("evidence_packet")
+        if isinstance(packet, dict):
+            packet_key: dict[str, Any] = {
+                "exists": bool(packet.get("exists")),
+                "result_window_open": bool(packet.get("result_window_open")),
+                "next_action": packet.get("next_action"),
+                "ready_for_template_update": bool(packet.get("ready_for_template_update")),
+                "missing_ids": sorted(str(item) for item in (packet.get("missing_ids") or [])),
+                "blocker_count": packet.get("blocker_count"),
+            }
+            if packet.get("error"):
+                packet_key["error"] = str(packet.get("error"))[:160]
+            key_item["evidence_packet"] = packet_key
+        result.append(key_item)
+    return result
+
+
 def summary_key(summary: dict[str, Any]) -> dict[str, Any]:
     rankings = summary.get("rankings", {})
     filters = rankings.get("filters", {})
@@ -2547,11 +2579,12 @@ def summary_key(summary: dict[str, Any]) -> dict[str, Any]:
         {"id": item.get("id"), "appended": item.get("appended")}
         for item in promotion.get("promoted", [])
     ]
-    state_dir = Path(summary.get("state_dir") or DEFAULT_STATE_DIR)
-    due_templates = [
-        {"id": item.get("id"), "opportunity_status": item.get("opportunity_status")}
-        for item in post_result_evidence_due(summary.get("templates") or [])
-    ]
+    state_dir_raw = summary.get("state_dir")
+    state_dir = Path(state_dir_raw or DEFAULT_STATE_DIR)
+    due_templates = post_result_due_key_items(
+        summary.get("templates") or [],
+        state_dir=state_dir if state_dir_raw else None,
+    )
     pre_window_regressions = pre_window_evidence_regressions(
         summary.get("templates") or [],
         state_dir=state_dir,

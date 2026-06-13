@@ -2651,6 +2651,92 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertTrue(packet_status["exists"])
         self.assertIn("unreadable", packet_status["error"])
 
+    def test_summary_key_records_due_packet_progress_after_window(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text(json.dumps({
+                "result_window_open": True,
+                "capture_status": {
+                    "next_action": "fill_required_evidence",
+                    "missing_ids": ["official_result", "quote_scout"],
+                    "blocker_count": 2,
+                },
+                "capture_readiness": {"ready_for_template_update": False},
+            }), encoding="utf-8")
+            summary = {
+                "rankings": {
+                    "overall": {"rank": 8, "gap_to_first": 913.0, "pnl": 82.0},
+                    "filters": {},
+                    "time_windows": {},
+                    "filter_time_windows": {},
+                },
+                "gas_tier": "ok",
+                "processed_candidates": [],
+                "state_dir": str(state_dir),
+                "templates": [
+                    {
+                        "id": "germany-post-result-snap-template-20260612",
+                        "label": "Germany higher",
+                        "result_not_before_utc": "2026-06-12T00:00:00Z",
+                        "blockers": ["missing_official_result_evidence"],
+                        "opportunity_status": "weak_watch",
+                    }
+                ],
+            }
+
+            key_before = loop.summary_key(summary)
+            packet_path.write_text(json.dumps({
+                "result_window_open": True,
+                "capture_status": {
+                    "next_action": "fill_required_evidence",
+                    "missing_ids": ["quote_scout"],
+                    "blocker_count": 1,
+                },
+                "capture_readiness": {"ready_for_template_update": False},
+            }), encoding="utf-8")
+            key_after = loop.summary_key(summary)
+
+        packet_key = key_before["post_result_evidence_due"][0]["evidence_packet"]
+        self.assertTrue(packet_key["exists"])
+        self.assertEqual(packet_key["next_action"], "fill_required_evidence")
+        self.assertFalse(packet_key["ready_for_template_update"])
+        self.assertEqual(packet_key["missing_ids"], ["official_result", "quote_scout"])
+        self.assertEqual(packet_key["blocker_count"], 2)
+        self.assertNotEqual(key_before["post_result_evidence_due"], key_after["post_result_evidence_due"])
+        self.assertEqual(
+            key_after["post_result_evidence_due"][0]["evidence_packet"]["missing_ids"],
+            ["quote_scout"],
+        )
+
+    def test_summary_key_omits_due_packet_progress_without_state_dir(self):
+        summary = {
+            "rankings": {
+                "overall": {"rank": 8, "gap_to_first": 913.0, "pnl": 82.0},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "gas_tier": "ok",
+            "processed_candidates": [],
+            "templates": [
+                {
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2026-06-12T00:00:00Z",
+                    "blockers": ["missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ],
+        }
+
+        key = loop.summary_key(summary)
+
+        self.assertEqual(
+            key["post_result_evidence_due"],
+            [{"id": "germany-post-result-snap-template-20260612", "opportunity_status": "weak_watch"}],
+        )
+
     def test_mailbox_update_names_post_result_evidence_due(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_dir = Path(tmpdir)
