@@ -34,6 +34,20 @@ def write_germany_template(path: Path):
             "official_fixture_url": "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
             "team_news_urls": ["https://bulinews.com/germany-curacao-preview-team-news-and-predicted-lineups"],
             "ratings_context_urls": ["https://www.bundesliga.com/example"],
+            "ratings_snapshot_captured_at": "2026-06-13T06:41:00Z",
+            "ratings_snapshot": {
+                "source": "FIFA/Coca-Cola Men's World Ranking team pages",
+                "urls": {
+                    "germany": "https://inside.fifa.com/fifa-world-ranking/GER?gender=men",
+                    "curacao": "https://inside.fifa.com/fifa-world-ranking/CUW?gender=men",
+                },
+                "updated_at": "2026-06-11",
+                "next_official_update": "2026-07-20",
+                "ranks": {
+                    "germany": 10,
+                    "curacao": 82,
+                },
+            },
             "odds_context_urls": ["https://www.sportytrader.com/example"],
             "odds_snapshot_captured_at": "2026-06-13T06:35:00Z",
             "odds_snapshot": {
@@ -185,6 +199,20 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertEqual(snapshot["decimal_odds"]["germany"], 1.06)
         self.assertEqual(snapshot["decimal_odds"]["draw"], 19.5)
         self.assertEqual(snapshot["decimal_odds"]["curacao"], 60.0)
+
+    def test_packet_preserves_official_ratings_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "germany.json"
+            write_germany_template(template_path)
+
+            result = packet.build_packet(template_path, now="2026-06-13T06:42:00Z")
+
+        snapshot = result["pre_result_baseline"]["ratings_snapshot"]
+        self.assertEqual(snapshot["source"], "FIFA/Coca-Cola Men's World Ranking team pages")
+        self.assertEqual(snapshot["updated_at"], "2026-06-11")
+        self.assertEqual(snapshot["next_official_update"], "2026-07-20")
+        self.assertEqual(snapshot["ranks"]["germany"], 10)
+        self.assertEqual(snapshot["ranks"]["curacao"], 82)
 
     def test_filled_packet_capture_readiness_passes_after_window(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -110,12 +110,19 @@ Ratings/form baseline:
 
 - Bundesliga lineup context:
   `https://www.bundesliga.com/en/bundesliga/news/how-will-germany-line-up-havertz-musiala-wirtz-nagelsmann-world-cup-2026-28807`
+- FIFA ranking pages:
+  `https://inside.fifa.com/fifa-world-ranking/GER?gender=men`
+  `https://inside.fifa.com/fifa-world-ranking/CUW?gender=men`
 - Current baseline: Germany are treated as a heavy favorite with Neuer's return,
   Kimmich/Tah/Schlotterbeck/Raum or Brown defensive structure, Wirtz/Musiala
   creativity, and uncertainty concentrated at left-back and central midfield.
 - Source check on `2026-06-13T06:35Z`: the Bundesliga context still frames the
   midfield as the uncertain area and keeps Musiala/Wirtz as the key attacking
   creators to compare against post-result ratings/model movement.
+- Official FIFA rank baseline checked on `2026-06-13T06:41Z`: Germany `10th`,
+  Curaçao `82nd`; FIFA lists the ranking as updated on `2026-06-11` with next
+  official update on `2026-07-20`. Treat this as a slow-moving rating anchor,
+  not an immediate post-match signal.
 - Post-result delta to capture: any ratings/model movement after the final
   score, especially if the result or goal margin changes Germany's path odds.
 
