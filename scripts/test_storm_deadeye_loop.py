@@ -1979,6 +1979,44 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             {"status": "refreshed", "reasons": ["world_cup_market_state_shift"]},
         )
 
+    def test_summary_key_records_post_result_due_forced_scout_refresh(self):
+        due_templates = [
+            {
+                "id": "germany-template",
+                "result_not_before_utc": "2026-06-14T20:00:00Z",
+                "blockers": ["missing_official_result_evidence"],
+            }
+        ]
+        summary = {
+            "rankings": {
+                "overall": {"rank": 10, "gap_to_first": 915.922009, "pnl": 79.244219},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "gas_tier": "ok",
+            "active_portfolio_scout_refresh": {
+                "status": "refreshed",
+                "reasons": ["post_result_evidence_due"],
+                "due_templates": loop.post_result_scout_refresh_key(due_templates),
+            },
+        }
+
+        key = loop.summary_key(summary)
+
+        self.assertEqual(
+            key["active_portfolio_scout_refresh"],
+            {
+                "status": "refreshed",
+                "reasons": ["post_result_evidence_due"],
+                "due_templates": loop.post_result_scout_refresh_key(due_templates),
+            },
+        )
+        self.assertIn(
+            "due_templates=germany-template",
+            loop.format_active_portfolio_scout_refresh(summary),
+        )
+
     def test_post_result_scout_refresh_key_is_stable(self):
         due = [
             {

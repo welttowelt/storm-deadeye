@@ -2422,6 +2422,13 @@ def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
         }
         key.update(watch_failures)
         return key
+    if refresh.get("status") != "failed" and "post_result_evidence_due" in reasons:
+        due_templates = refresh.get("due_templates") or []
+        return {
+            "status": refresh.get("status"),
+            "reasons": reasons,
+            "due_templates": due_templates,
+        }
     if refresh.get("status") != "failed":
         return None
     failed = {
@@ -2723,12 +2730,23 @@ def format_active_portfolio_scout_refresh(summary: dict[str, Any]) -> str:
     if refresh.get("watched_template_market_state_failures"):
         failure_parts.append(f"template read failures={len(refresh.get('watched_template_market_state_failures') or [])}")
     failure_suffix = f", {', '.join(failure_parts)}" if failure_parts else ""
+    due_suffix = ""
+    if "post_result_evidence_due" in reasons and refresh.get("due_templates"):
+        due_ids = [
+            str(item.get("id"))
+            for item in refresh.get("due_templates") or []
+            if isinstance(item, dict) and item.get("id")
+        ]
+        if due_ids:
+            due_suffix = f", due_templates={', '.join(due_ids[:5])}"
+            if len(due_ids) > 5:
+                due_suffix += ", ..."
     if status == "fresh":
         age = refresh.get("previous_age_seconds")
         age_text = f", age_seconds={age:.0f}" if isinstance(age, (int, float)) else ""
-        return f"{prefix}fresh{age_text}{failure_suffix}"
+        return f"{prefix}fresh{age_text}{failure_suffix}{due_suffix}"
     if status == "refreshed":
-        return f"{prefix}refreshed generated_at={refresh.get('generated_at')}{failure_suffix}"
+        return f"{prefix}refreshed generated_at={refresh.get('generated_at')}{failure_suffix}{due_suffix}"
     if status == "failed":
         return f"{prefix}failed{failure_suffix}"
     return prefix + str(status or "unknown") + failure_suffix
