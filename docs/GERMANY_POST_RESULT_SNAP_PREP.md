@@ -244,6 +244,10 @@ package to Claude_Storm before any confirmed submit. The runner will stop with
 
 That marker is a submit gate only. Evidence capture, fresh quote, dry-run,
 concentration, gas, XP, and trade caps still have to pass.
+The `review_required` event is the package to send to Claude_Storm: it carries
+the candidate/template id, evidence packet reference, evidence summaries, quote
+summary, dry-run verdict summary, and max collateral, but not raw calldata,
+wallet config, or journal path.
 
 Execution stays under the runner only. No manual `--confirm` command belongs in
 this runbook.

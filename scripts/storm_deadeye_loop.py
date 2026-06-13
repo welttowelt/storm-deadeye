@@ -131,6 +131,10 @@ CANDIDATE_TEMPLATE_FIELDS = (
     "max_market_lots",
     "max_settlement_lots",
     "world_cup_post_result",
+    "result_not_before_utc",
+    "post_result_evidence_status",
+    "post_result_evidence_applied_at",
+    "post_result_evidence_packet",
     "rationale",
     "evidence",
 )
@@ -955,6 +959,109 @@ def claude_execute_review_approved(candidate: dict[str, Any]) -> bool:
     )
 
 
+def selected_scalar_fields(payload: dict[str, Any], keys: tuple[str, ...]) -> dict[str, Any]:
+    result: dict[str, Any] = {}
+    for key in keys:
+        value = payload.get(key)
+        if isinstance(value, (str, int, float, bool)) or value is None:
+            result[key] = value
+    return result
+
+
+def quote_review_summary(quote: dict[str, Any]) -> dict[str, Any]:
+    return selected_scalar_fields(
+        quote,
+        (
+            "expected_value",
+            "required_collateral",
+            "padded_collateral",
+            "on_chain_will_accept",
+            "rejection",
+            "candidate_mean",
+            "candidate_sigma",
+            "candidate_variance",
+            "belief_utilization",
+            "sizing_basis",
+        ),
+    )
+
+
+def dry_run_review_summary(dry_run: dict[str, Any]) -> dict[str, Any]:
+    return selected_scalar_fields(
+        dry_run,
+        (
+            "ok",
+            "dry_run",
+            "success",
+            "all_ok",
+            "accepted",
+            "estimated_fee",
+            "fee_estimate",
+            "revert_reason",
+            "error",
+            "status",
+        ),
+    )
+
+
+def evidence_review_summary(candidate: dict[str, Any]) -> list[dict[str, Any]]:
+    rows: list[dict[str, Any]] = []
+    for item in candidate.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        rows.append({
+            "claim": item.get("claim"),
+            "source_role": item.get("source_role"),
+            "source": item.get("source"),
+            "url": item.get("url"),
+            "post_result": item.get("post_result"),
+            "capture_utc": item.get("capture_utc"),
+            "evidence_packet_id": item.get("evidence_packet_id"),
+            "source_options_count": len(item.get("source_options") or []),
+        })
+    return rows
+
+
+def candidate_review_package(
+    candidate: dict[str, Any],
+    market_meta: dict[str, Any],
+    quote: dict[str, Any],
+    receipt: dict[str, Any],
+    *,
+    budget: float,
+    balance_xp: float,
+    min_ev: float,
+) -> dict[str, Any]:
+    package = {
+        "candidate_id": candidate.get("id"),
+        "source_template_id": candidate.get("source_template_id"),
+        "market": candidate.get("market"),
+        "market_title": market_meta.get("title"),
+        "family": str(candidate.get("family") or market_meta.get("marketType") or market_meta.get("family")).lower(),
+        "world_cup_post_result": bool(candidate.get("world_cup_post_result")),
+        "result_not_before_utc": candidate.get("result_not_before_utc"),
+        "belief": candidate.get("belief"),
+        "belief_sigma": candidate.get("belief_sigma"),
+        "budget": budget,
+        "bankroll_xp": balance_xp,
+        "min_expected_value": min_ev,
+        "max_collateral": receipt.get("max_collateral"),
+        "quote": quote_review_summary(quote),
+        "dry_run": dry_run_review_summary(receipt.get("dry_run") or {}),
+        "post_result_evidence_status": candidate.get("post_result_evidence_status"),
+        "post_result_evidence_packet": candidate.get("post_result_evidence_packet"),
+        "evidence_count": len(candidate.get("evidence") or []),
+        "evidence": evidence_review_summary(candidate),
+        "approval_marker_required": {
+            "claude_review.reviewed_by": "Claude_Storm",
+            "claude_review.status": "approved",
+            "claude_review.approved_for_execute": True,
+        },
+    }
+    check_no_secret(json.dumps(package, sort_keys=True), f"review package {candidate.get('id')}")
+    return package
+
+
 def run_smoke(smoke_script: Path, smoke_market: str) -> dict[str, Any]:
     started = utc_now()
     if smoke_script.exists():
@@ -1257,8 +1364,19 @@ def process_candidates(
                 "max_collateral": receipt.get("max_collateral"),
                 "submitted": receipt.get("submitted"),
             }
+            review_package = None
             if receipt.get("review_required"):
                 event["reason"] = receipt.get("review_reason")
+                review_package = candidate_review_package(
+                    candidate,
+                    market_meta,
+                    quote,
+                    receipt,
+                    budget=budget,
+                    balance_xp=balance_xp,
+                    min_ev=min_ev,
+                )
+                event["review_package"] = review_package
             append_jsonl(events_path, event)
             if receipt.get("submitted"):
                 executed_this_loop += 1
@@ -1274,6 +1392,7 @@ def process_candidates(
             }
             if receipt.get("review_required"):
                 processed_item["reason"] = receipt.get("review_reason")
+                processed_item["review_package"] = review_package
                 review_required_ids.add(candidate_id)
             processed.append(processed_item)
             if not receipt.get("review_required"):

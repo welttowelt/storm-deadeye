@@ -551,6 +551,15 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             "belief_sigma": 0.24,
             "budget": 100.0,
             "world_cup_post_result": True,
+            "source_template_id": "germany-post-result-snap-template-20260612",
+            "result_not_before_utc": "2026-06-14T20:00:00Z",
+            "post_result_evidence_status": "captured_not_queue_approved",
+            "post_result_evidence_packet": {
+                "path": "/tmp/germany-post-result-evidence-packet.json",
+                "generated_at": "2026-06-14T20:05:00Z",
+                "validated_at": "2026-06-14T20:06:00Z",
+                "captured_ids": ["official_result", "quote_scout"],
+            },
             "rationale": "Official final score, lineups, odds, and ratings evidence support this post-result snap candidate.",
             "evidence": [
                 {
@@ -559,6 +568,8 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     "source_role": "official_match_result",
                     "url": "https://www.fifa.com/match",
                     "post_result": True,
+                    "capture_utc": "2026-06-14T20:05:00Z",
+                    "evidence_packet_id": "official_result",
                 },
                 {
                     "claim": "Post-result odds move captured.",
@@ -575,12 +586,25 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             if args[:2] == ["doctor", "--market"]:
                 return {"all_ok": True}
             if args[:2] == ["trade", "quote"]:
-                return {"on_chain_will_accept": True, "expected_value": 22.0, "required_collateral": 10.0}
+                return {
+                    "on_chain_will_accept": True,
+                    "expected_value": 22.0,
+                    "required_collateral": 10.0,
+                    "candidate_mean": 3.7,
+                    "candidate_sigma": 0.22,
+                    "sizing_basis": "budget",
+                }
             if args[:2] == ["trade", "execute"]:
                 self.assertIn("--dry-run", args)
-                return {"ok": True, "dry_run": True}
+                return {
+                    "ok": True,
+                    "dry_run": True,
+                    "estimated_fee": "0x123",
+                    "calldata": ["not included in package"],
+                }
             raise AssertionError(f"unexpected deadeye_json args: {args}")
 
+        event_rows = []
         with tempfile.TemporaryDirectory() as tmpdir:
             args = SimpleNamespace(execute=True, trade_journal=Path(tmpdir) / "journal.jsonl")
             events = Path(tmpdir) / "events.jsonl"
@@ -604,9 +628,22 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     args,
                     events,
                 )
+                event_rows = [json.loads(line) for line in events.read_text(encoding="utf-8").splitlines()]
 
         self.assertEqual(processed[0]["status"], "review_required")
         self.assertIn("Claude_Storm", processed[0]["reason"])
+        package = processed[0]["review_package"]
+        self.assertEqual(package["candidate_id"], "germany-post-result-candidate")
+        self.assertEqual(package["source_template_id"], "germany-post-result-snap-template-20260612")
+        self.assertEqual(package["post_result_evidence_packet"]["captured_ids"], ["official_result", "quote_scout"])
+        self.assertEqual(package["quote"]["expected_value"], 22.0)
+        self.assertEqual(package["quote"]["candidate_mean"], 3.7)
+        self.assertTrue(package["dry_run"]["ok"])
+        self.assertEqual(package["dry_run"]["estimated_fee"], "0x123")
+        self.assertEqual(package["evidence"][0]["evidence_packet_id"], "official_result")
+        self.assertNotIn("calldata", json.dumps(package, sort_keys=True))
+        self.assertNotIn("journal", json.dumps(package, sort_keys=True))
+        self.assertEqual(event_rows[0]["review_package"], package)
         self.assertNotIn("germany-post-result-candidate", state.get("processed_candidate_ids", []))
         self.assertEqual(state["review_required_candidate_ids"], ["germany-post-result-candidate"])
         execute_calls = [call for call in calls if call[:2] == ["trade", "execute"]]

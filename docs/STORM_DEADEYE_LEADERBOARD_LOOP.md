@@ -134,6 +134,13 @@ shape is:
 This marker does not bypass evidence, quote, dry-run, concentration, gas, XP,
 trade-cap, or operator-policy gates.
 
+When the marker is missing, the `review_required` event and processed-candidate
+mailbox line include a sanitized `review_package`: candidate id/template id,
+market, belief, budget, evidence packet reference, evidence-row summaries,
+selected quote fields, selected dry-run verdict fields, and max collateral.
+Raw dry-run output, calldata, wallet config, journal path, and secrets are not
+included.
+
 ## Gap-Impact Screen
 
 Use the read-only analyzer before proposing any rank-gap strategy:

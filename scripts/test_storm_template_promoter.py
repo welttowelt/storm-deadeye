@@ -27,6 +27,15 @@ def write_template(path: Path, **overrides):
         "budget": 100,
         "min_expected_value": 10,
         "world_cup_post_result": True,
+        "result_not_before_utc": "2026-06-12T00:00:00Z",
+        "post_result_evidence_status": "captured_not_queue_approved",
+        "post_result_evidence_applied_at": "2026-06-14T20:08:00Z",
+        "post_result_evidence_packet": {
+            "path": "/tmp/france-post-result-evidence-packet.json",
+            "generated_at": "2026-06-14T20:05:00Z",
+            "validated_at": "2026-06-14T20:07:00Z",
+            "captured_ids": ["official_result", "quote_scout"],
+        },
         "rationale": "Official result evidence supports the prepared World Cup snap candidate.",
         "evidence": [
             {
@@ -90,6 +99,9 @@ class StormTemplatePromoterTests(unittest.TestCase):
         self.assertEqual(rows[0]["id"], "france-ready")
         self.assertNotIn("disabled", rows[0])
         self.assertTrue(rows[0]["world_cup_post_result"])
+        self.assertEqual(rows[0]["result_not_before_utc"], "2026-06-12T00:00:00Z")
+        self.assertEqual(rows[0]["post_result_evidence_status"], "captured_not_queue_approved")
+        self.assertEqual(rows[0]["post_result_evidence_packet"]["captured_ids"], ["official_result", "quote_scout"])
 
 
 if __name__ == "__main__":
