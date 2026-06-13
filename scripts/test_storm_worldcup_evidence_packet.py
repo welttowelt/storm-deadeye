@@ -488,6 +488,40 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
 
         self.assertIn("official_result:claim_missing_score_value", blockers)
 
+    def test_odds_move_claim_requires_post_result_movement_and_baseline(self):
+        blockers = packet.claim_keyword_blockers(
+            "odds_move",
+            "Germany odds captured.",
+        )
+
+        self.assertIn("odds_move:claim_missing_post_result", blockers)
+        self.assertIn("odds_move:claim_missing_movement", blockers)
+        self.assertIn("odds_move:claim_missing_baseline", blockers)
+
+        accepted = packet.claim_keyword_blockers(
+            "odds_move",
+            "Post-result Germany odds movement versus the pre-result baseline captured.",
+        )
+
+        self.assertEqual(accepted, [])
+
+    def test_ratings_move_claim_requires_post_result_movement_and_baseline(self):
+        blockers = packet.claim_keyword_blockers(
+            "ratings_move",
+            "Germany rating captured.",
+        )
+
+        self.assertIn("ratings_move:claim_missing_post_result", blockers)
+        self.assertIn("ratings_move:claim_missing_movement", blockers)
+        self.assertIn("ratings_move:claim_missing_baseline", blockers)
+
+        accepted = packet.claim_keyword_blockers(
+            "ratings_move",
+            "Post-result ratings/model movement for Germany versus baseline captured.",
+        )
+
+        self.assertEqual(accepted, [])
+
     def test_validate_packet_recomputes_stale_result_window_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

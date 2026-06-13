@@ -92,8 +92,10 @@ these claim markers:
   score value such as `3-0` or `3:0`.
 - `confirmed_lineups`: lineup or starting XI.
 - `injuries_suspensions`: injury, suspension, booking, or absence.
-- `odds_move`: odds.
-- `ratings_move`: rating or model.
+- `odds_move`: odds, post-result timing, movement/change, and baseline or
+  pre-result comparison.
+- `ratings_move`: rating or model, post-result timing, movement/change, and
+  baseline or pre-result comparison.
 - `market_state`: market/Deadeye plus state, mu, sigma, or distribution.
 - `quote_scout`: quote plus scout, EV, or expected value.
 

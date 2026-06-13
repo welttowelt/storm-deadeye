@@ -73,9 +73,15 @@ REQUIRED_CLAIM_KEYWORDS = {
     ),
     "odds_move": (
         ("odds", ("odds",)),
+        ("post_result", ("post-result", "post result", "after result", "post-match", "post match")),
+        ("movement", ("movement", "move", "delta", "change", "repric")),
+        ("baseline", ("baseline", "pre-result", "pre result", "before result")),
     ),
     "ratings_move": (
         ("ratings_or_model", ("rating", "ratings", "model")),
+        ("post_result", ("post-result", "post result", "after result", "post-match", "post match")),
+        ("movement", ("movement", "move", "delta", "change", "repric")),
+        ("baseline", ("baseline", "pre-result", "pre result", "before result")),
     ),
     "market_state": (
         ("market", ("market", "deadeye")),
