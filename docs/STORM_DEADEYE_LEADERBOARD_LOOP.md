@@ -31,6 +31,46 @@ runner, not a forecasting oracle: it monitors leaderboards every tick and can
 execute only queued, evidence-backed leaderboard trades that pass the local
 guardrails.
 
+## Current Operating Contract
+
+As of the Germany snap-prep window, the immediate goal is not to trade more. It
+is to be first to a policy-clean post-result edge and to ignore everything that
+does not move a real leaderboard.
+
+Do more:
+
+- Prepare Germany post-result evidence before the window: official score,
+  final-whistle/completed marker, lineups, injuries or suspensions, odds
+  movement, ratings/model movement, fresh market state, and fresh quote scout.
+- Focus on real board mechanics: overall rank, any healthy distinct filtered
+  board, market-state repricing, and gap-to-first impact.
+- Keep the `deadeye >= 0.1.20` smoke floor active. The main runner already
+  fails closed on stale or missing external/built-in smoke versions; the
+  external Claude smoke script should self-enforce the same floor in its own
+  worktree.
+- Re-run the full quote scout immediately after a match result, watched market
+  state shift, or World Cup market-state fingerprint shift.
+- Treat runner-pass rows as the signal. A quote-only EV row is diagnostic until
+  it clears evidence, quote, dry-run, concentration, gas, XP, and trade-cap
+  gates.
+
+Do less:
+
+- Do not write mailbox entries for routine fresh loops, mirrored endpoint churn,
+  unchanged scout refreshes, or fake filtered boards.
+- Do not chase pre-result World Cup overrides. Oli's HOLD stays in force unless
+  a newer explicit command approves exact command and caps.
+- Do not promote a new strategy class until one candidate can pass the full
+  gate stack.
+- Do not spend loop time optimizing unavailable filtered boards. Monitor them
+  on cooldown and act only when the indexer returns distinct rankings.
+
+The next real shot is the Germany post-result window at
+`2026-06-14T20:00:00Z`. Until that window opens, success means the packet stays
+pre-window ready, sources stay fresh enough for the window, smoke stays at
+`deadeye 0.1.20` or newer, and the loop stays quiet unless rank, health,
+runner-pass signals, source readiness, or real board state changes.
+
 ## Local Files
 
 Default local state lives outside the repo:
