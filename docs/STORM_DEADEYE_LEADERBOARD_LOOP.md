@@ -44,6 +44,34 @@ These files can contain public trading telemetry and should not be committed.
 The runner never prints wallet config bodies, `.env`, private keys, mnemonics,
 or journal contents.
 
+`state.json` stores the latest smoke result, mailbox-change key, trade caps,
+campaign guard, and a sanitized `last_summary` with rank, gap, gas tier, XP,
+healthy/unhealthy ranking views, processed candidates, and disabled template
+readiness. It omits RPC URLs, indexer URLs, raw token balances, smoke script
+paths, journal paths, and wallet configuration bodies. Template readiness is
+operator-only telemetry; a `queue_ready` template still has to be copied into
+the candidate queue and pass fresh doctor, quote, dry-run, gas, XP,
+concentration, and EV gates before any execute path.
+Normal loop stdout uses the same sanitized public summary.
+Templates whose stored quote EV is below their `min_expected_value` stay blocked
+as `template_ev_below_floor` until a fresh analysis supports promotion.
+Templates also need a durable promotion status, currently `runner_candidate` or
+`durable_watch`; `weak_watch`, `paint_trap`, and `avoid` stay parked until a
+fresh analysis upgrades them.
+World Cup templates may set `result_not_before_utc`; before that timestamp the
+promoter adds `template_result_window_not_reached`, even if post-result fields
+are filled.
+The sanitized `last_summary` also records `next_template_window`, the earliest
+future template result window still blocking promotion, and
+`next_durable_template_window`, the earliest blocked window among
+`runner_candidate` or `durable_watch` templates that also clear stored EV and
+durability blockers. An EV-blocked durable watch remains visible in
+`templates`, but it is not shown as the next durable strike clock.
+After a template's `result_not_before_utc` has passed, `last_summary` also
+reports `post_result_evidence_due` when official result evidence is still
+missing. That field is part of the mailbox-change key, so the hourly loop can
+surface result-evidence work as soon as the configured result window opens.
+
 ## Monitor Tick
 
 ```bash
@@ -52,15 +80,27 @@ python3 scripts/storm_deadeye_loop.py --run-smoke
 
 This runs the read-only smoke gate, fetches indexer health, markets, rankings,
 own stats, positions, STRK balance, XP balance, and filtered rankings for
-discovered category/topic slugs. Filtered boards returning HTTP 503 are recorded
-as unhealthy rather than empty.
+discovered domain/category/topic/tag slugs plus standard overall time windows
+(`last-1h`, `last-24h`, `last-7d`). When a domain board is healthy, the runner
+also checks domain+time-window views. Filtered boards returning HTTP 503 are
+recorded as unhealthy rather than empty, and filtered rank/gap calculations use
+matching filtered trader stats instead of overall wallet P&L.
 
-To let the runner append a mailbox update only when rank, health, gas tier, or
-candidate processing changes:
+When the external read-only smoke script is present, the runner allows one
+retry before failing the tick. The smoke gate still has to pass before any
+candidate can reach quote, dry-run, or submit.
+
+To let the runner append a mailbox update only when rank, health, gas tier,
+candidate processing, template readiness, scout signal counts, or scout-refresh
+failures change:
 
 ```bash
 python3 scripts/storm_deadeye_loop.py --run-smoke --mailbox
 ```
+
+Active-portfolio scout refresh timestamps and fresh/refreshed status are not
+mailbox-change triggers on their own. The mailbox stays quiet when a routine
+hourly refresh produces the same coverage, pass count, and top signal shape.
 
 ## Candidate Queue
 
@@ -77,6 +117,9 @@ primary-source hint. World Cup candidates need at least two evidence items and
 a post-result marker such as `world_cup_post_result: true`, evidence
 `post_result: true`, `source_role: "official_match_result"`, or
 `event_stage: "match_completed"`.
+Placeholders do not count: evidence with `url: "TO_FILL"` or
+`post_result: false` is explicitly blocked even if the source role is
+`official_match_result`.
 
 ## Gap-Impact Screen
 
@@ -90,6 +133,12 @@ For CPI/economics:
 
 ```bash
 python3 scripts/storm_gap_analyzer.py --preset cpi-nowcast-20260612
+```
+
+For a cheap XP-ladder quote screen before expensive leaderboard valuation:
+
+```bash
+python3 scripts/storm_gap_analyzer.py --preset world-cup-pod-20260612 --budget 1000 --budget-ladder --quote-only --sort-by ev
 ```
 
 The analyzer quotes probe beliefs and reports two views:
@@ -108,6 +157,10 @@ The analyzer quotes probe beliefs and reports two views:
     Oli separately approves a known snapshot sprint.
   - `weak_watch`: positive but too small for the current climb.
   - `avoid`: belief view does not help the rank gap.
+  - `scout_error`: a read-only quote or indexer fetch failed for that probe;
+    retry the scout and do not queue from that row.
+  - `quote_screen`: quote-only ladder output; run full leaderboard valuation
+    before queueing or executing.
 
 The `runner_gate` section reports whether the probe would pass current runner
 guards and lists blockers such as low standalone EV, concentration, or missing
@@ -116,8 +169,49 @@ gap-improvement estimate does not bypass the execution runner's evidence,
 quote, dry-run, 10 XP EV floor, concentration, gas, XP, or trade-cap guards.
 By default results are sorted by `belief_gap`, so durable rank pressure is shown
 before temporary display movement.
+One flaky market read is recorded as a blocked `scout_error` row; the analyzer
+continues ranking the rest of the preset.
+With `--budget-ladder`, the analyzer expands each probe over the same XP rungs
+used by the runner, capped by `--budget` and the 1000 XP reserve. With
+`--quote-only`, it skips existing-position valuation and should be used as the
+fast first pass; only EV-interesting rows should be sent through full valuation.
 
 ## Execution Mode
+
+Review ready templates without touching the queue:
+
+```bash
+python3 scripts/storm_template_promoter.py
+```
+
+Append only templates that have no readiness blockers:
+
+```bash
+python3 scripts/storm_template_promoter.py --append
+```
+
+The promoter is local queue plumbing only. It does not call Deadeye or submit a
+trade; the execution runner still re-checks all live guards. It also refuses
+stale templates whose stored quote EV is below the configured minimum, even if
+the post-result evidence fields have been filled. Weak-watch or paint-trap
+templates are also refused until a fresh analyzer run upgrades their status.
+Templates with `result_not_before_utc` cannot be promoted before that timestamp,
+which keeps early fixture evidence from masquerading as a completed match.
+For the next Germany result window, use
+[`GERMANY_POST_RESULT_SNAP_PREP.md`](GERMANY_POST_RESULT_SNAP_PREP.md) as the
+operator evidence checklist and do not queue from the draft template before the
+official completed-match marker is captured.
+
+To let the loop perform that same local queue promotion before candidate
+processing:
+
+```bash
+python3 scripts/storm_deadeye_loop.py --run-smoke --mailbox --promote-ready-templates
+```
+
+With `--execute`, promoted candidates can be processed in the same tick, but
+they still need fresh smoke, doctor, quote, dry-run, gas, XP, EV,
+concentration, and trade-cap checks before any live submit.
 
 Dry-run queued candidates:
 
@@ -161,7 +255,7 @@ pause, unpause, or runtime-deploy commands.
 ## Tests
 
 ```bash
-python3 -m unittest scripts/test_storm_deadeye_loop.py scripts/test_storm_gap_analyzer.py
+python3 -m unittest scripts/test_storm_deadeye_loop.py scripts/test_storm_gap_analyzer.py scripts/test_storm_template_promoter.py
 ```
 
 Live monitor smoke:

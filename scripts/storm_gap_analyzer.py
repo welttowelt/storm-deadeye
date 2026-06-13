@@ -14,6 +14,8 @@ from __future__ import annotations
 import argparse
 import json
 import math
+import re
+import time
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -28,6 +30,15 @@ DEFAULT_SORT_BY = "belief_gap"
 DURABLE_WATCH_GAP_XP = 50.0
 PAINT_TRAP_MARK_GAP_XP = 25.0
 PAINT_TRAP_TOLERANCE_XP = 5.0
+QUOTE_RETRY_ATTEMPTS = 3
+QUOTE_RETRY_BASE_DELAY_SECONDS = 5.0
+INDEXER_RETRY_ATTEMPTS = 3
+INDEXER_RETRY_BASE_DELAY_SECONDS = 2.0
+POSITION_VALUE_TIMEOUT_SECONDS = 30
+TRANSIENT_QUOTE_ERROR_RE = re.compile(
+    r"cu limit exceeded|request too fast|rate.?limit|too many requests|temporar",
+    re.IGNORECASE,
+)
 
 WORLD_CUP_POD_20260612 = [
     {"label": "France lower/wider", "title_contains": "France", "belief": 3.3346, "belief_sigma": 0.2787},
@@ -52,9 +63,15 @@ CPI_NOWCAST_20260612 = [
     },
 ]
 
+ACTIVE_PORTFOLIO_20260612 = [
+    *WORLD_CUP_POD_20260612,
+    *CPI_NOWCAST_20260612,
+]
+
 PRESETS = {
     "world-cup-pod-20260612": WORLD_CUP_POD_20260612,
     "cpi-nowcast-20260612": CPI_NOWCAST_20260612,
+    "active-portfolio-20260612": ACTIVE_PORTFOLIO_20260612,
 }
 
 
@@ -159,54 +176,107 @@ def load_probe_specs(path: Path | None, preset: str | None) -> list[dict[str, An
     return specs
 
 
-def build_probes(markets: list[dict[str, Any]], specs: list[dict[str, Any]], default_budget: float) -> list[Probe]:
+def budget_values(
+    spec: dict[str, Any],
+    default_budget: float,
+    bankroll: float,
+    *,
+    budget_ladder: bool = False,
+) -> list[float]:
+    available = loop.available_xp(float(bankroll))
+    if available <= 0.0:
+        raise loop.LoopError("no XP available after reserve for budget scouting")
+    raw_budgets = spec.get("budgets")
+    if raw_budgets:
+        values = [float(value) for value in raw_budgets]
+    else:
+        max_budget = min(float(spec.get("budget", default_budget)), available)
+        if budget_ladder:
+            values = [value for value in loop.XP_LADDER if value <= max_budget]
+        else:
+            values = [max_budget]
+    clean = sorted({float(value) for value in values if 0.0 < float(value) <= available})
+    if not clean:
+        raise loop.LoopError("no positive budget fits available XP after reserve")
+    return clean
+
+
+def build_probes(
+    markets: list[dict[str, Any]],
+    specs: list[dict[str, Any]],
+    default_budget: float,
+    *,
+    budget_ladder: bool = False,
+    bankroll: float = DEFAULT_BANKROLL,
+) -> list[Probe]:
     probes: list[Probe] = []
     for spec in specs:
         market = find_market(markets, spec)
         family = str(spec.get("family") or market.get("marketType") or "").lower()
         if family not in {"normal", "lognormal"}:
             continue
-        probes.append(
-            Probe(
-                label=str(spec.get("label") or market.get("title") or market["address"]),
-                market=str(market["address"]),
-                family=family,
-                belief=float(spec["belief"]),
-                belief_sigma=float(spec["belief_sigma"]),
-                budget=float(spec.get("budget", default_budget)),
+        label = str(spec.get("label") or market.get("title") or market["address"])
+        for budget in budget_values(spec, default_budget, bankroll, budget_ladder=budget_ladder):
+            probes.append(
+                Probe(
+                    label=label,
+                    market=str(market["address"]),
+                    family=family,
+                    belief=float(spec["belief"]),
+                    belief_sigma=float(spec["belief_sigma"]),
+                    budget=budget,
+                )
             )
-        )
     return probes
 
 
 def quote_probe(probe: Probe, bankroll: float) -> dict[str, Any]:
-    return loop.deadeye_json(
-        [
-            "trade",
-            "quote",
-            probe.market,
-            "--family",
-            probe.family,
-            "--belief",
-            f"{probe.belief:g}",
-            "--belief-sigma",
-            f"{probe.belief_sigma:g}",
-            "--budget",
-            f"{probe.budget:g}",
-            "--bankroll",
-            f"{bankroll:g}",
-            "--risk",
-            "aggressive",
-        ],
-        timeout=90,
-    )
+    args = [
+        "trade",
+        "quote",
+        probe.market,
+        "--family",
+        probe.family,
+        "--belief",
+        f"{probe.belief:g}",
+        "--belief-sigma",
+        f"{probe.belief_sigma:g}",
+        "--budget",
+        f"{probe.budget:g}",
+        "--bankroll",
+        f"{bankroll:g}",
+        "--risk",
+        "aggressive",
+    ]
+    for attempt in range(1, QUOTE_RETRY_ATTEMPTS + 1):
+        try:
+            return loop.deadeye_json(args, timeout=90)
+        except loop.LoopError as exc:
+            if attempt == QUOTE_RETRY_ATTEMPTS or not is_transient_quote_error(exc):
+                raise
+            time.sleep(QUOTE_RETRY_BASE_DELAY_SECONDS * attempt)
+    raise loop.LoopError("quote retry loop exhausted")
+
+
+def is_transient_quote_error(exc: BaseException) -> bool:
+    return bool(TRANSIENT_QUOTE_ERROR_RE.search(str(exc)))
 
 
 def fetch_indexer(base_url: str, path: str) -> Any:
-    code, payload = loop.http_get_json(base_url, path)
-    if code != 200:
-        raise loop.LoopError(f"{path} returned HTTP {code}")
-    return payload
+    last_code = 0
+    for attempt in range(1, INDEXER_RETRY_ATTEMPTS + 1):
+        code, payload = loop.http_get_json(base_url, path)
+        if code == 200:
+            return payload
+        last_code = code
+        if attempt == INDEXER_RETRY_ATTEMPTS or not is_transient_indexer_status(code):
+            break
+        time.sleep(INDEXER_RETRY_BASE_DELAY_SECONDS * attempt)
+    raise loop.LoopError(f"{path} returned HTTP {last_code}")
+
+
+def is_transient_indexer_status(code: int) -> bool:
+    return code == 0 or code == 429 or code >= 500
 
 
 def position_value_at(market: str, family: str, trader: str, at: float) -> float | None:
@@ -223,7 +293,7 @@ def position_value_at(market: str, family: str, trader: str, at: float) -> float
                 "--at",
                 f"{at:.12g}",
             ],
-            timeout=60,
+            timeout=POSITION_VALUE_TIMEOUT_SECONDS,
         )
     except Exception:
         return None
@@ -253,7 +323,7 @@ def position_expected_under_belief(
                 "--belief-sigma",
                 f"{belief_sigma:.12g}",
             ],
-            timeout=90,
+            timeout=POSITION_VALUE_TIMEOUT_SECONDS,
         )
     except Exception:
         return None
@@ -379,6 +449,7 @@ def analyze_probe(
         "market": probe.market,
         "market_title": market.get("title"),
         "family": probe.family,
+        "budget": probe.budget,
         "belief": probe.belief,
         "belief_sigma": probe.belief_sigma,
         "quote": {
@@ -512,6 +583,97 @@ def classify_opportunity(
     }
 
 
+def probe_error_result(
+    probe: Probe,
+    market: dict[str, Any],
+    reason: str,
+    quote: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    return {
+        "label": probe.label,
+        "market": probe.market,
+        "market_title": market.get("title"),
+        "family": probe.family,
+        "budget": probe.budget,
+        "belief": probe.belief,
+        "belief_sigma": probe.belief_sigma,
+        "quote": quote or {},
+        "error": reason,
+        "runner_gate": {
+            "would_pass_current_runner": False,
+            "blockers": [f"read-only scout failed: {reason}"],
+        },
+        "opportunity": {
+            "status": "scout_error",
+            "priority": 0,
+            "action": "retry read-only scout; do not queue from this row",
+            "reasons": [reason],
+        },
+    }
+
+
+def quote_only_result(
+    probe: Probe,
+    market: dict[str, Any],
+    markets: list[dict[str, Any]],
+    own_positions: list[dict[str, Any]],
+    quote: dict[str, Any],
+) -> dict[str, Any]:
+    runner_blockers = runner_blockers_for_probe(probe, market, markets, own_positions, quote)
+    expected_value = float(quote.get("expected_value") or 0.0)
+    return {
+        "label": probe.label,
+        "market": probe.market,
+        "market_title": market.get("title"),
+        "family": probe.family,
+        "budget": probe.budget,
+        "belief": probe.belief,
+        "belief_sigma": probe.belief_sigma,
+        "quote": {
+            "on_chain_will_accept": quote.get("on_chain_will_accept"),
+            "expected_value": quote.get("expected_value"),
+            "required_collateral": quote.get("required_collateral"),
+            "candidate_mean": quote.get("candidate_mean"),
+            "candidate_sigma": quote.get("candidate_sigma"),
+        },
+        "runner_gate": {
+            "would_pass_current_runner": not runner_blockers,
+            "blockers": runner_blockers,
+        },
+        "opportunity": {
+            "status": "quote_screen",
+            "priority": 3 if expected_value >= loop.MIN_EXECUTE_EV else 0,
+            "action": "run full leaderboard valuation before queueing or executing",
+            "reasons": [f"standalone EV {expected_value:.3f} XP"],
+        },
+    }
+
+
+def analyze_probe_readonly(
+    probe: Probe,
+    market: dict[str, Any],
+    markets: list[dict[str, Any]],
+    rankings: list[dict[str, Any]],
+    own_positions: list[dict[str, Any]],
+    own_trader: str,
+    indexer_url: str,
+    bankroll: float,
+    *,
+    quote_only: bool = False,
+) -> dict[str, Any]:
+    quote: dict[str, Any] | None = None
+    try:
+        quote = quote_probe(probe, bankroll)
+        if not quote.get("on_chain_will_accept"):
+            return probe_error_result(probe, market, "quote rejected", quote)
+        if quote_only:
+            return quote_only_result(probe, market, markets, own_positions, quote)
+        traders = fetch_indexer(indexer_url, f"/api/markets/{probe.market}/traders")
+        return analyze_probe(probe, market, markets, rankings, traders, own_positions, own_trader, quote)
+    except Exception as exc:  # noqa: BLE001 - one flaky market should not erase the scout board.
+        return probe_error_result(probe, market, str(exc), quote)
+
+
 def sort_key(item: dict[str, Any], sort_by: str) -> tuple[float, float, float, float]:
     scoreboard = item.get("scoreboard") or {}
     belief = item.get("belief_scoreboard") or {}
@@ -532,57 +694,138 @@ def sort_key(item: dict[str, Any], sort_by: str) -> tuple[float, float, float, f
     return (belief_gap, priority, ev, mark_gap)
 
 
+def coverage_summary(markets: list[dict[str, Any]], probes: list[Probe]) -> dict[str, Any]:
+    active_markets = [market for market in markets if loop.market_is_tradeable(market)]
+    active_by_address = {loop.canonical_address(market.get("address")): market for market in active_markets}
+    covered_addresses = {
+        loop.canonical_address(probe.market)
+        for probe in probes
+        if loop.canonical_address(probe.market) in active_by_address
+    }
+    by_category: dict[str, dict[str, int]] = {}
+    for address, market in active_by_address.items():
+        category = str(market.get("category") or "uncategorized")
+        item = by_category.setdefault(category, {"active_tradeable": 0, "covered": 0})
+        item["active_tradeable"] += 1
+        if address in covered_addresses:
+            item["covered"] += 1
+    return {
+        "active_tradeable_markets": len(active_markets),
+        "covered_active_tradeable_markets": len(covered_addresses),
+        "coverage_complete": len(covered_addresses) == len(active_markets),
+        "probe_rows": len(probes),
+        "by_category": dict(sorted(by_category.items())),
+    }
+
+
+def output_payload(
+    args: argparse.Namespace,
+    results: list[dict[str, Any]],
+    coverage: dict[str, Any],
+    *,
+    trader: str,
+    indexer_url: str,
+) -> dict[str, Any]:
+    payload = {
+        "generated_at": loop.utc_now(),
+        "preset": args.preset,
+        "sort_by": args.sort_by,
+        "budget_ladder": bool(args.budget_ladder),
+        "quote_only": bool(args.quote_only),
+        "coverage": coverage,
+        "results": results,
+    }
+    if getattr(args, "include_operational_context", False):
+        payload["trader"] = loop.canonical_address(trader)
+        payload["indexer_url"] = indexer_url
+    return payload
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Read-only Storm Deadeye leaderboard gap analyzer.")
     parser.add_argument("--preset", choices=[*PRESETS.keys(), "none"], default="world-cup-pod-20260612")
     parser.add_argument("--probes", type=Path, help="Optional JSONL probe file.")
     parser.add_argument("--indexer-url", help="Override Deadeye indexer URL.")
     parser.add_argument("--trader", help="Override own trader address.")
-    parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET)
+    parser.add_argument("--budget", type=float, default=DEFAULT_BUDGET, help="Single budget, or max budget with --budget-ladder.")
+    parser.add_argument(
+        "--budget-ladder",
+        action="store_true",
+        help="Probe every XP ladder rung up to --budget and available XP reserve.",
+    )
     parser.add_argument("--bankroll", type=float, default=DEFAULT_BANKROLL)
     parser.add_argument("--limit", type=int, default=DEFAULT_INDEXER_LIMIT)
     parser.add_argument("--output", type=Path, help="Optional JSON output path.")
+    parser.add_argument(
+        "--quote-only",
+        action="store_true",
+        help="Only run quotes and cheap runner-gate screens; skip trader valuation.",
+    )
     parser.add_argument(
         "--sort-by",
         choices=["belief_gap", "mark_gap", "ev", "runner_gate"],
         default=DEFAULT_SORT_BY,
         help="Result ordering; default ranks durable belief movement first.",
     )
+    parser.add_argument(
+        "--include-operational-context",
+        action="store_true",
+        help="Include top-level trader and indexer URL in JSON output.",
+    )
     return parser
 
 
-def main(argv: list[str] | None = None) -> int:
-    args = build_arg_parser().parse_args(argv)
+def resolve_context(args: argparse.Namespace) -> tuple[str, str]:
+    if args.indexer_url and args.trader:
+        return str(args.indexer_url), str(args.trader)
     snap = loop.account_snapshot()
     account = snap["account"]
     indexer_url = args.indexer_url or account.get("indexer_url")
     trader = args.trader or account.get("address")
     if not indexer_url or not trader:
         raise loop.LoopError("missing indexer URL or trader")
+    return str(indexer_url), str(trader)
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = build_arg_parser().parse_args(argv)
+    indexer_url, trader = resolve_context(args)
     markets = fetch_indexer(indexer_url, "/api/markets")
     rankings = fetch_indexer(indexer_url, f"/api/rankings?limit={int(args.limit)}")
     own_positions = fetch_indexer(indexer_url, f"/api/positions/{loop.canonical_address(trader)}")
     specs = load_probe_specs(args.probes, args.preset)
-    probes = build_probes(markets, specs, args.budget)
+    probes = build_probes(
+        markets,
+        specs,
+        args.budget,
+        budget_ladder=bool(args.budget_ladder),
+        bankroll=float(args.bankroll),
+    )
     by_address = {loop.canonical_address(market.get("address")): market for market in markets}
     results = []
     for probe in probes:
         market = by_address[loop.canonical_address(probe.market)]
-        quote = quote_probe(probe, args.bankroll)
-        if not quote.get("on_chain_will_accept"):
-            results.append({"label": probe.label, "market": probe.market, "quote": quote, "error": "quote rejected"})
-            continue
-        traders = fetch_indexer(indexer_url, f"/api/markets/{probe.market}/traders")
-        results.append(analyze_probe(probe, market, markets, rankings, traders, own_positions, trader, quote))
+        results.append(
+            analyze_probe_readonly(
+                probe,
+                market,
+                markets,
+                rankings,
+                own_positions,
+                trader,
+                indexer_url,
+                args.bankroll,
+                quote_only=bool(args.quote_only),
+            )
+        )
     results.sort(key=lambda item: sort_key(item, args.sort_by), reverse=True)
-    payload = {
-        "generated_at": loop.utc_now(),
-        "trader": loop.canonical_address(trader),
-        "indexer_url": indexer_url,
-        "preset": args.preset,
-        "sort_by": args.sort_by,
-        "results": results,
-    }
+    payload = output_payload(
+        args,
+        results,
+        coverage_summary(markets, probes),
+        trader=trader,
+        indexer_url=indexer_url,
+    )
     text = json.dumps(payload, indent=2, sort_keys=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
