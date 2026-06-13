@@ -198,6 +198,13 @@ def evidence_item_blockers(item: dict[str, Any]) -> list[str]:
 def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict[str, Any]:
     validated_at = now or utc_now()
     blockers: list[str] = []
+    result_window = None
+    raw_window = (packet.get("template") or {}).get("result_not_before_utc")
+    if raw_window:
+        try:
+            result_window = loop.parse_utc_timestamp(raw_window)
+        except (TypeError, ValueError):
+            result_window = None
     if not packet.get("result_window_open"):
         blockers.append("result_window_not_open")
     by_id: dict[str, dict[str, Any]] = {}
@@ -229,7 +236,14 @@ def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict
             continue
         captured_ids.append(item_id)
         try:
-            if loop.parse_utc_timestamp(item.get("capture_utc")) > loop.parse_utc_timestamp(validated_at):
+            capture_utc = loop.parse_utc_timestamp(item.get("capture_utc"))
+            if result_window and capture_utc < result_window:
+                blocker = f"{item_id}:capture_utc_before_result_window"
+                item_blockers.setdefault(item_id, []).append(blocker)
+                blockers.append(blocker)
+                captured_ids.remove(item_id)
+                continue
+            if capture_utc > loop.parse_utc_timestamp(validated_at):
                 blocker = f"{item_id}:capture_utc_after_packet_time"
                 item_blockers.setdefault(item_id, []).append(blocker)
                 blockers.append(blocker)

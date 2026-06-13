@@ -73,6 +73,12 @@ def fill_packet_evidence(result: dict):
             item["url"] = "https://example.com/evidence"
 
 
+def fill_packet_evidence_before_window(result: dict):
+    fill_packet_evidence(result)
+    for item in result["evidence_placeholders"]:
+        item["capture_utc"] = "2026-06-14T19:59:00Z"
+
+
 class StormWorldCupEvidencePacketTests(unittest.TestCase):
     def test_packet_keeps_blocked_template_non_queueable(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -156,6 +162,26 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertTrue(validated["capture_readiness"]["ready_for_template_update"])
         self.assertEqual(validated["capture_status"]["next_action"], "apply_to_template")
         self.assertEqual(validated["capture_status"]["missing_ids"], [])
+
+    def test_validate_packet_blocks_capture_times_before_result_window(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-13T20:05:00Z")
+            fill_packet_evidence_before_window(result)
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:06:00Z")
+
+        self.assertFalse(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertIn(
+            "official_result:capture_utc_before_result_window",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertEqual(validated["capture_status"]["next_action"], "fill_required_evidence")
+        self.assertEqual(validated["capture_status"]["missing_ids"], list(packet.REQUIRED_EVIDENCE_IDS))
 
     def test_main_writes_packet_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
