@@ -1,8 +1,10 @@
 #!/usr/bin/env python3
 import json
+import io
 import sys
 import tempfile
 import unittest
+from contextlib import redirect_stdout
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
@@ -185,6 +187,107 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
 
         self.assertEqual(rc, 0)
         self.assertTrue(payload["capture_readiness"]["ready_for_template_update"])
+
+    def test_apply_packet_refuses_unready_packet(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-13T20:05:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            with self.assertRaisesRegex(Exception, "packet is not ready"):
+                packet.apply_packet_to_template(
+                    packet_path,
+                    template_path=template_path,
+                    now="2026-06-13T20:06:00Z",
+                )
+
+            template = json.loads(template_path.read_text(encoding="utf-8"))
+
+        self.assertFalse(template["world_cup_post_result"])
+        self.assertTrue(any(item.get("url") == "TO_FILL" for item in template["evidence"]))
+
+    def test_apply_packet_updates_template_evidence_but_keeps_disabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_packet_evidence(result)
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            summary = packet.apply_packet_to_template(
+                packet_path,
+                template_path=template_path,
+                now="2026-06-14T20:06:00Z",
+            )
+            template = json.loads(template_path.read_text(encoding="utf-8"))
+
+        self.assertTrue(summary["applied"])
+        self.assertFalse(summary["queue_allowed"])
+        self.assertTrue(template["world_cup_post_result"])
+        self.assertTrue(template["disabled"])
+        self.assertEqual(template["template_status"], "draft_only_not_queue_active")
+        self.assertEqual(template["post_result_evidence_status"], "captured_not_queue_approved")
+        self.assertFalse(any(item.get("url") == "TO_FILL" for item in template["evidence"]))
+        packet_ids = {item.get("evidence_packet_id") for item in template["evidence"]}
+        self.assertTrue(set(packet.REQUIRED_EVIDENCE_IDS).issubset(packet_ids))
+        self.assertTrue(any(item.get("source_role") == "official_fixture" for item in template["evidence"]))
+
+    def test_main_applies_filled_packet_to_template(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            output_path = root / "apply-summary.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_packet_evidence(result)
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            rc = packet.main([
+                "--apply-to-template",
+                str(packet_path),
+                "--template",
+                str(template_path),
+                "--output",
+                str(output_path),
+                "--now",
+                "2026-06-14T20:06:00Z",
+            ])
+            summary = json.loads(output_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(rc, 0)
+        self.assertTrue(summary["applied"])
+        self.assertTrue(summary["disabled"])
+
+    def test_main_apply_unready_packet_returns_error(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-13T20:05:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                rc = packet.main([
+                    "--apply-to-template",
+                    str(packet_path),
+                    "--template",
+                    str(template_path),
+                    "--now",
+                    "2026-06-13T20:06:00Z",
+                ])
+            payload = json.loads(output.getvalue())
+
+        self.assertEqual(rc, 1)
+        self.assertFalse(payload["ok"])
+        self.assertIn("packet is not ready", payload["error"])
 
 
 if __name__ == "__main__":

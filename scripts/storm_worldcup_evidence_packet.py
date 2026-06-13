@@ -323,21 +323,125 @@ def validate_packet_file(packet_path: Path, *, now: str | None = None) -> dict[s
     return packet
 
 
+def packet_template_path(packet: dict[str, Any], override: Path | None = None) -> Path:
+    if override is not None:
+        return override
+    raw_path = (packet.get("template") or {}).get("path")
+    if not raw_path:
+        raise loop.LoopError("packet does not include template.path; pass --template")
+    return Path(raw_path)
+
+
+def captured_evidence_for_template(packet: dict[str, Any]) -> list[dict[str, Any]]:
+    by_id = {
+        str(item.get("id")): item
+        for item in packet.get("evidence_placeholders") or []
+        if isinstance(item, dict)
+    }
+    captured: list[dict[str, Any]] = []
+    for item_id in REQUIRED_EVIDENCE_IDS:
+        item = by_id[item_id]
+        captured.append({
+            "claim": item.get("claim"),
+            "source_role": item.get("source_role"),
+            "source": item.get("source"),
+            "url": item.get("url"),
+            "post_result": True,
+            "capture_utc": item.get("capture_utc"),
+            "evidence_packet_id": item_id,
+        })
+    return captured
+
+
+def template_evidence_without_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
+    kept: list[dict[str, Any]] = []
+    for item in template.get("evidence") or []:
+        if not isinstance(item, dict):
+            continue
+        if str(item.get("url") or "").strip().upper() == "TO_FILL":
+            continue
+        if str(item.get("claim") or "").strip().upper().startswith("TO_FILL"):
+            continue
+        if str(item.get("evidence_packet_id") or "") in REQUIRED_EVIDENCE_IDS:
+            continue
+        kept.append(item)
+    return kept
+
+
+def apply_packet_to_template(
+    packet_path: Path,
+    *,
+    template_path: Path | None = None,
+    now: str | None = None,
+) -> dict[str, Any]:
+    packet = validate_packet_file(packet_path, now=now)
+    readiness = packet.get("capture_readiness") or {}
+    if not readiness.get("ready_for_template_update"):
+        blockers = readiness.get("blockers") or []
+        raise loop.LoopError("packet is not ready for template update: " + ", ".join(blockers))
+    target = packet_template_path(packet, template_path)
+    template = loop.load_json(target, {})
+    if not isinstance(template, dict):
+        raise loop.LoopError(f"{target} did not contain a JSON object")
+    packet_template = packet.get("template") or {}
+    packet_id = packet_template.get("id")
+    packet_market = packet_template.get("market")
+    if packet_id and template.get("id") and packet_id != template.get("id"):
+        raise loop.LoopError(f"packet template id {packet_id} does not match {template.get('id')}")
+    if packet_market and template.get("market") and loop.canonical_address(packet_market) != loop.canonical_address(template.get("market")):
+        raise loop.LoopError("packet market does not match template market")
+
+    captured = captured_evidence_for_template(packet)
+    template["evidence"] = template_evidence_without_placeholders(template) + captured
+    template["world_cup_post_result"] = True
+    template["disabled"] = True
+    template["post_result_evidence_status"] = "captured_not_queue_approved"
+    template["post_result_evidence_applied_at"] = now or utc_now()
+    template["post_result_evidence_packet"] = {
+        "path": str(packet_path),
+        "generated_at": packet.get("generated_at"),
+        "validated_at": readiness.get("validated_at"),
+        "required_ids": readiness.get("required_ids") or list(REQUIRED_EVIDENCE_IDS),
+        "captured_ids": readiness.get("captured_ids") or [],
+    }
+    loop.save_json(target, template)
+    return {
+        "applied": True,
+        "template_path": str(target),
+        "template_id": template.get("id"),
+        "market": template.get("market"),
+        "world_cup_post_result": template.get("world_cup_post_result"),
+        "disabled": template.get("disabled"),
+        "template_status": template.get("template_status"),
+        "evidence_rows": len(template.get("evidence") or []),
+        "captured_ids": readiness.get("captured_ids") or [],
+        "queue_allowed": False,
+        "next_required_gate": "fresh quote, dry-run, concentration, gas, XP, and trade-cap gates",
+    }
+
+
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a World Cup post-result evidence packet.")
-    parser.add_argument("--template", type=Path, default=DEFAULT_GERMANY_TEMPLATE)
+    parser.add_argument("--template", type=Path, help="Template path. Defaults to the Germany template when building.")
     parser.add_argument("--output", type=Path, help="Write the packet to this JSON file instead of stdout.")
     parser.add_argument("--validate-packet", type=Path, help="Validate an already filled packet instead of building a new one.")
+    parser.add_argument("--apply-to-template", type=Path, help="Validate a filled packet and copy its captured evidence into the template.")
     parser.add_argument("--now", help="UTC timestamp override for tests/backfills, e.g. 2026-06-14T20:05:00Z.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    if args.validate_packet:
-        packet = validate_packet_file(args.validate_packet, now=args.now)
-    else:
-        packet = build_packet(args.template, now=args.now)
+    try:
+        if args.apply_to_template:
+            packet = apply_packet_to_template(args.apply_to_template, template_path=args.template, now=args.now)
+        elif args.validate_packet:
+            packet = validate_packet_file(args.validate_packet, now=args.now)
+        else:
+            packet = build_packet(args.template or DEFAULT_GERMANY_TEMPLATE, now=args.now)
+    except loop.LoopError as exc:
+        print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))
+        return 1
     text = json.dumps(packet, indent=2, sort_keys=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)

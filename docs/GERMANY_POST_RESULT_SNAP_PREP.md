@@ -136,6 +136,18 @@ python3 scripts/storm_worldcup_evidence_packet.py \
 `capture_readiness.ready_for_template_update` must be `true` before any template
 edit. This still does not approve queueing or execution.
 
+After validation passes, copy the captured evidence into the local template:
+
+```bash
+python3 scripts/storm_worldcup_evidence_packet.py \
+  --apply-to-template ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json \
+  --template ~/.local/state/storm-deadeye/templates/germany-post-result-snap-template-20260612.json
+```
+
+This sets `world_cup_post_result=true` and removes placeholder evidence, but it
+keeps the template disabled. Queueing still requires fresh quote, dry-run,
+concentration, gas, XP, trade-cap, and promotion gates.
+
 Read-only refresh sequence:
 
 ```bash
