@@ -200,6 +200,35 @@ anything into the template:
 
 ```bash
 python3 scripts/storm_worldcup_evidence_packet.py \
+  --packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json \
+  --capture-row official_result \
+  --claim "FIFA shows the match completed at full time with final score Germany <score> Curacao." \
+  --source "FIFA match centre" \
+  --url "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464" \
+  --capture-utc "<UTC timestamp at or after 2026-06-14T20:00:00Z>" \
+  --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
+```
+
+Repeat `--capture-row` for every required evidence id:
+
+- `official_result`
+- `confirmed_lineups`
+- `injuries_suspensions`
+- `odds_move`
+- `ratings_move`
+- `market_state`
+- `quote_scout`
+
+Use `local-cli` as the URL only for `market_state` and `quote_scout`. Public
+rows must use the exact source URL checked by the operator. Each capture command
+validates that row before writing; a pre-window timestamp, wrong source role,
+generic claim, placeholder URL, or public `local-cli` URL fails closed and does
+not update the packet.
+
+Then validate the whole packet:
+
+```bash
+python3 scripts/storm_worldcup_evidence_packet.py \
   --validate-packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json \
   --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
 ```

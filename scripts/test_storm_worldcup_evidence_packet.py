@@ -487,6 +487,116 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertTrue(status_rows["market_state"]["url_ready"])
         self.assertTrue(status_rows["quote_scout"]["url_ready"])
 
+    def test_capture_row_updates_one_row_but_keeps_packet_unready(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            captured = packet.capture_evidence_row(
+                packet_path,
+                "official_result",
+                claim="FIFA shows the match completed at full time with final score Germany 3-0 Curacao.",
+                source="FIFA match centre",
+                url="https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
+                capture_utc="2026-06-14T20:06:00Z",
+            )
+
+        rows = {row["id"]: row for row in captured["capture_status"]["rows"]}
+        item = {
+            item["id"]: item
+            for item in captured["evidence_placeholders"]
+        }["official_result"]
+        self.assertFalse(captured["capture_readiness"]["ready_for_template_update"])
+        self.assertEqual(captured["capture_readiness"]["captured_ids"], ["official_result"])
+        self.assertEqual(rows["official_result"]["blockers"], [])
+        self.assertEqual(item["status"], "captured")
+        self.assertTrue(item["post_result"])
+        self.assertEqual(item["source_role"], "official_match_result")
+        self.assertEqual(
+            captured["capture_status"]["missing_ids"],
+            [
+                "confirmed_lineups",
+                "injuries_suspensions",
+                "odds_move",
+                "ratings_move",
+                "market_state",
+                "quote_scout",
+            ],
+        )
+
+    def test_capture_row_rejects_pre_window_capture_and_does_not_write(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-13T20:05:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            with self.assertRaisesRegex(Exception, "capture_utc_before_result_window"):
+                packet.capture_evidence_row(
+                    packet_path,
+                    "official_result",
+                    claim="FIFA shows the match completed at full time with final score Germany 3-0 Curacao.",
+                    source="FIFA match centre",
+                    url="https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
+                    capture_utc="2026-06-14T19:59:00Z",
+                )
+            unchanged = json.loads(packet_path.read_text(encoding="utf-8"))
+
+        row = {
+            item["id"]: item
+            for item in unchanged["evidence_placeholders"]
+        }["official_result"]
+        self.assertEqual(row["status"], "missing")
+        self.assertFalse(row["post_result"])
+
+    def test_capture_row_rejects_wrong_source_role_assertion(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            with self.assertRaisesRegex(Exception, "source_role must be odds_snapshot"):
+                packet.capture_evidence_row(
+                    packet_path,
+                    "odds_move",
+                    claim="Post-result Germany odds movement versus the pre-result baseline captured.",
+                    source="Odds comparison source",
+                    url="https://www.sportytrader.com/en/odds/germany-curacao-7937446/",
+                    capture_utc="2026-06-14T20:07:00Z",
+                    source_role="team_news",
+                )
+
+    def test_capture_row_allows_local_cli_for_market_state(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            captured = packet.capture_evidence_row(
+                packet_path,
+                "market_state",
+                claim="Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+                source="deadeye markets show",
+                url="local-cli",
+                capture_utc="2026-06-14T20:07:00Z",
+            )
+
+        rows = {row["id"]: row for row in captured["capture_status"]["rows"]}
+        self.assertTrue(rows["market_state"]["url_ready"])
+        self.assertEqual(captured["capture_readiness"]["captured_ids"], ["market_state"])
+
     def test_validate_packet_blocks_generic_claim_for_required_row(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)
@@ -533,6 +643,39 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
 
         self.assertEqual(rc, 0)
         self.assertEqual(payload["template"]["id"], "germany-post-result-snap-template-20260612")
+
+    def test_main_captures_row_and_writes_packet_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            rc = packet.main([
+                "--packet",
+                str(packet_path),
+                "--capture-row",
+                "quote_scout",
+                "--claim",
+                "Fresh active-portfolio quote scout EV and expected value captured after result/state shift.",
+                "--source",
+                "storm_gap_analyzer",
+                "--url",
+                "local-cli",
+                "--capture-utc",
+                "2026-06-14T20:07:00Z",
+                "--output",
+                str(packet_path),
+            ])
+            payload = json.loads(packet_path.read_text(encoding="utf-8"))
+
+        self.assertEqual(rc, 0)
+        self.assertEqual(payload["capture_readiness"]["captured_ids"], ["quote_scout"])
+        rows = {row["id"]: row for row in payload["capture_status"]["rows"]}
+        self.assertTrue(rows["quote_scout"]["captured"])
+        self.assertFalse(payload["capture_readiness"]["ready_for_template_update"])
 
     def test_main_validates_filled_packet_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

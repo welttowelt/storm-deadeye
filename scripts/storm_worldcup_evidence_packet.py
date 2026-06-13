@@ -471,6 +471,36 @@ def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict
     }
 
 
+def refresh_packet_status(
+    packet: dict[str, Any],
+    *,
+    now: str | None = None,
+    check_sources: bool = False,
+    source_timeout_seconds: float = DEFAULT_SOURCE_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    checked_at = now or utc_now()
+    window_open = result_window_open_from_packet(packet, now=checked_at)
+    if window_open is not None:
+        packet["result_window_open"] = window_open
+    if check_sources:
+        packet["source_reachability"] = source_reachability_report(
+            packet.get("evidence_placeholders") or [],
+            checked_at=checked_at,
+            check_sources=True,
+            timeout_seconds=source_timeout_seconds,
+        )
+    elif "source_reachability" not in packet:
+        packet["source_reachability"] = source_reachability_report(
+            packet.get("evidence_placeholders") or [],
+            checked_at=checked_at,
+            check_sources=False,
+            timeout_seconds=source_timeout_seconds,
+        )
+    packet["capture_readiness"] = capture_readiness(packet, now=checked_at)
+    packet["capture_status"] = evidence_capture_status(packet)
+    return packet
+
+
 def evidence_capture_status(packet: dict[str, Any]) -> dict[str, Any]:
     readiness = packet.get("capture_readiness") or {}
     item_blockers = readiness.get("item_blockers") or {}
@@ -525,6 +555,68 @@ def evidence_capture_status(packet: dict[str, Any]) -> dict[str, Any]:
     }
 
 
+def evidence_row_by_id(packet: dict[str, Any], item_id: str) -> dict[str, Any]:
+    if item_id not in REQUIRED_EVIDENCE_IDS:
+        raise loop.LoopError(
+            f"unknown evidence row {item_id}; expected one of {', '.join(REQUIRED_EVIDENCE_IDS)}"
+        )
+    matches = [
+        item for item in packet.get("evidence_placeholders") or []
+        if isinstance(item, dict) and str(item.get("id") or "") == item_id
+    ]
+    if not matches:
+        raise loop.LoopError(f"packet is missing evidence row {item_id}")
+    if len(matches) > 1:
+        raise loop.LoopError(f"packet contains duplicate evidence row {item_id}")
+    return matches[0]
+
+
+def capture_evidence_row(
+    packet_path: Path,
+    item_id: str,
+    *,
+    claim: str,
+    source: str | None = None,
+    url: str | None = None,
+    capture_utc: str | None = None,
+    source_role: str | None = None,
+    now: str | None = None,
+) -> dict[str, Any]:
+    packet = loop.load_json(packet_path, {})
+    if not isinstance(packet, dict):
+        raise loop.LoopError(f"{packet_path} did not contain a JSON object")
+    item = evidence_row_by_id(packet, item_id)
+    expected_role = EXPECTED_SOURCE_ROLES[item_id]
+    existing_role = str(item.get("source_role") or "")
+    if existing_role and existing_role != expected_role:
+        raise loop.LoopError(
+            f"{item_id} existing source_role {existing_role} does not match expected {expected_role}"
+        )
+    if source_role and source_role != expected_role:
+        raise loop.LoopError(f"{item_id} source_role must be {expected_role}, got {source_role}")
+    if is_placeholder(claim) or str(claim or "").strip().upper().startswith("TO_FILL"):
+        raise loop.LoopError(f"{item_id} claim is missing or still a placeholder")
+
+    captured_at = capture_utc or now or utc_now()
+    item["status"] = "captured"
+    item["source_role"] = expected_role
+    item["source"] = source if source is not None else item.get("source")
+    item["url"] = url if url is not None else item.get("url")
+    item["post_result"] = True
+    item["claim"] = claim
+    item["capture_utc"] = captured_at
+
+    validation_now = now or captured_at
+    refreshed = refresh_packet_status(packet, now=validation_now)
+    readiness = refreshed.get("capture_readiness") or {}
+    item_blockers = (readiness.get("item_blockers") or {}).get(item_id) or []
+    if item_id not in set(readiness.get("captured_ids") or []):
+        if not item_blockers:
+            item_blockers = [f"{item_id}:not_captured"]
+        raise loop.LoopError(f"{item_id} row capture failed: " + ", ".join(item_blockers))
+    return refreshed
+
+
 def read_only_commands(template: dict[str, Any]) -> list[str]:
     market = template.get("market") or "<market>"
     return [
@@ -577,6 +669,13 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
         })
     return {
         "result_not_before_utc": result_not_before,
+        "row_capture_command_template": (
+            "python3 scripts/storm_worldcup_evidence_packet.py "
+            "--packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json "
+            "--capture-row <evidence_id> --claim '<specific claim>' --source '<source name>' "
+            "--url '<source URL or local-cli>' --capture-utc <UTC timestamp> "
+            "--output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json"
+        ),
         "sequence": [
             "wait until result_window_open is true",
             "fill all public evidence rows from source_options using the expected source_role",
@@ -671,27 +770,12 @@ def validate_packet_file(
     packet = loop.load_json(packet_path, {})
     if not isinstance(packet, dict):
         raise loop.LoopError(f"{packet_path} did not contain a JSON object")
-    checked_at = now or utc_now()
-    window_open = result_window_open_from_packet(packet, now=now)
-    if window_open is not None:
-        packet["result_window_open"] = window_open
-    if check_sources:
-        packet["source_reachability"] = source_reachability_report(
-            packet.get("evidence_placeholders") or [],
-            checked_at=checked_at,
-            check_sources=True,
-            timeout_seconds=source_timeout_seconds,
-        )
-    elif "source_reachability" not in packet:
-        packet["source_reachability"] = source_reachability_report(
-            packet.get("evidence_placeholders") or [],
-            checked_at=checked_at,
-            check_sources=False,
-            timeout_seconds=source_timeout_seconds,
-        )
-    packet["capture_readiness"] = capture_readiness(packet, now=now)
-    packet["capture_status"] = evidence_capture_status(packet)
-    return packet
+    return refresh_packet_status(
+        packet,
+        now=now,
+        check_sources=check_sources,
+        source_timeout_seconds=source_timeout_seconds,
+    )
 
 
 def packet_template_path(packet: dict[str, Any], override: Path | None = None) -> Path:
@@ -795,9 +879,16 @@ def apply_packet_to_template(
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a World Cup post-result evidence packet.")
     parser.add_argument("--template", type=Path, help="Template path. Defaults to the Germany template when building.")
+    parser.add_argument("--packet", type=Path, help="Packet path for --capture-row.")
     parser.add_argument("--output", type=Path, help="Write the packet to this JSON file instead of stdout.")
     parser.add_argument("--validate-packet", type=Path, help="Validate an already filled packet instead of building a new one.")
     parser.add_argument("--apply-to-template", type=Path, help="Validate a filled packet and copy its captured evidence into the template.")
+    parser.add_argument("--capture-row", choices=REQUIRED_EVIDENCE_IDS, help="Capture one required evidence row in a packet.")
+    parser.add_argument("--claim", help="Specific evidence claim for --capture-row.")
+    parser.add_argument("--source", help="Human-readable source name for --capture-row.")
+    parser.add_argument("--url", help="Source URL for --capture-row. Use local-cli only for market_state or quote_scout.")
+    parser.add_argument("--capture-utc", help="UTC evidence capture timestamp for --capture-row.")
+    parser.add_argument("--source-role", choices=tuple(EXPECTED_SOURCE_ROLES.values()), help="Optional source role assertion for --capture-row.")
     parser.add_argument("--now", help="UTC timestamp override for tests/backfills, e.g. 2026-06-14T20:05:00Z.")
     parser.add_argument("--check-sources", action="store_true", help="Probe public source_options URLs and record advisory reachability.")
     parser.add_argument(
@@ -812,7 +903,22 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     try:
-        if args.apply_to_template:
+        if args.capture_row:
+            if not args.packet:
+                raise loop.LoopError("--capture-row requires --packet")
+            if not args.claim:
+                raise loop.LoopError("--capture-row requires --claim")
+            packet = capture_evidence_row(
+                args.packet,
+                args.capture_row,
+                claim=args.claim,
+                source=args.source,
+                url=args.url,
+                capture_utc=args.capture_utc,
+                source_role=args.source_role,
+                now=args.now,
+            )
+        elif args.apply_to_template:
             packet = apply_packet_to_template(args.apply_to_template, template_path=args.template, now=args.now)
         elif args.validate_packet:
             packet = validate_packet_file(
