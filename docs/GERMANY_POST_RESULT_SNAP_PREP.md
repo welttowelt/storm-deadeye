@@ -212,7 +212,10 @@ Before the window opens, confirm
 The main Storm loop also surfaces this under
 `last_summary.pre_window_evidence_readiness`; healthy readiness stays quiet,
 while missing, unreadable, or blocked packet readiness for the next result
-window is a mailbox-visible regression.
+window is a mailbox-visible regression. The loop also treats source
+reachability older than 24 hours as stale. Refresh it with the same
+`--check-sources --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json`
+command before final whistle if that happens.
 
 After filling every required evidence row, validate the packet before copying
 anything into the template:

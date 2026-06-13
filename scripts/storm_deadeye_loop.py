@@ -36,6 +36,7 @@ DEFAULT_SMOKE_SCRIPT = REPO_ROOT.parent / "deadeye-claude-smoke" / "smoke.sh"
 DEFAULT_SMOKE_MARKET = "0x5e678bd092173e9ef0945f348d09e6c1c22f78e06c0ef380441444359193500"
 DEFAULT_TEMPLATES = DEFAULT_STATE_DIR / "templates"
 DEFAULT_ACTIVE_PORTFOLIO_SCOUT_MAX_AGE_MINUTES = 60.0
+DEFAULT_PRE_WINDOW_SOURCE_REACHABILITY_MAX_AGE_HOURS = 24.0
 ACTIVE_PORTFOLIO_SCOUT_BUDGET = 4000.0
 
 XP_RESERVE = 1000.0
@@ -333,6 +334,15 @@ def parse_utc_timestamp(raw_value: Any) -> datetime:
     return parsed.astimezone(timezone.utc)
 
 
+def timestamp_age_seconds(raw_value: Any, now: datetime | None = None) -> float | None:
+    try:
+        then = parse_utc_timestamp(raw_value)
+    except (TypeError, ValueError):
+        return None
+    now = now or datetime.now(timezone.utc)
+    return max(0.0, (now - then).total_seconds())
+
+
 def template_blockers(template: dict[str, Any]) -> list[str]:
     blockers: list[str] = []
     if template.get("disabled", False):
@@ -484,7 +494,7 @@ def post_result_evidence_due(
             "blockers": sorted(blockers),
         }
         if state_dir is not None:
-            item["evidence_packet"] = evidence_packet_status_for_template(state_dir, template)
+            item["evidence_packet"] = evidence_packet_status_for_template(state_dir, template, now=now)
         due.append(item)
     return sorted(due, key=lambda item: (str(item.get("result_not_before_utc")), str(item.get("id"))))
 
@@ -526,7 +536,7 @@ def pre_window_evidence_readiness(
             "opportunity_status": template.get("opportunity_status"),
         }
         if state_dir is not None:
-            item["evidence_packet"] = evidence_packet_status_for_template(state_dir, template)
+            item["evidence_packet"] = evidence_packet_status_for_template(state_dir, template, now=now)
         readiness.append(item)
     return sorted(readiness, key=lambda item: (str(item.get("result_not_before_utc")), str(item.get("id"))))
 
@@ -547,7 +557,12 @@ def pre_window_evidence_regressions(
             continue
         packet = item.get("evidence_packet") or {}
         pre_window = packet.get("pre_window_readiness") or {}
-        if not packet.get("exists") or packet.get("error") or not pre_window.get("ready_for_result_window"):
+        blockers = list(pre_window.get("blockers") or [])
+        if pre_window.get("source_reachability_stale"):
+            blockers.append("source_reachability_stale")
+        if pre_window.get("source_reachability_checked_at_missing"):
+            blockers.append("source_reachability_checked_at_missing")
+        if not packet.get("exists") or packet.get("error") or not pre_window.get("ready_for_result_window") or blockers:
             regressions.append({
                 "id": item.get("id"),
                 "label": item.get("label"),
@@ -555,7 +570,9 @@ def pre_window_evidence_regressions(
                 "packet_exists": packet.get("exists"),
                 "packet_error": packet.get("error"),
                 "ready_for_result_window": pre_window.get("ready_for_result_window"),
-                "blockers": pre_window.get("blockers") or [],
+                "blockers": sorted(set(blockers)),
+                "source_reachability_checked_at": pre_window.get("source_reachability_checked_at"),
+                "source_reachability_max_age_hours": pre_window.get("source_reachability_max_age_hours"),
             })
     return regressions
 
@@ -570,7 +587,13 @@ def evidence_packet_path_for_template(state_dir: Path, template: dict[str, Any])
     return state_dir / f"{slug}-post-result-evidence-packet.json"
 
 
-def evidence_packet_status_for_template(state_dir: Path, template: dict[str, Any]) -> dict[str, Any]:
+def evidence_packet_status_for_template(
+    state_dir: Path,
+    template: dict[str, Any],
+    *,
+    now: datetime | None = None,
+    pre_window_source_max_age_hours: float = DEFAULT_PRE_WINDOW_SOURCE_REACHABILITY_MAX_AGE_HOURS,
+) -> dict[str, Any]:
     packet_path = evidence_packet_path_for_template(state_dir, template)
     if packet_path is None:
         return {"exists": False, "path": None}
@@ -590,6 +613,19 @@ def evidence_packet_status_for_template(state_dir: Path, template: dict[str, Any
     capture_readiness = packet.get("capture_readiness") or {}
     pre_window_readiness = packet.get("pre_window_readiness") or {}
     source_reachability = packet.get("source_reachability") or {}
+    pre_window_source_checked_at = (
+        pre_window_readiness.get("source_reachability_checked_at")
+        or source_reachability.get("checked_at")
+    )
+    source_age_seconds = timestamp_age_seconds(pre_window_source_checked_at, now=now)
+    source_max_age_seconds = max(0.0, pre_window_source_max_age_hours * 3600.0)
+    source_checked = bool(pre_window_readiness.get("source_reachability_checked"))
+    source_checked_at_missing = bool(source_checked and not pre_window_source_checked_at)
+    source_stale = bool(
+        source_checked
+        and source_age_seconds is not None
+        and source_age_seconds > source_max_age_seconds
+    )
     return {
         "exists": True,
         "path": str(packet_path),
@@ -604,7 +640,11 @@ def evidence_packet_status_for_template(state_dir: Path, template: dict[str, Any
             "ready_for_result_window": bool(pre_window_readiness.get("ready_for_result_window")),
             "required_ids": pre_window_readiness.get("required_ids") or [],
             "source_reachability_checked": bool(pre_window_readiness.get("source_reachability_checked")),
-            "source_reachability_checked_at": pre_window_readiness.get("source_reachability_checked_at"),
+            "source_reachability_checked_at": pre_window_source_checked_at,
+            "source_reachability_age_seconds": source_age_seconds,
+            "source_reachability_max_age_hours": pre_window_source_max_age_hours,
+            "source_reachability_stale": source_stale,
+            "source_reachability_checked_at_missing": source_checked_at_missing,
             "source_reachability_reachable_count": pre_window_readiness.get("source_reachability_reachable_count"),
             "source_reachability_unreachable_count": pre_window_readiness.get("source_reachability_unreachable_count"),
             "blockers": pre_window_readiness.get("blockers") or [],

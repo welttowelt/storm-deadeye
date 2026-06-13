@@ -2199,6 +2199,9 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertTrue(packet_status["exists"])
         self.assertTrue(packet_status["pre_window_readiness"]["ready_for_result_window"])
         self.assertEqual(packet_status["pre_window_readiness"]["blockers"], [])
+        self.assertFalse(packet_status["pre_window_readiness"]["source_reachability_stale"])
+        self.assertGreater(packet_status["pre_window_readiness"]["source_reachability_age_seconds"], 0)
+        self.assertEqual(packet_status["pre_window_readiness"]["source_reachability_max_age_hours"], 24.0)
 
     def test_summary_key_records_pre_window_evidence_regression(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2237,6 +2240,42 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertFalse(regression["ready_for_result_window"])
         self.assertEqual(regression["blockers"], ["source_reachability_not_checked"])
 
+    def test_pre_window_regressions_record_stale_source_reachability_for_next_window(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text(json.dumps({
+                "pre_window_readiness": {
+                    "ready_for_result_window": True,
+                    "source_reachability_checked": True,
+                    "source_reachability_checked_at": "2099-06-13T07:00:00Z",
+                    "blockers": [],
+                },
+            }), encoding="utf-8")
+            templates = [
+                {
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2099-06-16T20:00:00Z",
+                    "blockers": ["template_result_window_not_reached", "missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ]
+
+            regressions = loop.pre_window_evidence_regressions(
+                templates,
+                now=loop.parse_utc_timestamp("2099-06-15T08:00:00Z"),
+                state_dir=state_dir,
+            )
+
+        self.assertEqual(len(regressions), 1)
+        regression = regressions[0]
+        self.assertEqual(regression["id"], "germany-post-result-snap-template-20260612")
+        self.assertTrue(regression["ready_for_result_window"])
+        self.assertEqual(regression["blockers"], ["source_reachability_stale"])
+        self.assertEqual(regression["source_reachability_checked_at"], "2099-06-13T07:00:00Z")
+        self.assertEqual(regression["source_reachability_max_age_hours"], 24.0)
+
     def test_pre_window_regressions_ignore_later_missing_packet_when_next_is_ready(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_dir = Path(tmpdir)
@@ -2244,6 +2283,8 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             packet_path.write_text(json.dumps({
                 "pre_window_readiness": {
                     "ready_for_result_window": True,
+                    "source_reachability_checked": True,
+                    "source_reachability_checked_at": "2099-06-13T07:00:00Z",
                     "blockers": [],
                 },
             }), encoding="utf-8")
