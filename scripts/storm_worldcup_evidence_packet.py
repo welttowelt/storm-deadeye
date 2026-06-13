@@ -82,11 +82,21 @@ def source_urls(template: dict[str, Any]) -> dict[str, list[str]]:
             if isinstance(item, dict) and item.get("source_role") == "official_fixture":
                 official = str(item.get("url") or "")
                 break
+    ratings = list(baseline.get("ratings_context_urls") or [])
+    ratings_snapshot_urls = ((baseline.get("ratings_snapshot") or {}).get("urls") or {})
+    if isinstance(ratings_snapshot_urls, dict):
+        ratings.extend(str(value) for value in ratings_snapshot_urls.values())
+    elif isinstance(ratings_snapshot_urls, list):
+        ratings.extend(str(value) for value in ratings_snapshot_urls)
+    odds = list(baseline.get("odds_context_urls") or [])
+    odds_snapshot_url = (baseline.get("odds_snapshot") or {}).get("url")
+    if odds_snapshot_url:
+        odds.append(str(odds_snapshot_url))
     return {
         "official": [official] if official else [],
         "team_news": list(baseline.get("team_news_urls") or []),
-        "ratings": list(baseline.get("ratings_context_urls") or []),
-        "odds": list(baseline.get("odds_context_urls") or []),
+        "ratings": dedupe_preserve_order(ratings),
+        "odds": dedupe_preserve_order(odds),
     }
 
 
@@ -108,7 +118,7 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
     official_url = (urls["official"] or ["TO_FILL"])[0]
     team_news_url = (urls["team_news"] or [official_url])[0]
     odds_url = (urls["odds"] or ["TO_FILL"])[0]
-    ratings_url = (urls["ratings"] or ["TO_FILL"])[0]
+    ratings_url = preferred_url(urls["ratings"], ("fifa-world-ranking", "rating", "ratings", "model"))
     market = template.get("market") or "<market>"
     return [
         {
@@ -118,6 +128,7 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
             "source_role": "official_match_result",
             "source": "FIFA match centre",
             "url": official_url,
+            "source_options": urls["official"] or ["TO_FILL"],
             "post_result": False,
             "claim": "TO_FILL: official final-whistle/full-time marker, final score, and capture UTC.",
             "capture_utc": "TO_FILL",
@@ -129,6 +140,7 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
             "source_role": "official_lineups",
             "source": "FIFA match centre or confirmed lineup source",
             "url": official_url,
+            "source_options": urls["official"] or ["TO_FILL"],
             "post_result": False,
             "claim": "TO_FILL: confirmed starting XIs, substitutes, and late absences.",
             "capture_utc": "TO_FILL",
@@ -140,6 +152,7 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
             "source_role": "team_news",
             "source": "Team news / match report source",
             "url": team_news_url,
+            "source_options": dedupe_preserve_order(urls["team_news"] + urls["official"]) or ["TO_FILL"],
             "post_result": False,
             "claim": "TO_FILL: in-match injuries, late absences, bookings, and suspension/path impact.",
             "capture_utc": "TO_FILL",
@@ -151,6 +164,7 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
             "source_role": "odds_snapshot",
             "source": "Odds comparison source",
             "url": odds_url,
+            "source_options": urls["odds"] or ["TO_FILL"],
             "post_result": False,
             "claim": "TO_FILL: post-result Germany match/path/group odds movement versus baseline.",
             "capture_utc": "TO_FILL",
@@ -162,6 +176,7 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
             "source_role": "ratings_snapshot",
             "source": "Ratings/model source",
             "url": ratings_url,
+            "source_options": urls["ratings"] or ["TO_FILL"],
             "post_result": False,
             "claim": "TO_FILL: post-result ratings/model movement versus baseline.",
             "capture_utc": "TO_FILL",
@@ -173,6 +188,7 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
             "source_role": "deadeye_market_state",
             "source": "deadeye markets show",
             "url": "local-cli",
+            "source_options": ["local-cli"],
             "post_result": False,
             "claim": f"TO_FILL: fresh post-result Deadeye market state for {market}.",
             "capture_utc": "TO_FILL",
@@ -184,11 +200,33 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
             "source_role": "deadeye_quote_scout",
             "source": "storm_gap_analyzer",
             "url": "local-cli",
+            "source_options": ["local-cli"],
             "post_result": False,
             "claim": "TO_FILL: fresh active-portfolio quote scout after result/state shift.",
             "capture_utc": "TO_FILL",
         },
     ]
+
+
+def dedupe_preserve_order(values: list[str]) -> list[str]:
+    seen: set[str] = set()
+    result: list[str] = []
+    for value in values:
+        text = str(value or "").strip()
+        if not text or text in seen:
+            continue
+        seen.add(text)
+        result.append(text)
+    return result
+
+
+def preferred_url(values: list[str], preferred_markers: tuple[str, ...]) -> str:
+    clean = dedupe_preserve_order(values)
+    for value in clean:
+        lowered = value.lower()
+        if any(marker in lowered for marker in preferred_markers):
+            return value
+    return (clean or ["TO_FILL"])[0]
 
 
 def is_placeholder(value: Any) -> bool:
@@ -350,6 +388,7 @@ def evidence_capture_status(packet: dict[str, Any]) -> dict[str, Any]:
             "source_role": (item or {}).get("source_role"),
             "source": (item or {}).get("source"),
             "url": (item or {}).get("url"),
+            "source_options": (item or {}).get("source_options") or [],
             "post_result": (item or {}).get("post_result"),
             "claim_ready": bool(item)
             and not is_placeholder(claim)
@@ -481,6 +520,7 @@ def captured_evidence_for_template(packet: dict[str, Any]) -> list[dict[str, Any
             "source_role": item.get("source_role"),
             "source": item.get("source"),
             "url": item.get("url"),
+            "source_options": item.get("source_options") or [],
             "post_result": True,
             "capture_utc": item.get("capture_utc"),
             "evidence_packet_id": item_id,

@@ -57,6 +57,11 @@ Public evidence rows must use a real `http://` or `https://` source URL. The
 only rows allowed to use `local-cli` are `market_state` and `quote_scout`,
 because those are produced by local read-only Deadeye commands.
 
+Each packet row also includes `source_options`. Use those as the ordered source
+fallbacks after the result lands; do not replace them with ad hoc sources unless
+the replacement is captured in the packet URL and still satisfies the row's
+expected `source_role`.
+
 Required packet claims must be specific, not generic. The validator checks for
 these claim markers:
 

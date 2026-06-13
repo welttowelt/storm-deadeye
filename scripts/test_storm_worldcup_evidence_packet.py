@@ -32,7 +32,11 @@ def write_germany_template(path: Path):
         "pre_result_baseline_captured_at": "2026-06-13T05:37:00Z",
         "pre_result_baseline": {
             "official_fixture_url": "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
-            "team_news_urls": ["https://bulinews.com/germany-curacao-preview-team-news-and-predicted-lineups"],
+            "team_news_urls": [
+                "https://bulinews.com/germany-curacao-preview-team-news-and-predicted-lineups",
+                "https://www.sportsmole.co.uk/football/germany/world-cup-2026/preview/germany-vs-curacao-prediction-team-news-lineups_599044.html",
+                "https://www.standard.co.uk/sport/football/germany-vs-curacao-prediction-kick-off-time-tv-live-stream-team-news-latest-h2h-results-odds-world-cup-2026-preview-b1285707.html",
+            ],
             "ratings_context_urls": ["https://www.bundesliga.com/example"],
             "ratings_snapshot_captured_at": "2026-06-13T06:41:00Z",
             "ratings_snapshot": {
@@ -186,6 +190,31 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertFalse(status_rows["official_result"]["captured"])
         self.assertFalse(status_rows["official_result"]["claim_ready"])
         self.assertTrue(status_rows["official_result"]["url_ready"])
+        placeholders = {item["id"]: item for item in result["evidence_placeholders"]}
+        self.assertEqual(
+            placeholders["official_result"]["source_options"],
+            ["https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464"],
+        )
+        self.assertIn(
+            "https://www.sportsmole.co.uk/football/germany/world-cup-2026/preview/germany-vs-curacao-prediction-team-news-lineups_599044.html",
+            placeholders["injuries_suspensions"]["source_options"],
+        )
+        self.assertIn(
+            "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
+            placeholders["injuries_suspensions"]["source_options"],
+        )
+        self.assertEqual(
+            placeholders["ratings_move"]["url"],
+            "https://inside.fifa.com/fifa-world-ranking/GER?gender=men",
+        )
+        self.assertEqual(
+            status_rows["ratings_move"]["source_options"],
+            [
+                "https://www.bundesliga.com/example",
+                "https://inside.fifa.com/fifa-world-ranking/GER?gender=men",
+                "https://inside.fifa.com/fifa-world-ranking/CUW?gender=men",
+            ],
+        )
 
     def test_packet_preserves_numeric_pre_result_odds_snapshot(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -486,6 +515,15 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         packet_ids = {item.get("evidence_packet_id") for item in template["evidence"]}
         self.assertTrue(set(packet.REQUIRED_EVIDENCE_IDS).issubset(packet_ids))
         self.assertTrue(any(item.get("source_role") == "official_fixture" for item in template["evidence"]))
+        applied_by_id = {
+            item.get("evidence_packet_id"): item
+            for item in template["evidence"]
+            if item.get("evidence_packet_id")
+        }
+        self.assertIn(
+            "https://inside.fifa.com/fifa-world-ranking/GER?gender=men",
+            applied_by_id["ratings_move"]["source_options"],
+        )
 
     def test_main_applies_filled_packet_to_template(self):
         with tempfile.TemporaryDirectory() as tmpdir:
