@@ -591,6 +591,12 @@ def evidence_packet_path_for_template(state_dir: Path, template: dict[str, Any])
 
 def evidence_packet_next_capture_rows(packet: dict[str, Any], missing_ids: list[str]) -> list[dict[str, Any]]:
     missing = {str(item) for item in missing_ids}
+    reachability = packet.get("source_reachability") or {}
+    reachability_rows = {
+        str(row.get("id")): row
+        for row in reachability.get("rows") or []
+        if isinstance(row, dict)
+    }
     rows: list[dict[str, Any]] = []
     for row in (packet.get("capture_plan") or {}).get("rows") or []:
         if not isinstance(row, dict):
@@ -598,6 +604,23 @@ def evidence_packet_next_capture_rows(packet: dict[str, Any], missing_ids: list[
         item_id = str(row.get("id") or "")
         if item_id not in missing:
             continue
+        reachability_row = reachability_rows.get(item_id) or {}
+        reachable_options = set(str(option) for option in reachability_row.get("reachable_options") or [])
+        unreachable_options = set(str(option) for option in reachability_row.get("unreachable_options") or [])
+        source_options = []
+        for option in row.get("source_options") or []:
+            url = str(option)
+            if url == "local-cli":
+                status = "local"
+            elif url in reachable_options:
+                status = "reachable"
+            elif url in unreachable_options:
+                status = "unreachable"
+            elif reachability.get("checked"):
+                status = "not-probed"
+            else:
+                status = "unchecked"
+            source_options.append({"url": url, "status": status})
         marker_labels = []
         for marker in row.get("claim_must_include") or []:
             if isinstance(marker, dict) and marker.get("label"):
@@ -606,7 +629,8 @@ def evidence_packet_next_capture_rows(packet: dict[str, Any], missing_ids: list[
             "id": item_id,
             "source_role": row.get("source_role"),
             "primary_url": row.get("primary_url"),
-            "source_options_count": len(row.get("source_options") or []),
+            "source_options_count": len(source_options),
+            "source_options": source_options,
             "claim_template": row.get("claim_template"),
             "claim_marker_labels": marker_labels,
             "capture_utc_must_be_at_or_after": row.get("capture_utc_must_be_at_or_after"),

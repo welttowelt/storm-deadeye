@@ -2251,7 +2251,10 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                             "id": "official_result",
                             "source_role": "official_match_result",
                             "primary_url": "https://www.fifa.com/match",
-                            "source_options": ["https://www.fifa.com/match"],
+                            "source_options": [
+                                "https://www.fifa.com/match",
+                                "https://www.backup.example/match",
+                            ],
                             "claim_template": "FIFA shows final score Germany <score> Curacao.",
                             "claim_must_include": [
                                 {"label": "completion_marker"},
@@ -2268,6 +2271,13 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     "reachable_count": 9,
                     "unreachable_count": 0,
                     "advisory_only": True,
+                    "rows": [
+                        {
+                            "id": "official_result",
+                            "reachable_options": ["https://www.fifa.com/match"],
+                            "unreachable_options": ["https://www.backup.example/match"],
+                        }
+                    ],
                 },
             }), encoding="utf-8")
             templates = [
@@ -2295,6 +2305,14 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(packet_status["capture_plan_rows"], 1)
         self.assertEqual(packet_status["next_capture_rows"][0]["id"], "official_result")
         self.assertEqual(packet_status["next_capture_rows"][0]["source_role"], "official_match_result")
+        self.assertEqual(packet_status["next_capture_rows"][0]["source_options_count"], 2)
+        self.assertEqual(
+            packet_status["next_capture_rows"][0]["source_options"],
+            [
+                {"url": "https://www.fifa.com/match", "status": "reachable"},
+                {"url": "https://www.backup.example/match", "status": "unreachable"},
+            ],
+        )
         self.assertEqual(
             packet_status["next_capture_rows"][0]["claim_marker_labels"],
             ["completion_marker", "numeric_score_value"],
@@ -2754,8 +2772,17 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                             "id": "official_result",
                             "source_role": "official_match_result",
                             "primary_url": "https://www.fifa.com/match",
+                            "source_options": ["https://www.fifa.com/match"],
                             "claim_template": "FIFA shows final score Germany <score> Curacao.",
                             "claim_must_include": [{"label": "completion_marker"}],
+                        },
+                        {
+                            "id": "quote_scout",
+                            "source_role": "deadeye_quote_scout",
+                            "primary_url": "local-cli",
+                            "source_options": ["local-cli"],
+                            "claim_template": "Fresh quote scout runner_pass_rows <count>.",
+                            "claim_must_include": [{"label": "runner_pass_rows"}],
                         }
                     ]
                 },
@@ -2764,6 +2791,13 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     "reachable_count": 9,
                     "unreachable_count": 0,
                     "advisory_only": True,
+                    "rows": [
+                        {
+                            "id": "official_result",
+                            "reachable_options": ["https://www.fifa.com/match"],
+                            "unreachable_options": [],
+                        }
+                    ],
                 },
             }), encoding="utf-8")
             mailbox = Path(tmpdir) / "mailbox.md"
@@ -2803,6 +2837,9 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertIn("wait_for_result_window", text)
         self.assertIn("official_result", text)
         self.assertIn("next_capture_rows", text)
+        self.assertIn("source_options", text)
+        self.assertIn("reachable", text)
+        self.assertIn("local", text)
         self.assertIn("official_match_result", text)
         self.assertIn("Message to scout_claude", text)
         self.assertIn("final-whistle score", text)
