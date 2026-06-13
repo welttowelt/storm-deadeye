@@ -58,6 +58,7 @@ RANKING_TIME_WINDOWS = (
 SMOKE_SCRIPT_ATTEMPTS = 2
 SMOKE_SCRIPT_RETRY_DELAY_SECONDS = 5.0
 MARKET_STATE_FINGERPRINT_VERSION = 2
+WATCHED_TEMPLATE_MARKET_STATE_FINGERPRINT_VERSION = 1
 MARKET_FINGERPRINT_KEYS = {
     "address",
     "backing",
@@ -1370,6 +1371,90 @@ def market_state_refresh_summary(
     }
 
 
+def watched_template_market_groups(templates: list[dict[str, Any]]) -> dict[str, list[str]]:
+    groups: dict[str, list[str]] = {}
+    for template in templates:
+        if not isinstance(template, dict):
+            continue
+        if not template.get("result_not_before_utc"):
+            continue
+        address = canonical_address(template.get("market"))
+        if not address:
+            continue
+        template_id = str(template.get("id") or template.get("file") or address)
+        groups.setdefault(address, []).append(template_id)
+    return {address: sorted(set(ids)) for address, ids in sorted(groups.items())}
+
+
+def fetch_watched_template_market_states(templates: list[dict[str, Any]]) -> dict[str, Any]:
+    watched: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for address, template_ids in watched_template_market_groups(templates).items():
+        try:
+            market_state = deadeye_json(["markets", "show", address], timeout=45, attempts=3)
+        except Exception as exc:  # noqa: BLE001 - read-only watch failures should not stop the loop.
+            failures.append({
+                "address": address,
+                "template_ids": template_ids,
+                "error": str(exc)[:240],
+            })
+            continue
+        watched.append({
+            "address": address,
+            "template_ids": template_ids,
+            "market": market_state,
+        })
+    return {"markets": watched, "failures": failures}
+
+
+def watched_template_market_state_key(watched_markets: list[dict[str, Any]]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for watched in watched_markets:
+        if not isinstance(watched, dict):
+            continue
+        address = canonical_address(watched.get("address"))
+        if not address:
+            continue
+        items.append({
+            "address": address,
+            "template_ids": sorted(str(item) for item in (watched.get("template_ids") or [])),
+            "market": scrub_market_fingerprint_value(watched.get("market") or {}),
+        })
+    items.sort(key=lambda item: str(item.get("address")))
+    return {
+        "version": WATCHED_TEMPLATE_MARKET_STATE_FINGERPRINT_VERSION,
+        "markets": items,
+        "total": len(items),
+    }
+
+
+def watched_template_market_state_refresh_summary(
+    previous_key: dict[str, Any] | None,
+    current_key: dict[str, Any] | None,
+) -> dict[str, Any]:
+    previous_items = {
+        str(item.get("address")): item
+        for item in (previous_key or {}).get("markets", [])
+        if isinstance(item, dict)
+    }
+    current_items = {
+        str(item.get("address")): item
+        for item in (current_key or {}).get("markets", [])
+        if isinstance(item, dict)
+    }
+    changed = sorted(
+        address
+        for address in set(previous_items) | set(current_items)
+        if previous_items.get(address) != current_items.get(address)
+    )
+    return {
+        "previous_total": (previous_key or {}).get("total"),
+        "total": (current_key or {}).get("total"),
+        "changed_markets": changed[:20],
+        "changed_markets_truncated": len(changed) > 20,
+    }
+
+
 def post_result_scout_refresh_key(due_templates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     key: list[dict[str, Any]] = []
     for item in due_templates:
@@ -1388,6 +1473,7 @@ def maybe_refresh_active_portfolio_scout(
     max_age_minutes: float,
     due_templates: list[dict[str, Any]],
     markets: list[dict[str, Any]] | None = None,
+    watched_template_market_states: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     due_key = post_result_scout_refresh_key(due_templates)
     due_state_key = "last_post_result_scout_refresh_key"
@@ -1404,7 +1490,27 @@ def maybe_refresh_active_portfolio_scout(
         and previous_market_version == MARKET_STATE_FINGERPRINT_VERSION
         and previous_market_key != market_key
     )
-    force_refresh = force_due_refresh or force_market_refresh
+    watched_key = (
+        watched_template_market_state_key(watched_template_market_states)
+        if watched_template_market_states is not None
+        else None
+    )
+    watched_state_key = "last_watched_template_market_state_key"
+    if watched_key is not None and not watched_key.get("markets"):
+        state.pop(watched_state_key, None)
+    previous_watched_key = state.get(watched_state_key)
+    previous_watched_version = (
+        (previous_watched_key or {}).get("version")
+        if isinstance(previous_watched_key, dict)
+        else None
+    )
+    force_watched_refresh = (
+        bool(watched_key and watched_key.get("markets"))
+        and previous_watched_key is not None
+        and previous_watched_version == WATCHED_TEMPLATE_MARKET_STATE_FINGERPRINT_VERSION
+        and previous_watched_key != watched_key
+    )
+    force_refresh = force_due_refresh or force_market_refresh or force_watched_refresh
     refresh = refresh_active_portfolio_scout_if_stale(
         state_dir,
         max_age_minutes=max_age_minutes,
@@ -1417,6 +1523,12 @@ def maybe_refresh_active_portfolio_scout(
     if force_market_refresh:
         reasons.append("market_state_shift")
         refresh["market_state_shift"] = market_state_refresh_summary(previous_market_key, market_key)
+    if force_watched_refresh:
+        reasons.append("watched_template_market_state_shift")
+        refresh["watched_template_market_state_shift"] = watched_template_market_state_refresh_summary(
+            previous_watched_key,
+            watched_key,
+        )
     if reasons:
         refresh["reasons"] = reasons
         refresh["reason"] = reasons[0] if len(reasons) == 1 else "+".join(reasons)
@@ -1425,6 +1537,8 @@ def maybe_refresh_active_portfolio_scout(
             state[due_state_key] = due_key
         if market_key:
             state[market_state_key] = market_key
+        if watched_key and watched_key.get("markets"):
+            state[watched_state_key] = watched_key
     return refresh
 
 
@@ -1459,7 +1573,8 @@ def scout_key(summary: dict[str, Any]) -> dict[str, Any] | None:
 def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
     refresh = summary.get("active_portfolio_scout_refresh") or {}
     reasons = refresh.get("reasons") or []
-    if refresh.get("status") != "failed" and "market_state_shift" in reasons:
+    signal_reasons = {"market_state_shift", "watched_template_market_state_shift"}
+    if refresh.get("status") != "failed" and signal_reasons.intersection(reasons):
         return {
             "status": refresh.get("status"),
             "reasons": reasons,
@@ -1682,6 +1797,8 @@ def format_active_portfolio_scout_refresh(summary: dict[str, Any]) -> str:
         prefix_parts.append("post-result evidence due")
     if "market_state_shift" in reasons:
         prefix_parts.append("market state shift")
+    if "watched_template_market_state_shift" in reasons:
+        prefix_parts.append("watched template market state shift")
     prefix = "; ".join(prefix_parts)
     prefix = f"{prefix}; " if prefix else ""
     if status == "fresh":
@@ -1890,13 +2007,20 @@ def main(argv: list[str] | None = None) -> int:
             raise LoopError("account show did not return trader and indexer URL")
         monitoring = monitor(indexer_url, trader)
         if args.refresh_active_portfolio_scout:
+            watched_template_market_state_reads = fetch_watched_template_market_states(templates)
+            watched_template_market_states = watched_template_market_state_reads["markets"]
+            if not watched_template_market_states and watched_template_market_state_reads.get("failures"):
+                watched_template_market_states = None
             scout_refresh = maybe_refresh_active_portfolio_scout(
                 state,
                 args.state.parent,
                 max_age_minutes=args.active_portfolio_scout_max_age_minutes,
                 due_templates=due_templates,
                 markets=monitoring["markets"]["items"],
+                watched_template_market_states=watched_template_market_states,
             )
+            if watched_template_market_state_reads.get("failures"):
+                scout_refresh["watched_template_market_state_failures"] = watched_template_market_state_reads["failures"]
         template_promotion = None
         if args.promote_ready_templates:
             template_promotion = promote_ready_templates(args.templates, args.candidates, append=True)

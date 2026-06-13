@@ -1014,6 +1014,198 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertFalse(refresh.call_args.kwargs["force"])
         self.assertNotIn("reason", repeat)
 
+    def test_watched_template_market_groups_dedupes_template_markets(self):
+        templates = [
+            {"id": "germany-a", "market": "0x001", "result_not_before_utc": "2026-06-14T20:00:00Z"},
+            {"id": "germany-b", "market": "0x1", "result_not_before_utc": "2026-06-14T20:00:00Z"},
+            {"id": "no-window", "market": "0x2"},
+            {"id": "missing-market", "result_not_before_utc": "2026-06-15T20:00:00Z"},
+        ]
+
+        groups = loop.watched_template_market_groups(templates)
+
+        self.assertEqual(groups, {"0x1": ["germany-a", "germany-b"]})
+
+    def test_fetch_watched_template_market_states_is_read_only_and_nonfatal(self):
+        templates = [
+            {"id": "germany", "market": "0x01", "result_not_before_utc": "2026-06-14T20:00:00Z"},
+            {"id": "france", "market": "0x02", "result_not_before_utc": "2026-06-16T22:00:00Z"},
+        ]
+
+        def fake_deadeye_json(args, *, timeout=60, attempts=1):
+            if args == ["markets", "show", "0x1"]:
+                return {"state": {"mu": 3.1, "sigma": 0.2}}
+            if args == ["markets", "show", "0x2"]:
+                raise loop.LoopError("temporary read failure")
+            raise AssertionError(args)
+
+        with mock.patch.object(loop, "deadeye_json", side_effect=fake_deadeye_json):
+            result = loop.fetch_watched_template_market_states(templates)
+
+        self.assertEqual(len(result["markets"]), 1)
+        self.assertEqual(result["markets"][0]["address"], "0x1")
+        self.assertEqual(result["markets"][0]["template_ids"], ["germany"])
+        self.assertEqual(len(result["failures"]), 1)
+        self.assertEqual(result["failures"][0]["address"], "0x2")
+
+    def test_watched_template_market_state_key_ignores_volatile_fields(self):
+        watched_a = [
+            {
+                "address": "0x01",
+                "template_ids": ["germany"],
+                "market": {
+                    "state": {
+                        "mu": 3.1,
+                        "sigma": 0.2,
+                        "blockNumber": 100,
+                        "updatedAt": "2026-06-13T00:00:00Z",
+                    },
+                    "transactionHash": "0xabc",
+                },
+            }
+        ]
+        watched_b = json.loads(json.dumps(watched_a))
+        watched_b[0]["market"]["state"]["blockNumber"] = 101
+        watched_b[0]["market"]["state"]["updatedAt"] = "2026-06-13T01:00:00Z"
+        watched_b[0]["market"]["transactionHash"] = "0xdef"
+
+        key_a = loop.watched_template_market_state_key(watched_a)
+        key_b = loop.watched_template_market_state_key(watched_b)
+
+        self.assertEqual(key_a, key_b)
+        serialized = json.dumps(key_a, sort_keys=True)
+        self.assertNotIn("blockNumber", serialized)
+        self.assertNotIn("updatedAt", serialized)
+        self.assertNotIn("transactionHash", serialized)
+
+    def test_first_watched_template_market_state_records_baseline_without_force(self):
+        watched = [
+            {
+                "address": "0x01",
+                "template_ids": ["germany"],
+                "market": {"state": {"mu": 3.1, "sigma": 0.2}},
+            }
+        ]
+        state = {}
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                watched_template_market_states=watched,
+            )
+
+        self.assertEqual(result["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertEqual(
+            state["last_watched_template_market_state_key"],
+            loop.watched_template_market_state_key(watched),
+        )
+
+    def test_empty_watched_template_market_states_clear_stale_baseline(self):
+        state = {
+            "last_watched_template_market_state_key": {
+                "version": loop.WATCHED_TEMPLATE_MARKET_STATE_FINGERPRINT_VERSION,
+                "markets": [{"address": "0x1"}],
+                "total": 1,
+            }
+        }
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ):
+            loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                watched_template_market_states=[],
+            )
+
+        self.assertNotIn("last_watched_template_market_state_key", state)
+
+    def test_unavailable_watched_template_market_states_preserve_baseline(self):
+        old_key = {
+            "version": loop.WATCHED_TEMPLATE_MARKET_STATE_FINGERPRINT_VERSION,
+            "markets": [{"address": "0x1"}],
+            "total": 1,
+        }
+        state = {"last_watched_template_market_state_key": old_key}
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ):
+            loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                watched_template_market_states=None,
+            )
+
+        self.assertEqual(state["last_watched_template_market_state_key"], old_key)
+
+    def test_watched_template_market_state_change_forces_scout_refresh_once(self):
+        watched = [
+            {
+                "address": "0x01",
+                "template_ids": ["germany"],
+                "market": {"state": {"mu": 3.1, "sigma": 0.2}},
+            }
+        ]
+        changed = json.loads(json.dumps(watched))
+        changed[0]["market"]["state"]["mu"] = 3.2
+        state = {"last_watched_template_market_state_key": loop.watched_template_market_state_key(watched)}
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "refreshed", "attempted": True},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                watched_template_market_states=changed,
+            )
+
+        self.assertEqual(result["reason"], "watched_template_market_state_shift")
+        self.assertEqual(result["reasons"], ["watched_template_market_state_shift"])
+        self.assertEqual(result["watched_template_market_state_shift"]["changed_markets"], ["0x1"])
+        self.assertTrue(refresh.call_args.kwargs["force"])
+        self.assertEqual(
+            state["last_watched_template_market_state_key"],
+            loop.watched_template_market_state_key(changed),
+        )
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            repeat = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                watched_template_market_states=changed,
+            )
+
+        self.assertEqual(repeat["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertNotIn("reason", repeat)
+
     def test_market_state_refresh_failure_retries_later(self):
         markets = [
             {
@@ -1064,6 +1256,28 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(
             key["active_portfolio_scout_refresh"],
             {"status": "refreshed", "reasons": ["market_state_shift"]},
+        )
+
+    def test_summary_key_records_watched_template_market_state_forced_scout_refresh(self):
+        summary = {
+            "rankings": {
+                "overall": {"rank": 10, "gap_to_first": 915.922009, "pnl": 79.244219},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "gas_tier": "ok",
+            "active_portfolio_scout_refresh": {
+                "status": "refreshed",
+                "reasons": ["watched_template_market_state_shift"],
+            },
+        }
+
+        key = loop.summary_key(summary)
+
+        self.assertEqual(
+            key["active_portfolio_scout_refresh"],
+            {"status": "refreshed", "reasons": ["watched_template_market_state_shift"]},
         )
 
     def test_post_result_scout_refresh_key_is_stable(self):
