@@ -124,6 +124,18 @@ python3 scripts/storm_worldcup_evidence_packet.py \
   --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
 ```
 
+After filling every required evidence row, validate the packet before copying
+anything into the template:
+
+```bash
+python3 scripts/storm_worldcup_evidence_packet.py \
+  --validate-packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json \
+  --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
+```
+
+`capture_readiness.ready_for_template_update` must be `true` before any template
+edit. This still does not approve queueing or execution.
+
 Read-only refresh sequence:
 
 ```bash

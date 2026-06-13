@@ -18,6 +18,17 @@ import storm_deadeye_loop as loop
 
 
 DEFAULT_GERMANY_TEMPLATE = loop.DEFAULT_TEMPLATES / "germany-post-result-snap-template-20260612.json"
+REQUIRED_EVIDENCE_IDS = (
+    "official_result",
+    "confirmed_lineups",
+    "injuries_suspensions",
+    "odds_move",
+    "ratings_move",
+    "market_state",
+    "quote_scout",
+)
+CAPTURED_STATUSES = {"captured", "complete", "filled"}
+PLACEHOLDER_VALUES = {"", "TO_FILL", "<MARKET>"}
 
 
 def utc_now() -> str:
@@ -141,6 +152,100 @@ def evidence_placeholders(template: dict[str, Any]) -> list[dict[str, Any]]:
     ]
 
 
+def is_placeholder(value: Any) -> bool:
+    return str(value or "").strip().upper() in PLACEHOLDER_VALUES
+
+
+def valid_capture_utc(value: Any) -> bool:
+    if is_placeholder(value):
+        return False
+    try:
+        loop.parse_utc_timestamp(value)
+    except (TypeError, ValueError):
+        return False
+    return True
+
+
+def result_window_open_from_packet(packet: dict[str, Any], *, now: str | None = None) -> bool | None:
+    template = packet.get("template") or {}
+    raw_window = template.get("result_not_before_utc")
+    if not raw_window:
+        return None
+    try:
+        return loop.parse_utc_timestamp(raw_window) <= loop.parse_utc_timestamp(now or utc_now())
+    except (TypeError, ValueError):
+        return None
+
+
+def evidence_item_blockers(item: dict[str, Any]) -> list[str]:
+    item_id = str(item.get("id") or "unknown")
+    blockers: list[str] = []
+    if str(item.get("status") or "").lower() not in CAPTURED_STATUSES:
+        blockers.append(f"{item_id}:status_not_captured")
+    if item.get("post_result") is not True:
+        blockers.append(f"{item_id}:post_result_not_true")
+    if is_placeholder(item.get("claim")) or str(item.get("claim") or "").strip().upper().startswith("TO_FILL"):
+        blockers.append(f"{item_id}:claim_placeholder")
+    if is_placeholder(item.get("url")):
+        blockers.append(f"{item_id}:url_placeholder")
+    if not valid_capture_utc(item.get("capture_utc")):
+        blockers.append(f"{item_id}:capture_utc_invalid")
+    if item_id == "official_result" and str(item.get("source_role") or "") != "official_match_result":
+        blockers.append("official_result:source_role_not_official_match_result")
+    return blockers
+
+
+def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict[str, Any]:
+    validated_at = now or utc_now()
+    blockers: list[str] = []
+    if not packet.get("result_window_open"):
+        blockers.append("result_window_not_open")
+    by_id: dict[str, dict[str, Any]] = {}
+    duplicate_ids: set[str] = set()
+    for item in packet.get("evidence_placeholders") or []:
+        if not isinstance(item, dict):
+            blockers.append("evidence_item_not_object")
+            continue
+        item_id = str(item.get("id") or "")
+        if not item_id:
+            blockers.append("evidence_item_missing_id")
+            continue
+        if item_id in by_id:
+            duplicate_ids.add(item_id)
+        by_id[item_id] = item
+    for item_id in sorted(duplicate_ids):
+        blockers.append(f"{item_id}:duplicate_id")
+    captured_ids: list[str] = []
+    item_blockers: dict[str, list[str]] = {}
+    for item_id in REQUIRED_EVIDENCE_IDS:
+        item = by_id.get(item_id)
+        if not item:
+            blockers.append(f"{item_id}:missing")
+            continue
+        current_blockers = evidence_item_blockers(item)
+        if current_blockers:
+            item_blockers[item_id] = current_blockers
+            blockers.extend(current_blockers)
+            continue
+        captured_ids.append(item_id)
+        try:
+            if loop.parse_utc_timestamp(item.get("capture_utc")) > loop.parse_utc_timestamp(validated_at):
+                blocker = f"{item_id}:capture_utc_after_packet_time"
+                item_blockers.setdefault(item_id, []).append(blocker)
+                blockers.append(blocker)
+                captured_ids.remove(item_id)
+        except (TypeError, ValueError):
+            pass
+    return {
+        "validated_at": validated_at,
+        "required_ids": list(REQUIRED_EVIDENCE_IDS),
+        "captured_ids": captured_ids,
+        "ready_for_template_update": not blockers,
+        "blockers": sorted(set(blockers)),
+        "item_blockers": item_blockers,
+    }
+
+
 def read_only_commands(template: dict[str, Any]) -> list[str]:
     market = template.get("market") or "<market>"
     return [
@@ -148,6 +253,7 @@ def read_only_commands(template: dict[str, Any]) -> list[str]:
         f"deadeye doctor --market {market} --output plain",
         "python3 scripts/storm_gap_analyzer.py --preset active-portfolio-20260612 --budget 4000 --budget-ladder --quote-only --sort-by ev",
         "python3 scripts/storm_deadeye_loop.py --run-smoke --mailbox --refresh-active-portfolio-scout --active-portfolio-scout-max-age-minutes 0",
+        "python3 scripts/storm_worldcup_evidence_packet.py --validate-packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json",
     ]
 
 
@@ -165,7 +271,7 @@ def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, An
         except (TypeError, ValueError):
             window_open = False
     blockers = status.get("blockers") or []
-    return {
+    packet = {
         "generated_at": generated_at,
         "packet_status": "draft_post_result_evidence_packet",
         "template": {
@@ -189,25 +295,49 @@ def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, An
         "source_urls": source_urls(template),
         "evidence_placeholders": evidence_placeholders(template),
         "read_only_commands_after_result": read_only_commands(template),
+        "template_update_requirements_after_capture": [
+            "copy captured evidence rows into the source template",
+            "set world_cup_post_result true only after official_result passes validation",
+            "remove evidence_url_to_fill placeholders from template evidence",
+            "keep template disabled until fresh quote, dry-run, concentration, gas, XP, and trade-cap gates pass",
+            "promote only through storm_template_promoter and the Storm Deadeye runner",
+        ],
         "non_goals": [
             "does not approve pre-result queueing",
             "does not approve dry-run or execution",
             "does not bypass fresh smoke, doctor, quote, gas, XP, concentration, or trade caps",
         ],
     }
+    packet["capture_readiness"] = capture_readiness(packet, now=generated_at)
+    return packet
+
+
+def validate_packet_file(packet_path: Path, *, now: str | None = None) -> dict[str, Any]:
+    packet = loop.load_json(packet_path, {})
+    if not isinstance(packet, dict):
+        raise loop.LoopError(f"{packet_path} did not contain a JSON object")
+    window_open = result_window_open_from_packet(packet, now=now)
+    if window_open is not None:
+        packet["result_window_open"] = window_open
+    packet["capture_readiness"] = capture_readiness(packet, now=now)
+    return packet
 
 
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a World Cup post-result evidence packet.")
     parser.add_argument("--template", type=Path, default=DEFAULT_GERMANY_TEMPLATE)
     parser.add_argument("--output", type=Path, help="Write the packet to this JSON file instead of stdout.")
+    parser.add_argument("--validate-packet", type=Path, help="Validate an already filled packet instead of building a new one.")
     parser.add_argument("--now", help="UTC timestamp override for tests/backfills, e.g. 2026-06-14T20:05:00Z.")
     return parser
 
 
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
-    packet = build_packet(args.template, now=args.now)
+    if args.validate_packet:
+        packet = validate_packet_file(args.validate_packet, now=args.now)
+    else:
+        packet = build_packet(args.template, now=args.now)
     text = json.dumps(packet, indent=2, sort_keys=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
