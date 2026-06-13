@@ -1,4 +1,5 @@
 #!/usr/bin/env python3
+import io
 import json
 import sys
 import tempfile
@@ -631,6 +632,119 @@ class StormDeadeyeLoopTests(unittest.TestCase):
 
         self.assertTrue(loop.mailbox_keys_equivalent(base, mirrored))
 
+    def test_mailbox_key_normalizes_resolved_market_state_refresh(self):
+        base = {
+            "rank": 17,
+            "gap": 991.211,
+            "pnl": 8.1554,
+            "gas_tier": "ok",
+            "unhealthy_filters": [],
+            "unhealthy_time_windows": [],
+            "unhealthy_filter_time_windows": [],
+            "mirrored_filters": [],
+            "mirrored_time_windows": [],
+            "mirrored_filter_time_windows": [],
+            "healthy_view_ranks": {"filters": {}, "time_windows": {}, "filter_time_windows": {}},
+            "active_portfolio_scout": {
+                "active_tradeable": 11,
+                "covered": 11,
+                "coverage_complete": True,
+                "rows": 66,
+                "ev_floor_rows": 18,
+                "runner_pass_rows": 0,
+                "blocked_quote_rows": 18,
+                "runner_pass_signals": [],
+            },
+            "processed": [],
+            "promoted_templates": [],
+            "post_result_evidence_due": [],
+            "pre_window_evidence_regressions": [],
+            "candidate_generation": None,
+        }
+        shifted = json.loads(json.dumps(base))
+        shifted["active_portfolio_scout_refresh"] = {
+            "status": "refreshed",
+            "reasons": ["market_state_shift", "world_cup_market_state_shift"],
+        }
+        fresh = json.loads(json.dumps(base))
+        fresh["active_portfolio_scout_refresh"] = None
+
+        self.assertFalse(loop.mailbox_keys_equivalent(base, shifted))
+        self.assertTrue(loop.mailbox_keys_equivalent(shifted, fresh))
+
+    def test_candidate_generation_plan_creates_cap_override_task(self):
+        summary = {
+            "rankings": {
+                "overall": {"rank": 18, "gap_to_first": 991.210965, "pnl": 8.155375},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "templates": [],
+            "active_portfolio_scout": {
+                "generated_at": "2026-06-13T20:42:56Z",
+                "coverage": {
+                    "active_tradeable_markets": 11,
+                    "covered_active_tradeable_markets": 11,
+                    "coverage_complete": True,
+                },
+                "rows": 66,
+                "ev_floor_rows": 18,
+                "runner_pass_rows": 0,
+                "blocked_quote_rows": 18,
+                "blocked_quote_signals": [
+                    {
+                        "label": "CPI June Cleveland nowcast wider",
+                        "budget": 250,
+                        "expected_value": 65.975165,
+                        "blockers": [
+                            "market concentration cap: existing_lots=2, post_trade_lots=3, cap=2",
+                            "settlement concentration cap: existing_lots=2, post_trade_lots=3, cap=2",
+                        ],
+                    }
+                ],
+            },
+        }
+        state = {}
+
+        plan = loop.build_candidate_generation_plan(summary, state)
+
+        self.assertEqual(plan["status"], "research_required")
+        self.assertEqual(plan["zero_runner_pass_streak"], 1)
+        self.assertEqual(plan["tasks"][0]["kind"], "cap_override_review")
+        self.assertTrue(plan["tasks"][0]["requires_approval"])
+        self.assertEqual(state["candidate_generation"]["zero_runner_pass_streak"], 1)
+        key = loop.candidate_generation_key(plan)
+        self.assertEqual(key["tasks"][0]["kind"], "cap_override_review")
+        self.assertNotIn("expected_value", json.dumps(key))
+
+    def test_leaderboard_recovery_plan_tracks_unhealthy_filters(self):
+        rankings = {
+            "filters": {
+                "world-cup": {"healthy": False, "status": 503},
+                "economics": {"healthy": True, "rank": 1, "pnl": 10, "gap_to_first": 0},
+            },
+            "time_windows": {
+                "last-24h": {"healthy": False, "status": "mirrored", "mirror_of": "overall"},
+            },
+            "filter_time_windows": {},
+        }
+
+        plan = loop.leaderboard_recovery_plan(rankings)
+
+        self.assertEqual(plan["status"], "probe_after_cooldown")
+        self.assertEqual(plan["healthy_distinct_count"], 1)
+        self.assertEqual(plan["unhealthy_filters"], ["world-cup"])
+        self.assertEqual(plan["mirrored_time_windows"], ["last-24h"])
+
+    def test_leaderboard_recovery_plan_marks_overall_only(self):
+        rankings = {"filters": {}, "time_windows": {}, "filter_time_windows": {}}
+
+        plan = loop.leaderboard_recovery_plan(rankings)
+
+        self.assertEqual(plan["status"], "overall_only")
+        self.assertEqual(plan["healthy_distinct_count"], 0)
+
     def test_summary_key_ignores_external_smoke_floor_telemetry(self):
         summary = {
             "rankings": {
@@ -672,6 +786,74 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         }
 
         self.assertEqual(base_key, loop.summary_key(summary))
+
+    def test_read_only_summary_does_not_write_state_events_or_packets(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            state_path = root / "state.json"
+            events_path = root / "events.jsonl"
+            candidates_path = root / "candidates.jsonl"
+            output = io.StringIO()
+
+            def fake_account_snapshot():
+                return {
+                    "account": {
+                        "address": "0x4418f",
+                        "indexer_url": "https://indexer.test",
+                        "strk_balance_strk": 1042.0,
+                    },
+                    "collateral": {"account": "0x4418f", "balance_xp": 19832.0},
+                }
+
+            def fake_monitor(_indexer_url, _trader, *, ranking_probe_cache):
+                ranking_probe_cache["mutated_in_memory"] = True
+                return {
+                    "markets": {"items": [], "total": 0, "active_tradeable": 0},
+                    "rankings": {
+                        "overall": {
+                            "rank": 18,
+                            "pnl": 8.155375,
+                            "gap_to_first": 991.210965,
+                            "top_pnl": 999.36634,
+                        },
+                        "filters": {},
+                        "time_windows": {},
+                        "filter_time_windows": {},
+                    },
+                    "positions": [],
+                    "stats": {"totalPnl": 8.155375},
+                }
+
+            with (
+                mock.patch.object(loop, "account_snapshot", side_effect=fake_account_snapshot),
+                mock.patch.object(loop, "monitor", side_effect=fake_monitor),
+                mock.patch.object(loop, "run_smoke", return_value={"ok": True, "version": "deadeye 0.1.20"}),
+                mock.patch.object(loop, "process_candidates", side_effect=AssertionError("should not process")),
+                mock.patch.object(
+                    loop,
+                    "maybe_refresh_pre_window_evidence_sources",
+                    side_effect=AssertionError("should not refresh packets"),
+                ),
+                mock.patch("sys.stdout", output),
+            ):
+                rc = loop.main([
+                    "--read-only-summary",
+                    "--run-smoke",
+                    "--state",
+                    str(state_path),
+                    "--events",
+                    str(events_path),
+                    "--candidates",
+                    str(candidates_path),
+                ])
+
+            self.assertEqual(rc, 0)
+            self.assertFalse(state_path.exists())
+            self.assertFalse(events_path.exists())
+            payload = json.loads(output.getvalue())
+            self.assertTrue(payload["read_only_summary"])
+            self.assertEqual(payload["pre_window_evidence_source_refresh"]["status"], "skipped_read_only_summary")
+            self.assertEqual(payload["candidate_generation"]["status"], "missing_scout")
 
     def test_mailbox_key_records_real_filtered_board_rank_change(self):
         base = {

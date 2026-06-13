@@ -25,6 +25,10 @@ The climb runs in this order:
 Live execution is only for Storm-vetted leaderboard candidates. The runner does
 not invent forecasts; pods or agents queue candidates with sources, rationale,
 belief, sigma, budget, and minimum EV.
+When the runner has zero passable scout rows, it now emits a sanitized
+`candidate_generation` advisory plan. That plan can assign research, cap-review,
+post-result evidence, or broader scout work, but it never creates executable
+trades or bypasses the candidate queue.
 
 The loop is implemented by `scripts/storm_deadeye_loop.py`. It is an operator
 runner, not a forecasting oracle: it monitors leaderboards every tick and can
@@ -53,6 +57,9 @@ Do more:
 - Treat runner-pass rows as the signal. A quote-only EV row is diagnostic until
   it clears evidence, quote, dry-run, concentration, gas, XP, and trade-cap
   gates.
+- When `runner_pass_rows=0`, use `candidate_generation.tasks` as the next work
+  queue: cap override package, post-result evidence capture, or broader
+  read-only scouting.
 
 Do less:
 
@@ -93,6 +100,10 @@ operator-only telemetry; a `queue_ready` template still has to be copied into
 the candidate queue and pass fresh doctor, quote, dry-run, gas, XP,
 concentration, and EV gates before any execute path.
 Normal loop stdout uses the same sanitized public summary.
+The public summary also exposes `leaderboard_recovery_plan`, which says whether
+filtered boards are healthy, mirrored, or waiting for cooldown re-probe, and
+`candidate_generation`, which turns zero-pass scout loops into concrete
+research or policy-review tasks.
 Templates whose stored quote EV is below their `min_expected_value` stay blocked
 as `template_ev_below_floor` until a fresh analysis supports promotion.
 Templates also need a durable promotion status, currently `runner_candidate` or
@@ -155,6 +166,18 @@ recovered distinct boards without spending every tick on fake or unavailable
 views. The sanitized summary exposes `ranking_probe_cooldown` skipped counts;
 cooldown skips do not create mailbox updates.
 
+For pure audit or observer runs, use:
+
+```bash
+python3 scripts/storm_deadeye_loop.py --run-smoke --read-only-summary
+```
+
+`--read-only-summary` prints the same sanitized live summary but writes no local
+state, event rows, evidence packets, active-scout files, mailbox entries,
+candidate queue entries, or trade journal rows. It is intentionally
+incompatible with `--execute`, `--mailbox`, `--promote-ready-templates`, and
+`--refresh-active-portfolio-scout`.
+
 When the external read-only smoke script is present, the runner allows one
 retry before failing the tick. External and built-in smoke must report
 `deadeye >= 0.1.20`; stale or missing smoke versions fail closed before any
@@ -207,6 +230,35 @@ post-result repricing can trigger a scout even if filtered leaderboard views are
 still mirrored or unavailable. A World Cup market-state read failure is treated
 as a health regression for the mailbox-change key; routine fresh/refreshed scout
 timestamps still stay quiet.
+
+## Candidate Generation Advisory
+
+`candidate_generation` is the loop's answer to stalled monitoring. It is
+advisory only and is safe to include in routine summaries because its mailbox
+key ignores volatile counters and keeps only stable task shape.
+
+Statuses:
+
+- `missing_scout`: run or refresh the active-portfolio scout before deciding.
+- `runner_candidates_available`: review runner-pass rows and queue only records
+  with full evidence and budget.
+- `research_required`: no runner-pass rows exist; follow the generated tasks.
+
+Task kinds:
+
+- `cap_override_review`: a positive-EV signal is blocked by concentration caps.
+  Prepare an RCI/Sceptic/Oli override package or stand the signal down until
+  lots settle.
+- `post_result_evidence_scout`: a World Cup quote needs official post-result
+  evidence before any template promotion.
+- `template_window_scout`: a known template window is next; capture evidence
+  and re-score after the result window opens.
+- `broaden_scout`: current presets are too narrow; add or run broader read-only
+  gap-analyzer probes.
+
+The advisory plan does not append to `candidates.jsonl`, does not call
+`deadeye trade`, and does not relax concentration, evidence, Claude-review, gas,
+XP, EV, or trade-cap gates.
 
 ## Candidate Queue
 

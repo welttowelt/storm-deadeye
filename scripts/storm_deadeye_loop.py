@@ -41,6 +41,7 @@ DEFAULT_PRE_WINDOW_SOURCE_REACHABILITY_MAX_AGE_HOURS = 24.0
 DEFAULT_PRE_WINDOW_SOURCE_TIMEOUT_SECONDS = 8.0
 NON_OVERALL_RANKING_PROBE_COOLDOWN_SECONDS = 3600
 ACTIVE_PORTFOLIO_SCOUT_BUDGET = 4000.0
+MAX_CANDIDATE_GENERATION_TASKS = 6
 
 XP_RESERVE = 1000.0
 XP_LADDER = [100.0, 250.0, 500.0, 1000.0, 2000.0, 4000.0]
@@ -961,6 +962,22 @@ def promote_ready_templates(templates_dir: Path, candidates_path: Path, *, appen
         })
 
     return {"append": append, "promoted": promoted, "skipped": skipped}
+
+
+def parse_int(value: Any, default: int = 0) -> int:
+    try:
+        return int(value)
+    except (TypeError, ValueError):
+        return default
+
+
+def rounded_float(value: Any, digits: int = 4) -> float | None:
+    if value is None:
+        return None
+    try:
+        return round(float(value), digits)
+    except (TypeError, ValueError):
+        return None
 
 
 def account_snapshot() -> dict[str, Any]:
@@ -1994,6 +2011,169 @@ def latest_active_portfolio_scout(state_dir: Path) -> dict[str, Any] | None:
     return None
 
 
+def candidate_generation_task_for_blocked_signal(signal: dict[str, Any]) -> dict[str, Any]:
+    label = str(signal.get("label") or "unlabeled-signal")
+    blockers = [str(item) for item in (signal.get("blockers") or [])]
+    blocker_text = " ".join(blockers).lower()
+    expected_value = rounded_float(signal.get("expected_value"))
+    if "concentration cap" in blocker_text:
+        kind = "cap_override_review"
+        action = (
+            "prepare RCI/Sceptic/Oli cap-override package or stand this signal down "
+            "until existing lots settle"
+        )
+        requires_approval = True
+    elif "world cup" in blocker_text and "post-result evidence" in blocker_text:
+        kind = "post_result_evidence_scout"
+        action = (
+            "assign scout_claude final-whistle result, lineup, injury, odds, ratings, "
+            "and quote-impact capture before queueing"
+        )
+        requires_approval = False
+    elif "below" in blocker_text and "floor" in blocker_text:
+        kind = "ev_floor_watch"
+        action = "watch for market movement or evidence that lifts standalone EV above the runner floor"
+        requires_approval = False
+    else:
+        kind = "blocked_quote_research"
+        action = "diagnose blockers and gather evidence before drafting any executable candidate"
+        requires_approval = False
+    task = {
+        "id": slugify(f"{kind}-{label}")[:96],
+        "kind": kind,
+        "label": label,
+        "budget": signal.get("budget"),
+        "expected_value": expected_value,
+        "blockers": blockers[:5],
+        "action": action,
+        "requires_approval": requires_approval,
+    }
+    return task
+
+
+def candidate_generation_task_for_template(template: dict[str, Any]) -> dict[str, Any]:
+    label = str(template.get("label") or template.get("id") or "template")
+    opportunity_status = str(template.get("opportunity_status") or "").lower()
+    result_not_before = template.get("result_not_before_utc")
+    action = "run post-result evidence capture and re-score; queue only if it upgrades beyond weak_watch"
+    if opportunity_status in QUEUEABLE_TEMPLATE_OPPORTUNITIES:
+        action = "finish post-result evidence packet, then promote only through the template gate"
+    return {
+        "id": slugify(f"template-scout-{label}")[:96],
+        "kind": "template_window_scout",
+        "label": label,
+        "opportunity_status": opportunity_status or None,
+        "result_not_before_utc": result_not_before,
+        "action": action,
+        "requires_approval": False,
+    }
+
+
+def candidate_generation_key(plan: dict[str, Any] | None) -> dict[str, Any] | None:
+    if not isinstance(plan, dict):
+        return None
+    tasks = []
+    for task in plan.get("tasks") or []:
+        if not isinstance(task, dict):
+            continue
+        tasks.append({
+            "id": task.get("id"),
+            "kind": task.get("kind"),
+            "label": task.get("label"),
+            "action": task.get("action"),
+            "requires_approval": bool(task.get("requires_approval")),
+            "blockers": task.get("blockers") or [],
+            "opportunity_status": task.get("opportunity_status"),
+            "result_not_before_utc": task.get("result_not_before_utc"),
+        })
+    return {
+        "status": plan.get("status"),
+        "runner_pass_rows": plan.get("runner_pass_rows"),
+        "blocked_quote_rows": plan.get("blocked_quote_rows"),
+        "tasks": tasks[:MAX_CANDIDATE_GENERATION_TASKS],
+    }
+
+
+def build_candidate_generation_plan(
+    summary: dict[str, Any],
+    state: dict[str, Any],
+    *,
+    update_state: bool = True,
+) -> dict[str, Any]:
+    scout = summary.get("active_portfolio_scout") or {}
+    runner_pass_rows = parse_int(scout.get("runner_pass_rows"), 0)
+    blocked_quote_rows = parse_int(scout.get("blocked_quote_rows"), 0)
+    progress = dict(state.get("candidate_generation") or {})
+    if scout:
+        if runner_pass_rows == 0:
+            progress["zero_runner_pass_streak"] = parse_int(progress.get("zero_runner_pass_streak"), 0) + 1
+        else:
+            progress["zero_runner_pass_streak"] = 0
+        progress["last_scout_generated_at"] = scout.get("generated_at")
+    elif "zero_runner_pass_streak" not in progress:
+        progress["zero_runner_pass_streak"] = 0
+
+    tasks: list[dict[str, Any]] = []
+    if not scout:
+        tasks.append({
+            "id": "refresh-active-portfolio-scout",
+            "kind": "run_scout",
+            "label": "active portfolio scout",
+            "action": "run the active-portfolio quote scout before making candidate decisions",
+            "requires_approval": False,
+        })
+        status = "missing_scout"
+    elif runner_pass_rows > 0:
+        status = "runner_candidates_available"
+        tasks.append({
+            "id": "review-runner-pass-candidates",
+            "kind": "candidate_review",
+            "label": "runner-pass rows",
+            "action": "review runner-pass signals and queue only records with full evidence and budget",
+            "requires_approval": False,
+        })
+    else:
+        status = "research_required"
+        seen_task_ids: set[str] = set()
+        for signal in scout.get("blocked_quote_signals") or []:
+            if not isinstance(signal, dict):
+                continue
+            task = candidate_generation_task_for_blocked_signal(signal)
+            if task["id"] in seen_task_ids:
+                continue
+            seen_task_ids.add(task["id"])
+            tasks.append(task)
+            if len(tasks) >= MAX_CANDIDATE_GENERATION_TASKS:
+                break
+        next_window = next_template_window(summary.get("templates") or [])
+        if isinstance(next_window, dict) and len(tasks) < MAX_CANDIDATE_GENERATION_TASKS:
+            task = candidate_generation_task_for_template(next_window)
+            if task["id"] not in seen_task_ids:
+                tasks.append(task)
+        if not tasks:
+            tasks.append({
+                "id": "broaden-gap-analyzer-presets",
+                "kind": "broaden_scout",
+                "label": "all active markets",
+                "action": "add or run broader read-only gap-analyzer probes until at least one runner-pass or high-value blocker appears",
+                "requires_approval": False,
+            })
+
+    plan: dict[str, Any] = {
+        "status": status,
+        "runner_pass_rows": runner_pass_rows if scout else None,
+        "blocked_quote_rows": blocked_quote_rows if scout else None,
+        "zero_runner_pass_streak": progress.get("zero_runner_pass_streak", 0),
+        "tasks": tasks[:MAX_CANDIDATE_GENERATION_TASKS],
+    }
+    if blocked_quote_rows > 0 and runner_pass_rows == 0:
+        plan["diagnosis"] = "positive quote rows exist, but all are blocked by current runner gates"
+    if update_state:
+        progress["last_plan_key"] = candidate_generation_key(plan)
+        state["candidate_generation"] = progress
+    return plan
+
+
 def scout_age_seconds(scout: dict[str, Any] | None, *, now: datetime | None = None) -> float | None:
     if not scout or not scout.get("generated_at"):
         return None
@@ -2609,6 +2789,53 @@ def ranking_probe_cooldown_summary(rankings: dict[str, Any]) -> dict[str, Any]:
     return summary
 
 
+def leaderboard_recovery_plan(rankings: dict[str, Any]) -> dict[str, Any]:
+    key = {
+        "unhealthy_filters": unavailable_view_slugs(rankings.get("filters") or {}),
+        "unhealthy_time_windows": unavailable_view_slugs(rankings.get("time_windows") or {}),
+        "unhealthy_filter_time_windows": unavailable_view_slugs(rankings.get("filter_time_windows") or {}),
+        "mirrored_filters": view_slugs_by_status(rankings.get("filters") or {}, "mirrored"),
+        "mirrored_time_windows": view_slugs_by_status(rankings.get("time_windows") or {}, "mirrored"),
+        "mirrored_filter_time_windows": view_slugs_by_status(rankings.get("filter_time_windows") or {}, "mirrored"),
+    }
+    unhealthy_count = (
+        len(key["unhealthy_filters"])
+        + len(key["unhealthy_time_windows"])
+        + len(key["unhealthy_filter_time_windows"])
+    )
+    mirrored_count = (
+        len(key["mirrored_filters"])
+        + len(key["mirrored_time_windows"])
+        + len(key["mirrored_filter_time_windows"])
+    )
+    healthy_distinct_count = (
+        len(ranking_view_stats(rankings.get("filters") or {}))
+        + len(ranking_view_stats(rankings.get("time_windows") or {}))
+        + len(ranking_view_stats(rankings.get("filter_time_windows") or {}))
+    )
+    if unhealthy_count:
+        status = "probe_after_cooldown"
+        action = (
+            "treat unavailable ranking filters as unhealthy, retry after cooldown, "
+            "and target only distinct recovered boards"
+        )
+    elif healthy_distinct_count == 0:
+        status = "overall_only"
+        action = "target overall until non-overall boards expose distinct healthy ranks"
+    else:
+        status = "healthy_distinct_boards_available"
+        action = "include distinct healthy boards in candidate scoring"
+    return {
+        "status": status,
+        "action": action,
+        "healthy_distinct_count": healthy_distinct_count,
+        "unhealthy_count": unhealthy_count,
+        "mirrored_count": mirrored_count,
+        "cooldown_seconds": NON_OVERALL_RANKING_PROBE_COOLDOWN_SECONDS,
+        **key,
+    }
+
+
 def view_slugs_by_status(views: dict[str, Any], status: str) -> list[str]:
     return sorted(
         slug
@@ -2708,6 +2935,7 @@ def summary_key(summary: dict[str, Any]) -> dict[str, Any]:
         "active_portfolio_scout": scout_key(summary),
         "active_portfolio_scout_refresh": scout_refresh_key(summary),
         "pre_window_evidence_source_refresh": pre_window_source_refresh_key(summary),
+        "candidate_generation": candidate_generation_key(summary.get("candidate_generation")),
         "processed": processed,
         "promoted_templates": promoted_templates,
         "post_result_evidence_due": due_templates,
@@ -2731,6 +2959,7 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
         "processed",
         "promoted_templates",
         "post_result_evidence_due",
+        "candidate_generation",
     )
     for field in stable_fields:
         if stored.get(field) != current.get(field):
@@ -2773,6 +3002,12 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
 
     stored_refresh = stored.get("active_portfolio_scout_refresh") or {}
     current_refresh = current.get("active_portfolio_scout_refresh") or {}
+    signal_refresh_reasons = {
+        "market_state_shift",
+        "watched_template_market_state_shift",
+        "world_cup_market_state_shift",
+    }
+
     def is_routine_refresh_key(refresh: dict[str, Any]) -> bool:
         if not refresh:
             return True
@@ -2785,7 +3020,20 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
             or refresh.get("watched_template_market_state_failures")
         )
 
+    def is_resolved_signal_refresh_key(refresh: dict[str, Any]) -> bool:
+        if not refresh or refresh.get("status") == "failed":
+            return False
+        reasons = set(refresh.get("reasons") or [])
+        if not signal_refresh_reasons.intersection(reasons):
+            return False
+        return not (
+            refresh.get("world_cup_market_state_failures")
+            or refresh.get("watched_template_market_state_failures")
+        )
+
     if is_routine_refresh_key(stored_refresh) and is_routine_refresh_key(current_refresh):
+        return True
+    if is_resolved_signal_refresh_key(stored_refresh) and is_routine_refresh_key(current_refresh):
         return True
     if stored_refresh or current_refresh:
         return stored_refresh == current_refresh
@@ -2909,6 +3157,27 @@ def format_pre_window_evidence_source_refresh(summary: dict[str, Any]) -> str:
     return str(status or "unknown")
 
 
+def format_candidate_generation(summary: dict[str, Any]) -> str:
+    plan = summary.get("candidate_generation") or {}
+    if not plan:
+        return "not evaluated"
+    tasks = plan.get("tasks") or []
+    task_bits = []
+    for task in tasks[:3]:
+        if not isinstance(task, dict):
+            continue
+        label = task.get("label") or task.get("id")
+        kind = task.get("kind")
+        task_bits.append(f"{kind}:{label}")
+    task_text = ", ".join(task_bits) if task_bits else "none"
+    streak = plan.get("zero_runner_pass_streak")
+    streak_text = f", zero_pass_streak={streak}" if streak is not None else ""
+    return (
+        f"status={plan.get('status')}, runner_pass_rows={plan.get('runner_pass_rows')}, "
+        f"blocked_quote_rows={plan.get('blocked_quote_rows')}{streak_text}, tasks={task_text}"
+    )
+
+
 def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
     rankings = summary.get("rankings") or {}
     filters = rankings.get("filters") or {}
@@ -2923,6 +3192,7 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
     return {
         "generated_at": summary.get("generated_at"),
         "execute_mode": bool(summary.get("execute_mode")),
+        "read_only_summary": bool(summary.get("read_only_summary")),
         "mailbox_updated": bool(summary.get("mailbox_updated", False)),
         "smoke_ok": smoke.get("ok") if smoke else None,
         "smoke_version": smoke.get("version") if smoke else None,
@@ -2962,6 +3232,7 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
             "filter_time_windows": ranking_view_stats(filter_time_windows),
         },
         "ranking_probe_cooldown": ranking_probe_cooldown_summary(rankings),
+        "leaderboard_recovery_plan": leaderboard_recovery_plan(rankings),
         "processed_candidates": summary.get("processed_candidates") or [],
         "templates": templates,
         "next_template_window": next_template_window(templates),
@@ -2980,6 +3251,7 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "template_promotion": summary.get("template_promotion"),
         "active_portfolio_scout": summary.get("active_portfolio_scout"),
         "active_portfolio_scout_refresh": summary.get("active_portfolio_scout_refresh"),
+        "candidate_generation": summary.get("candidate_generation"),
         "pre_window_evidence_source_refresh": summary.get("pre_window_evidence_source_refresh"),
         "external_smoke_floor": compact_external_smoke_floor(summary.get("external_smoke_floor")),
     }
@@ -3063,6 +3335,7 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
         f"Healthy leaderboard views: {format_healthy_view_stats(key)}.",
         f"Active portfolio scout: {format_active_portfolio_scout(summary)}.",
         f"Active portfolio scout refresh: {format_active_portfolio_scout_refresh(summary)}.",
+        f"Candidate generation: {format_candidate_generation(summary)}.",
         f"Pre-window evidence source refresh: {format_pre_window_evidence_source_refresh(summary)}.",
         f"Mirrored leaderboard views ignored: {format_mirrored_views(key)}.",
         f"Failures: unhealthy_ranking_views={format_unhealthy_views(key)}.",
@@ -3139,6 +3412,11 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--execute", action="store_true", help="Submit queued trades that pass every guard.")
     parser.add_argument("--run-smoke", action="store_true", help="Run the read-only smoke gate before the loop.")
     parser.add_argument("--mailbox", action="store_true", help="Append a mailbox update when status changes.")
+    parser.add_argument(
+        "--read-only-summary",
+        action="store_true",
+        help="Print a live summary without writing local state, events, packets, mailbox, scout files, or candidates.",
+    )
     parser.add_argument("--state", type=Path, default=DEFAULT_STATE)
     parser.add_argument("--events", type=Path, default=DEFAULT_EVENTS)
     parser.add_argument("--candidates", type=Path, default=DEFAULT_CANDIDATES)
@@ -3180,14 +3458,26 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     parser = build_arg_parser()
     args = parser.parse_args(argv)
-    ensure_dirs(args.state.parent, args.events.parent, args.candidates.parent, args.trade_journal.parent)
+    if args.read_only_summary and (
+        args.execute
+        or args.mailbox
+        or args.promote_ready_templates
+        or args.refresh_active_portfolio_scout
+    ):
+        parser.error(
+            "--read-only-summary cannot be combined with --execute, --mailbox, "
+            "--promote-ready-templates, or --refresh-active-portfolio-scout"
+        )
+    if not args.read_only_summary:
+        ensure_dirs(args.state.parent, args.events.parent, args.candidates.parent, args.trade_journal.parent)
     state = load_json(args.state, {})
     events: list[dict[str, Any]] = []
     try:
         smoke_result = None
         if args.run_smoke:
             smoke_result = run_smoke(args.smoke_script, args.smoke_market)
-            state["last_smoke"] = smoke_result
+            if not args.read_only_summary:
+                state["last_smoke"] = smoke_result
         external_smoke_floor = None
         if args.verify_external_smoke_floor:
             external_smoke_floor = smoke_floor.verify_smoke_script(
@@ -3197,11 +3487,17 @@ def main(argv: list[str] | None = None) -> int:
             )
         scout_refresh = None
         templates = load_template_status(args.templates)
-        pre_window_evidence_source_refresh = maybe_refresh_pre_window_evidence_sources(
-            args.state.parent,
-            args.templates,
-            templates,
-        )
+        if args.read_only_summary:
+            pre_window_evidence_source_refresh = {
+                "status": "skipped_read_only_summary",
+                "attempted": False,
+            }
+        else:
+            pre_window_evidence_source_refresh = maybe_refresh_pre_window_evidence_sources(
+                args.state.parent,
+                args.templates,
+                templates,
+            )
         due_templates = post_result_evidence_due(templates)
         snap = account_snapshot()
         account = snap["account"]
@@ -3237,20 +3533,25 @@ def main(argv: list[str] | None = None) -> int:
         if args.promote_ready_templates:
             template_promotion = promote_ready_templates(args.templates, args.candidates, append=True)
         candidates = load_candidates(args.candidates)
-        processed = process_candidates(
-            candidates,
-            monitoring["markets"]["items"],
-            monitoring["positions"],
-            account,
-            collateral,
-            monitoring["stats"],
-            state,
-            args,
-            args.events,
-        )
+        if args.read_only_summary:
+            update_campaign_loss_guard(state, monitoring["stats"])
+            processed = []
+        else:
+            processed = process_candidates(
+                candidates,
+                monitoring["markets"]["items"],
+                monitoring["positions"],
+                account,
+                collateral,
+                monitoring["stats"],
+                state,
+                args,
+                args.events,
+            )
         summary = {
             "generated_at": utc_now(),
             "execute_mode": bool(args.execute),
+            "read_only_summary": bool(args.read_only_summary),
             "smoke": smoke_result,
             "external_smoke_floor": external_smoke_floor,
             "account": account,
@@ -3272,20 +3573,29 @@ def main(argv: list[str] | None = None) -> int:
             "events_file": str(args.events),
             "trade_journal": str(args.trade_journal),
         }
-        append_jsonl(args.events, {"type": "loop.tick", "timestamp": now_ts(), "summary": summary_key(summary)})
-        clear_last_error_after_success(state)
+        summary["candidate_generation"] = build_candidate_generation_plan(
+            summary,
+            state,
+            update_state=not args.read_only_summary,
+        )
+        if not args.read_only_summary:
+            append_jsonl(args.events, {"type": "loop.tick", "timestamp": now_ts(), "summary": summary_key(summary)})
+            clear_last_error_after_success(state)
         if args.mailbox:
             summary["mailbox_updated"] = append_mailbox_if_changed(args.mailbox_path, state, summary)
         public_summary = public_loop_summary(summary)
-        state["last_summary"] = public_summary
-        save_json(args.state, state)
+        if not args.read_only_summary:
+            state["last_summary"] = public_summary
+            save_json(args.state, state)
         print(json.dumps(public_summary, indent=2, sort_keys=True))
         return 0
     except Exception as exc:  # noqa: BLE001 - operator summary must capture any failure.
         event = {"type": "loop.error", "timestamp": now_ts(), "error": str(exc)}
-        append_jsonl(args.events, event)
-        state["last_error"] = event
-        save_json(args.state, state)
+        if not args.read_only_summary:
+            ensure_dirs(args.events.parent, args.state.parent)
+            append_jsonl(args.events, event)
+            state["last_error"] = event
+            save_json(args.state, state)
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True), file=sys.stderr)
         return 1
 
