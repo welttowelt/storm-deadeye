@@ -276,9 +276,10 @@ python3 scripts/storm_worldcup_evidence_packet.py \
   --print-capture-plan
 ```
 
-This prints the fill order, row source roles, source fallback URLs, required
-claim markers, local read-only commands, and paste-ready `--capture-row`
-commands without dumping the full packet JSON.
+This prints the fill order, row source roles, source fallback URLs with
+reachability labels when source checks are available, required claim markers,
+local read-only commands, and paste-ready `--capture-row` commands without
+dumping the full packet JSON.
 
 For `odds_move` and `ratings_move`, inspect
 `capture_plan.rows[].claim_must_include` before capture. Both rows now include

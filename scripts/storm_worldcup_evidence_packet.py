@@ -979,6 +979,12 @@ def capture_plan_summary(packet: dict[str, Any]) -> str:
     template = packet.get("template") or {}
     plan = packet.get("capture_plan") or {}
     readiness = packet.get("pre_window_readiness") or {}
+    reachability = packet.get("source_reachability") or {}
+    reachability_rows = {
+        str(row.get("id")): row
+        for row in reachability.get("rows") or []
+        if isinstance(row, dict)
+    }
     lines = [
         "Germany post-result capture plan",
         f"template: {template.get('id') or 'unknown'}",
@@ -986,27 +992,50 @@ def capture_plan_summary(packet: dict[str, Any]) -> str:
         f"result_not_before_utc: {plan.get('result_not_before_utc') or template.get('result_not_before_utc') or 'unknown'}",
         f"result_window_open: {packet.get('result_window_open')}",
         f"pre_window_ready: {readiness.get('ready_for_result_window')}",
-        "",
-        "Sequence:",
     ]
+    if reachability.get("checked"):
+        lines.append(
+            "source_reachability: "
+            f"checked at {reachability.get('checked_at')} "
+            f"reachable={reachability.get('reachable_count')} "
+            f"unreachable={reachability.get('unreachable_count')}"
+        )
+    else:
+        lines.append("source_reachability: unchecked")
+    lines.extend(["", "Sequence:"])
     for step in plan.get("sequence") or []:
         lines.append(f"- {step}")
     lines.extend(["", "Rows:"])
     for row in plan.get("rows") or []:
         if not isinstance(row, dict):
             continue
+        row_id = str(row.get("id") or "")
+        reachability_row = reachability_rows.get(row_id) or {}
+        reachable_options = set(str(option) for option in reachability_row.get("reachable_options") or [])
+        unreachable_options = set(str(option) for option in reachability_row.get("unreachable_options") or [])
         markers = [
             str(marker.get("label"))
             for marker in row.get("claim_must_include") or []
             if isinstance(marker, dict) and marker.get("label")
         ]
         source_options = row.get("source_options") or []
-        lines.append(f"- {row.get('id')}: {row.get('source_role')}")
+        lines.append(f"- {row_id}: {row.get('source_role')}")
         lines.append(f"  url: {row.get('primary_url') or 'TO_FILL'}")
         if source_options:
             lines.append("  source_options:")
             for option in source_options:
-                lines.append(f"    - {option}")
+                option_text = str(option)
+                if option_text == "local-cli":
+                    status = "local"
+                elif option_text in reachable_options:
+                    status = "reachable"
+                elif option_text in unreachable_options:
+                    status = "unreachable"
+                elif reachability.get("checked"):
+                    status = "not-probed"
+                else:
+                    status = "unchecked"
+                lines.append(f"    - [{status}] {option_text}")
         else:
             lines.append("  source_options: none")
         lines.append(f"  must_include: {', '.join(markers)}")

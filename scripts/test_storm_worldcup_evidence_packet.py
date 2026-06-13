@@ -319,20 +319,37 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmpdir:
             template_path = Path(tmpdir) / "germany.json"
             write_germany_template(template_path)
-            result = packet.build_packet(template_path, now="2026-06-13T08:30:00Z")
+
+            def fake_probe(url, *, timeout_seconds, checked_at):
+                return {
+                    "url": url,
+                    "checked_at": checked_at,
+                    "status": 0 if "sportsmole" in url else 200,
+                    "reachable": "sportsmole" not in url,
+                }
+
+            with mock.patch.object(packet, "probe_source_url", side_effect=fake_probe):
+                result = packet.build_packet(
+                    template_path,
+                    now="2026-06-13T08:30:00Z",
+                    check_sources=True,
+                    source_timeout_seconds=0.25,
+                )
 
         summary = packet.capture_plan_summary(result)
 
         self.assertIn("Germany post-result capture plan", summary)
         self.assertIn("template: germany-post-result-snap-template-20260612", summary)
+        self.assertIn("source_reachability: checked at 2026-06-13T08:30:00Z reachable=8 unreachable=1", summary)
         self.assertIn("official_result: official_match_result", summary)
         self.assertIn("odds_move: odds_snapshot", summary)
         self.assertIn("source_options:", summary)
         self.assertIn(
-            "https://www.sportsmole.co.uk/football/germany/world-cup-2026/preview/germany-vs-curacao-prediction-team-news-lineups_599044.html",
+            "[unreachable] https://www.sportsmole.co.uk/football/germany/world-cup-2026/preview/germany-vs-curacao-prediction-team-news-lineups_599044.html",
             summary,
         )
-        self.assertIn("https://inside.fifa.com/fifa-world-ranking/CUW?gender=men", summary)
+        self.assertIn("[reachable] https://inside.fifa.com/fifa-world-ranking/CUW?gender=men", summary)
+        self.assertIn("[local] local-cli", summary)
         self.assertIn("post_result_numeric_value", summary)
         self.assertIn("deadeye markets show", summary)
         self.assertIn("--capture-row odds_move", summary)
