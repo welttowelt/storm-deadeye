@@ -2103,6 +2103,17 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     "blocker_count": 29,
                 },
                 "capture_readiness": {"ready_for_template_update": False},
+                "pre_window_readiness": {
+                    "ready_for_result_window": True,
+                    "required_ids": ["official_result"],
+                    "source_reachability_checked": True,
+                    "source_reachability_checked_at": "2026-06-13T07:16:53Z",
+                    "source_reachability_reachable_count": 9,
+                    "source_reachability_unreachable_count": 0,
+                    "blockers": [],
+                    "item_blockers": {},
+                    "note": "Pre-window readiness only.",
+                },
                 "capture_plan": {"rows": [{"id": "official_result"}]},
                 "source_reachability": {
                     "checked": True,
@@ -2136,8 +2147,152 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(packet_status["next_action"], "wait_for_result_window")
         self.assertEqual(packet_status["missing_ids"], ["official_result"])
         self.assertEqual(packet_status["capture_plan_rows"], 1)
+        self.assertTrue(packet_status["pre_window_readiness"]["ready_for_result_window"])
+        self.assertEqual(packet_status["pre_window_readiness"]["blockers"], [])
         self.assertEqual(packet_status["source_reachability"]["reachable_count"], 9)
         self.assertTrue(packet_status["source_reachability"]["advisory_only"])
+
+    def test_pre_window_evidence_readiness_includes_packet_status_before_window(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text(json.dumps({
+                "generated_at": "2026-06-13T07:16:53Z",
+                "result_window_open": False,
+                "capture_status": {
+                    "next_action": "wait_for_result_window",
+                    "missing_ids": ["official_result"],
+                    "blocker_count": 29,
+                },
+                "capture_readiness": {"ready_for_template_update": False},
+                "pre_window_readiness": {
+                    "ready_for_result_window": True,
+                    "required_ids": ["official_result"],
+                    "source_reachability_checked": True,
+                    "source_reachability_checked_at": "2026-06-13T07:16:53Z",
+                    "source_reachability_reachable_count": 9,
+                    "source_reachability_unreachable_count": 0,
+                    "blockers": [],
+                    "item_blockers": {},
+                },
+                "capture_plan": {"rows": [{"id": "official_result"}]},
+                "source_reachability": {"checked": True, "reachable_count": 9, "unreachable_count": 0},
+            }), encoding="utf-8")
+            templates = [
+                {
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2026-06-14T20:00:00Z",
+                    "blockers": ["template_result_window_not_reached", "missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ]
+
+            readiness = loop.pre_window_evidence_readiness(
+                templates,
+                now=loop.parse_utc_timestamp("2026-06-13T20:30:00Z"),
+                state_dir=state_dir,
+            )
+
+        self.assertEqual(len(readiness), 1)
+        packet_status = readiness[0]["evidence_packet"]
+        self.assertTrue(packet_status["exists"])
+        self.assertTrue(packet_status["pre_window_readiness"]["ready_for_result_window"])
+        self.assertEqual(packet_status["pre_window_readiness"]["blockers"], [])
+
+    def test_summary_key_records_pre_window_evidence_regression(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text(json.dumps({
+                "pre_window_readiness": {
+                    "ready_for_result_window": False,
+                    "blockers": ["source_reachability_not_checked"],
+                },
+            }), encoding="utf-8")
+            summary = {
+                "rankings": {
+                    "overall": {"rank": 8, "gap_to_first": 913.0, "pnl": 82.0},
+                    "filters": {},
+                    "time_windows": {},
+                    "filter_time_windows": {},
+                },
+                "templates": [
+                    {
+                        "id": "germany-post-result-snap-template-20260612",
+                        "label": "Germany higher",
+                        "result_not_before_utc": "2099-06-14T20:00:00Z",
+                        "blockers": ["template_result_window_not_reached", "missing_official_result_evidence"],
+                        "opportunity_status": "weak_watch",
+                    }
+                ],
+                "state_dir": str(state_dir),
+            }
+
+            key = loop.summary_key(summary)
+
+        self.assertEqual(len(key["pre_window_evidence_regressions"]), 1)
+        regression = key["pre_window_evidence_regressions"][0]
+        self.assertEqual(regression["id"], "germany-post-result-snap-template-20260612")
+        self.assertFalse(regression["ready_for_result_window"])
+        self.assertEqual(regression["blockers"], ["source_reachability_not_checked"])
+
+    def test_pre_window_regressions_ignore_later_missing_packet_when_next_is_ready(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text(json.dumps({
+                "pre_window_readiness": {
+                    "ready_for_result_window": True,
+                    "blockers": [],
+                },
+            }), encoding="utf-8")
+            templates = [
+                {
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2099-06-14T20:00:00Z",
+                    "blockers": ["template_result_window_not_reached", "missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                },
+                {
+                    "id": "france-post-result-snap-template-20260612",
+                    "label": "France lower/wider",
+                    "result_not_before_utc": "2099-06-16T22:00:00Z",
+                    "blockers": ["template_result_window_not_reached", "missing_official_result_evidence"],
+                    "opportunity_status": "avoid",
+                },
+            ]
+
+            regressions = loop.pre_window_evidence_regressions(
+                templates,
+                now=loop.parse_utc_timestamp("2099-06-13T20:30:00Z"),
+                state_dir=state_dir,
+            )
+
+        self.assertEqual(regressions, [])
+
+    def test_mailbox_key_ignores_empty_pre_window_regressions_added_to_legacy_key(self):
+        stored = {
+            "rank": 8,
+            "gap": 913.0,
+            "pnl": 82.0,
+            "gas_tier": "ok",
+            "unhealthy_filters": [],
+            "unhealthy_time_windows": [],
+            "unhealthy_filter_time_windows": [],
+            "mirrored_filters": [],
+            "mirrored_time_windows": [],
+            "mirrored_filter_time_windows": [],
+            "healthy_view_ranks": {"filters": {}, "time_windows": {}, "filter_time_windows": {}},
+            "processed": [],
+            "promoted_templates": [],
+            "post_result_evidence_due": [],
+        }
+        current = dict(stored)
+        current["pre_window_evidence_regressions"] = []
+
+        self.assertTrue(loop.mailbox_keys_equivalent(stored, current))
 
     def test_post_result_evidence_due_marks_missing_packet(self):
         with tempfile.TemporaryDirectory() as tmpdir:

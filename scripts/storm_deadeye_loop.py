@@ -489,6 +489,77 @@ def post_result_evidence_due(
     return sorted(due, key=lambda item: (str(item.get("result_not_before_utc")), str(item.get("id"))))
 
 
+def pre_window_evidence_readiness(
+    templates: list[dict[str, Any]],
+    now: datetime | None = None,
+    *,
+    state_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    now = now or datetime.now(timezone.utc)
+    readiness: list[dict[str, Any]] = []
+    evidence_blockers = {
+        "missing_official_result_evidence",
+        "missing_world_cup_post_result",
+        "evidence_url_to_fill",
+    }
+    for template in templates:
+        raw_window = template.get("result_not_before_utc")
+        if not raw_window:
+            continue
+        try:
+            window = parse_utc_timestamp(raw_window)
+        except (TypeError, ValueError):
+            continue
+        if window <= now:
+            continue
+        blockers = set(template.get("blockers") or [])
+        has_post_result_work = bool(blockers & evidence_blockers) or evidence_packet_path_for_template(
+            state_dir or DEFAULT_STATE_DIR,
+            template,
+        ) is not None
+        if not has_post_result_work:
+            continue
+        item = {
+            "id": template.get("id"),
+            "label": template.get("label"),
+            "result_not_before_utc": window.isoformat().replace("+00:00", "Z"),
+            "opportunity_status": template.get("opportunity_status"),
+        }
+        if state_dir is not None:
+            item["evidence_packet"] = evidence_packet_status_for_template(state_dir, template)
+        readiness.append(item)
+    return sorted(readiness, key=lambda item: (str(item.get("result_not_before_utc")), str(item.get("id"))))
+
+
+def pre_window_evidence_regressions(
+    templates: list[dict[str, Any]],
+    now: datetime | None = None,
+    *,
+    state_dir: Path | None = None,
+) -> list[dict[str, Any]]:
+    regressions: list[dict[str, Any]] = []
+    readiness = pre_window_evidence_readiness(templates, now=now, state_dir=state_dir)
+    if not readiness:
+        return regressions
+    next_window = readiness[0].get("result_not_before_utc")
+    for item in readiness:
+        if item.get("result_not_before_utc") != next_window:
+            continue
+        packet = item.get("evidence_packet") or {}
+        pre_window = packet.get("pre_window_readiness") or {}
+        if not packet.get("exists") or packet.get("error") or not pre_window.get("ready_for_result_window"):
+            regressions.append({
+                "id": item.get("id"),
+                "label": item.get("label"),
+                "result_not_before_utc": item.get("result_not_before_utc"),
+                "packet_exists": packet.get("exists"),
+                "packet_error": packet.get("error"),
+                "ready_for_result_window": pre_window.get("ready_for_result_window"),
+                "blockers": pre_window.get("blockers") or [],
+            })
+    return regressions
+
+
 def evidence_packet_path_for_template(state_dir: Path, template: dict[str, Any]) -> Path | None:
     template_id = str(template.get("id") or template.get("file") or "")
     if not template_id:
@@ -517,6 +588,7 @@ def evidence_packet_status_for_template(state_dir: Path, template: dict[str, Any
         return {"exists": True, "path": str(packet_path), "error": "packet is not a JSON object"}
     capture_status = packet.get("capture_status") or {}
     capture_readiness = packet.get("capture_readiness") or {}
+    pre_window_readiness = packet.get("pre_window_readiness") or {}
     source_reachability = packet.get("source_reachability") or {}
     return {
         "exists": True,
@@ -528,6 +600,17 @@ def evidence_packet_status_for_template(state_dir: Path, template: dict[str, Any
         "missing_ids": capture_status.get("missing_ids") or [],
         "blocker_count": capture_status.get("blocker_count"),
         "capture_plan_rows": len((packet.get("capture_plan") or {}).get("rows") or []),
+        "pre_window_readiness": {
+            "ready_for_result_window": bool(pre_window_readiness.get("ready_for_result_window")),
+            "required_ids": pre_window_readiness.get("required_ids") or [],
+            "source_reachability_checked": bool(pre_window_readiness.get("source_reachability_checked")),
+            "source_reachability_checked_at": pre_window_readiness.get("source_reachability_checked_at"),
+            "source_reachability_reachable_count": pre_window_readiness.get("source_reachability_reachable_count"),
+            "source_reachability_unreachable_count": pre_window_readiness.get("source_reachability_unreachable_count"),
+            "blockers": pre_window_readiness.get("blockers") or [],
+            "item_blockers": pre_window_readiness.get("item_blockers") or {},
+            "note": pre_window_readiness.get("note"),
+        },
         "source_reachability": {
             "checked": bool(source_reachability.get("checked")),
             "checked_at": source_reachability.get("checked_at"),
@@ -2095,10 +2178,15 @@ def summary_key(summary: dict[str, Any]) -> dict[str, Any]:
         {"id": item.get("id"), "appended": item.get("appended")}
         for item in promotion.get("promoted", [])
     ]
+    state_dir = Path(summary.get("state_dir") or DEFAULT_STATE_DIR)
     due_templates = [
         {"id": item.get("id"), "opportunity_status": item.get("opportunity_status")}
         for item in post_result_evidence_due(summary.get("templates") or [])
     ]
+    pre_window_regressions = pre_window_evidence_regressions(
+        summary.get("templates") or [],
+        state_dir=state_dir,
+    )
     overall = rankings.get("overall", {})
     return {
         "rank": overall.get("rank"),
@@ -2121,6 +2209,7 @@ def summary_key(summary: dict[str, Any]) -> dict[str, Any]:
         "processed": processed,
         "promoted_templates": promoted_templates,
         "post_result_evidence_due": due_templates,
+        "pre_window_evidence_regressions": pre_window_regressions,
     }
 
 
@@ -2151,6 +2240,10 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
             continue
         if stored.get(field) != current.get(field):
             return False
+    if (stored.get("pre_window_evidence_regressions") or []) != (
+        current.get("pre_window_evidence_regressions") or []
+    ):
+        return False
 
     stored_scout = stored.get("active_portfolio_scout") or {}
     current_scout = current.get("active_portfolio_scout") or {}
@@ -2336,6 +2429,10 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
             templates,
             queueable_opportunities_only=True,
         ),
+        "pre_window_evidence_readiness": pre_window_evidence_readiness(
+            templates,
+            state_dir=Path(summary.get("state_dir") or DEFAULT_STATE_DIR),
+        ),
         "post_result_evidence_due": post_result_evidence_due(
             templates,
             state_dir=Path(summary.get("state_dir") or DEFAULT_STATE_DIR),
@@ -2360,6 +2457,10 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
     overall = summary["rankings"]["overall"]
     processed = summary.get("processed_candidates") or []
     due_templates = post_result_evidence_due(
+        summary.get("templates") or [],
+        state_dir=Path(summary.get("state_dir") or DEFAULT_STATE_DIR),
+    )
+    pre_window_regressions = pre_window_evidence_regressions(
         summary.get("templates") or [],
         state_dir=Path(summary.get("state_dir") or DEFAULT_STATE_DIR),
     )
@@ -2405,6 +2506,12 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
     ]
     if processed:
         lines.insert(9, "Processed candidates: " + json.dumps(processed, sort_keys=True))
+    if pre_window_regressions:
+        lines.insert(
+            9,
+            "Pre-window evidence readiness regressions: "
+            + json.dumps(pre_window_regressions, sort_keys=True),
+        )
     if due_templates:
         due = []
         for item in due_templates:
@@ -2424,6 +2531,7 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
                     "missing_ids": packet.get("missing_ids"),
                     "blocker_count": packet.get("blocker_count"),
                     "capture_plan_rows": packet.get("capture_plan_rows"),
+                    "pre_window_readiness": packet.get("pre_window_readiness"),
                     "source_reachability": packet.get("source_reachability"),
                 }
                 if packet.get("error"):

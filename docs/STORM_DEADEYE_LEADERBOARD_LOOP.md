@@ -71,6 +71,12 @@ After a template's `result_not_before_utc` has passed, `last_summary` also
 reports `post_result_evidence_due` when official result evidence is still
 missing. That field is part of the mailbox-change key, so the hourly loop can
 surface result-evidence work as soon as the configured result window opens.
+Before the window, `last_summary.pre_window_evidence_readiness` reports whether
+the local evidence packet is actually ready for final-whistle capture. A ready
+packet stays quiet. For the next result window only, packet loss, unreadable
+JSON, or `pre_window_readiness.ready_for_result_window=false` is treated as a
+readiness regression and enters the mailbox-change key; later template backlog
+does not create routine mailbox noise.
 
 ## Monitor Tick
 

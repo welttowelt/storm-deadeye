@@ -209,6 +209,10 @@ python3 scripts/storm_worldcup_evidence_packet.py \
 Before the window opens, confirm
 `pre_window_readiness.ready_for_result_window=true`. If it is false, fix
 `pre_window_readiness.blockers` before waiting for final whistle.
+The main Storm loop also surfaces this under
+`last_summary.pre_window_evidence_readiness`; healthy readiness stays quiet,
+while missing, unreadable, or blocked packet readiness for the next result
+window is a mailbox-visible regression.
 
 After filling every required evidence row, validate the packet before copying
 anything into the template:
