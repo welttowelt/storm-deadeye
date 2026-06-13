@@ -48,6 +48,62 @@ Capture these before promoting or queueing:
 - Quote: quote JSON after result using fresh belief and sigma.
 - Dry-run: exact intended execute path with `--dry-run` before any confirm path.
 
+## Pre-Result Baseline
+
+Captured for comparison on `2026-06-13T05:37Z`. Treat these as scout context,
+not as execution approval.
+
+Official fixture/result source:
+
+- FIFA match page:
+  `https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464`
+- Current use: primary page to check for the completed-match marker, final
+  score, official lineups, substitutions, bookings, and post-match event feed.
+- Post-result delta to capture: final score, completion/final-whistle marker,
+  official lineups, match events, and source capture UTC.
+
+Team news and lineup baseline:
+
+- Bulinews preview:
+  `https://bulinews.com/germany-curacao-preview-team-news-and-predicted-lineups`
+- Sports Mole preview:
+  `https://www.sportsmole.co.uk/football/germany/world-cup-2026/preview/germany-vs-curacao-prediction-team-news-lineups_599044.html`
+- The Standard preview:
+  `https://www.standard.co.uk/sport/football/germany-vs-curacao-prediction-kick-off-time-tv-live-stream-team-news-latest-h2h-results-odds-world-cup-2026-preview-b1285707.html`
+- Current baseline: Germany injury context is Lennart Karl out of the squad,
+  Assan Ouedraogo called in, Neuer expected/targeted to start after calf
+  management, and no fresh Curacao injury issue reported by the preview set.
+- Current lineup watch: Germany likely Neuer; Kimmich, Tah, Schlotterbeck,
+  left-back still Brown/Raum-sensitive; central midfield Nmecha/Pavlovic or
+  Goretzka/Pavlovic; Sane, Musiala, Wirtz; Havertz. Curacao likely built around
+  Room, Leandro Bacuna, Juninho Bacuna, Tahith Chong, Gorre, and Antonisse.
+- Post-result delta to capture: confirmed XI, late absences, role changes
+  versus the baseline, in-match injuries, suspensions/bookings affecting future
+  matches, and substitution pattern.
+
+Ratings/form baseline:
+
+- Bundesliga lineup context:
+  `https://www.bundesliga.com/en/bundesliga/news/how-will-germany-line-up-havertz-musiala-wirtz-nagelsmann-world-cup-2026-28807`
+- Current baseline: Germany are treated as a heavy favorite with Neuer's return,
+  Kimmich/Tah/Schlotterbeck/Raum or Brown defensive structure, Wirtz/Musiala
+  creativity, and uncertainty concentrated at left-back and central midfield.
+- Post-result delta to capture: any ratings/model movement after the final
+  score, especially if the result or goal margin changes Germany's path odds.
+
+Odds baseline:
+
+- SportyTrader odds comparison:
+  `https://www.sportytrader.com/en/odds/germany-curacao-7937446/`
+- SportsLine/FanDuel market context:
+  `https://www.sportsline.com/insiders/germany-vs-curacao-odds-predictions-2026-world-cup-picks-from-proven-soccer-expert/`
+- Current baseline: odds screens show Germany as an overwhelming match
+  favorite, draw as a longshot, Curacao as a very longshot, and the main market
+  discussion centered on goal margin and total goals rather than Germany
+  outright.
+- Post-result delta to capture: Germany outright/path odds, Group E odds,
+  round-of-32/quarterfinal path odds, and any goal-difference driven repricing.
+
 ## Scout Request
 
 Use the mailbox scout lane before the window:
@@ -71,4 +127,3 @@ python3 scripts/storm_deadeye_loop.py --run-smoke --mailbox --refresh-active-por
 
 Execution stays under the runner only. No manual `--confirm` command belongs in
 this runbook.
-
