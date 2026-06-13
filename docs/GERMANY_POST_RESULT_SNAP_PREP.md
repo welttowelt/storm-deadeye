@@ -65,7 +65,9 @@ expected `source_role`.
 The packet also includes `capture_plan`. Use it as the source-of-truth fill
 order at the window: it repeats the result-window timestamp, row-level source
 roles, ordered source fallbacks, required claim markers, and the local read-only
-commands for `market_state` and `quote_scout`. If a row does not satisfy its
+commands for `market_state` and `quote_scout`. Each row also includes
+`capture_plan.rows[].capture_command`, a paste-ready command with that row id,
+default source, and URL already slotted. If a row does not satisfy its
 `capture_plan.rows[].claim_must_include` markers, do not promote the template.
 
 The packet can optionally include `source_reachability` by running with
@@ -218,6 +220,10 @@ Repeat `--capture-row` for every required evidence id:
 - `ratings_move`
 - `market_state`
 - `quote_scout`
+
+The generated packet includes the same commands under
+`capture_plan.rows[].capture_command`; prefer those over retyping the row id,
+source, or URL during the post-result window.
 
 Use `local-cli` as the URL only for `market_state` and `quote_scout`. Public
 rows must use the exact source URL checked by the operator. Each capture command

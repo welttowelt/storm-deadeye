@@ -227,12 +227,22 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
             plan_rows["official_result"]["primary_url"],
             "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
         )
+        self.assertIn("--capture-row official_result", plan_rows["official_result"]["capture_command"])
+        self.assertIn("'FIFA match centre'", plan_rows["official_result"]["capture_command"])
+        self.assertIn(
+            "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
+            plan_rows["official_result"]["capture_command"],
+        )
         self.assertIn(
             {"label": "numeric_score_value", "accepted_pattern": r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b"},
             plan_rows["official_result"]["claim_must_include"],
         )
         self.assertIn("deadeye markets show 0x1e7", plan_rows["market_state"]["read_only_command"])
         self.assertIn("storm_gap_analyzer.py", plan_rows["quote_scout"]["read_only_command"])
+        self.assertIn("--capture-row market_state", plan_rows["market_state"]["capture_command"])
+        self.assertIn("--url local-cli", plan_rows["market_state"]["capture_command"])
+        self.assertIn("--capture-row quote_scout", plan_rows["quote_scout"]["capture_command"])
+        self.assertIn("--url local-cli", plan_rows["quote_scout"]["capture_command"])
         self.assertIn("--validate-packet", result["capture_plan"]["validation_command"])
         self.assertIn("storm_deadeye_loop.py", result["capture_plan"]["runner_command"])
         reachability = result["source_reachability"]

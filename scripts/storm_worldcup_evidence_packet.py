@@ -11,6 +11,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import shlex
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -628,6 +629,29 @@ def read_only_commands(template: dict[str, Any]) -> list[str]:
     ]
 
 
+def row_capture_command(item_id: str, item: dict[str, Any], *, result_not_before: str) -> str:
+    source = item.get("source") or "<source name>"
+    url = item.get("url") or "<source URL or local-cli>"
+    return " ".join([
+        "python3",
+        "scripts/storm_worldcup_evidence_packet.py",
+        "--packet",
+        "~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json",
+        "--capture-row",
+        shlex.quote(item_id),
+        "--claim",
+        shlex.quote("<specific claim>"),
+        "--source",
+        shlex.quote(str(source)),
+        "--url",
+        shlex.quote(str(url)),
+        "--capture-utc",
+        shlex.quote(f"<UTC timestamp at or after {result_not_before}>"),
+        "--output",
+        "~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json",
+    ])
+
+
 def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -> dict[str, Any]:
     market = template.get("market") or "<market>"
     result_not_before = template.get("result_not_before_utc") or "TO_FILL"
@@ -665,6 +689,7 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
             },
             "claim_must_include": marker_groups,
             "capture_note": CAPTURE_NOTES[item_id],
+            "capture_command": row_capture_command(item_id, item, result_not_before=result_not_before),
             "read_only_command": local_commands.get(item_id),
         })
     return {
