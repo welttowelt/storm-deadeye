@@ -833,6 +833,212 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertNotIn("--indexer-url", cmd)
         self.assertNotIn("--trader", cmd)
 
+    def test_market_state_scout_refresh_key_ignores_volatile_fields(self):
+        markets_a = [
+            {
+                "address": "0x02",
+                "title": "Germany",
+                "marketType": "lognormal",
+                "isActive": True,
+                "state": {
+                    "isInitialized": True,
+                    "isPaused": False,
+                    "mu": 3.1,
+                    "sigma": 0.25,
+                    "fetchedAt": 1781330512,
+                    "updatedAt": "2026-06-13T00:00:00Z",
+                    "blockNumber": 100,
+                },
+                "transactionHash": "0xabc",
+            },
+            {
+                "address": "0x01",
+                "title": "CPI",
+                "marketType": "normal",
+                "isActive": True,
+                "state": {"isInitialized": True, "isPaused": False, "mu": 3.9},
+            },
+        ]
+        markets_b = json.loads(json.dumps(list(reversed(markets_a))))
+        markets_b[1]["state"]["updatedAt"] = "2026-06-13T01:00:00Z"
+        markets_b[1]["state"]["blockNumber"] = 101
+        markets_b[1]["state"]["fetchedAt"] = 1781330520
+        markets_b[1]["transactionHash"] = "0xdef"
+
+        key_a = loop.market_state_scout_refresh_key(markets_a)
+        key_b = loop.market_state_scout_refresh_key(markets_b)
+
+        self.assertEqual(key_a, key_b)
+        self.assertEqual([item["address"] for item in key_a["markets"]], ["0x1", "0x2"])
+        serialized = json.dumps(key_a, sort_keys=True)
+        self.assertNotIn("updatedAt", serialized)
+        self.assertNotIn("fetchedAt", serialized)
+        self.assertNotIn("transactionHash", serialized)
+        self.assertNotIn("blockNumber", serialized)
+
+    def test_first_market_state_observation_records_baseline_without_force(self):
+        state = {}
+        markets = [
+            {
+                "address": "0x01",
+                "isActive": True,
+                "state": {"isInitialized": True, "isPaused": False, "mu": 3.1},
+            }
+        ]
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                markets=markets,
+            )
+
+        self.assertEqual(result["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertEqual(state["last_market_state_scout_refresh_key"], loop.market_state_scout_refresh_key(markets))
+
+    def test_old_market_state_fingerprint_version_migrates_without_force(self):
+        markets = [
+            {
+                "address": "0x01",
+                "isActive": True,
+                "state": {"isInitialized": True, "isPaused": False, "mu": 3.1},
+            }
+        ]
+        state = {
+            "last_market_state_scout_refresh_key": {
+                "total": 1,
+                "active_tradeable": 1,
+                "markets": [{"address": "0x1", "state": {"mu": 3.0}}],
+            }
+        }
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                markets=markets,
+            )
+
+        self.assertEqual(result["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertEqual(
+            state["last_market_state_scout_refresh_key"]["version"],
+            loop.MARKET_STATE_FINGERPRINT_VERSION,
+        )
+
+    def test_market_state_change_forces_scout_refresh_once(self):
+        markets = [
+            {
+                "address": "0x01",
+                "isActive": True,
+                "state": {"isInitialized": True, "isPaused": False, "mu": 3.1},
+            }
+        ]
+        changed_markets = json.loads(json.dumps(markets))
+        changed_markets[0]["state"]["mu"] = 3.2
+        state = {"last_market_state_scout_refresh_key": loop.market_state_scout_refresh_key(markets)}
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "refreshed", "attempted": True},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                markets=changed_markets,
+            )
+
+        self.assertEqual(result["reason"], "market_state_shift")
+        self.assertEqual(result["reasons"], ["market_state_shift"])
+        self.assertEqual(result["market_state_shift"]["changed_markets"], ["0x1"])
+        self.assertTrue(refresh.call_args.kwargs["force"])
+        self.assertEqual(state["last_market_state_scout_refresh_key"], loop.market_state_scout_refresh_key(changed_markets))
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            repeat = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                markets=changed_markets,
+            )
+
+        self.assertEqual(repeat["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertNotIn("reason", repeat)
+
+    def test_market_state_refresh_failure_retries_later(self):
+        markets = [
+            {
+                "address": "0x01",
+                "isActive": True,
+                "state": {"isInitialized": True, "isPaused": False, "mu": 3.1},
+            }
+        ]
+        changed_markets = json.loads(json.dumps(markets))
+        changed_markets[0]["state"]["mu"] = 3.2
+        old_key = loop.market_state_scout_refresh_key(markets)
+        state = {"last_market_state_scout_refresh_key": old_key}
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "failed", "attempted": True, "returncode": 1},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+                markets=changed_markets,
+            )
+
+        self.assertEqual(result["reason"], "market_state_shift")
+        self.assertTrue(refresh.call_args.kwargs["force"])
+        self.assertEqual(state["last_market_state_scout_refresh_key"], old_key)
+
+    def test_summary_key_records_market_state_forced_scout_refresh(self):
+        summary = {
+            "rankings": {
+                "overall": {"rank": 10, "gap_to_first": 915.922009, "pnl": 79.244219},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "gas_tier": "ok",
+            "active_portfolio_scout_refresh": {
+                "status": "refreshed",
+                "reasons": ["market_state_shift"],
+            },
+        }
+
+        key = loop.summary_key(summary)
+
+        self.assertEqual(
+            key["active_portfolio_scout_refresh"],
+            {"status": "refreshed", "reasons": ["market_state_shift"]},
+        )
+
     def test_post_result_scout_refresh_key_is_stable(self):
         due = [
             {

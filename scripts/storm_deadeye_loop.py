@@ -57,6 +57,40 @@ RANKING_TIME_WINDOWS = (
 )
 SMOKE_SCRIPT_ATTEMPTS = 2
 SMOKE_SCRIPT_RETRY_DELAY_SECONDS = 5.0
+MARKET_STATE_FINGERPRINT_VERSION = 2
+MARKET_FINGERPRINT_KEYS = {
+    "address",
+    "backing",
+    "category",
+    "collateral",
+    "distribution",
+    "domain",
+    "family",
+    "feeConfig",
+    "isActive",
+    "isPaused",
+    "liquidity",
+    "marketType",
+    "minTradeCollateral",
+    "oracle",
+    "paused",
+    "resolution",
+    "settled",
+    "settlementValue",
+    "state",
+    "status",
+    "title",
+}
+VOLATILE_MARKET_KEY_PARTS = (
+    "block",
+    "created",
+    "fetched",
+    "hash",
+    "timestamp",
+    "transaction",
+    "tx",
+    "updated",
+)
 
 SECRET_RE = re.compile(
     r"mnemonic|private[_ -]?key|recovery phrase|secret[_ -]?key|BEGIN [A-Z ]*PRIVATE",
@@ -1261,6 +1295,75 @@ def refresh_active_portfolio_scout_if_stale(
     return result
 
 
+def scrub_market_fingerprint_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        scrubbed = {}
+        for key in sorted(value):
+            lowered = str(key).lower()
+            if any(part in lowered for part in VOLATILE_MARKET_KEY_PARTS):
+                continue
+            scrubbed[key] = scrub_market_fingerprint_value(value[key])
+        return scrubbed
+    if isinstance(value, list):
+        return [scrub_market_fingerprint_value(item) for item in value]
+    if isinstance(value, float):
+        return round(value, 12)
+    return value
+
+
+def market_state_scout_refresh_key(markets: list[dict[str, Any]]) -> dict[str, Any]:
+    items: list[dict[str, Any]] = []
+    for market in markets:
+        if not isinstance(market, dict):
+            continue
+        item: dict[str, Any] = {
+            "address": canonical_address(market.get("address")),
+            "tradeable": market_is_tradeable(market),
+        }
+        for key in sorted(MARKET_FINGERPRINT_KEYS):
+            if key == "address":
+                continue
+            if key in market:
+                item[key] = scrub_market_fingerprint_value(market.get(key))
+        items.append(item)
+    items.sort(key=lambda item: str(item.get("address")))
+    return {
+        "version": MARKET_STATE_FINGERPRINT_VERSION,
+        "markets": items,
+        "total": len(items),
+        "active_tradeable": sum(1 for item in items if item.get("tradeable")),
+    }
+
+
+def market_state_refresh_summary(
+    previous_key: dict[str, Any] | None,
+    current_key: dict[str, Any] | None,
+) -> dict[str, Any]:
+    previous_items = {
+        str(item.get("address")): item
+        for item in (previous_key or {}).get("markets", [])
+        if isinstance(item, dict)
+    }
+    current_items = {
+        str(item.get("address")): item
+        for item in (current_key or {}).get("markets", [])
+        if isinstance(item, dict)
+    }
+    changed = sorted(
+        address
+        for address in set(previous_items) | set(current_items)
+        if previous_items.get(address) != current_items.get(address)
+    )
+    return {
+        "previous_total": (previous_key or {}).get("total"),
+        "total": (current_key or {}).get("total"),
+        "previous_active_tradeable": (previous_key or {}).get("active_tradeable"),
+        "active_tradeable": (current_key or {}).get("active_tradeable"),
+        "changed_markets": changed[:20],
+        "changed_markets_truncated": len(changed) > 20,
+    }
+
+
 def post_result_scout_refresh_key(due_templates: list[dict[str, Any]]) -> list[dict[str, Any]]:
     key: list[dict[str, Any]] = []
     for item in due_templates:
@@ -1278,22 +1381,44 @@ def maybe_refresh_active_portfolio_scout(
     *,
     max_age_minutes: float,
     due_templates: list[dict[str, Any]],
+    markets: list[dict[str, Any]] | None = None,
 ) -> dict[str, Any]:
     due_key = post_result_scout_refresh_key(due_templates)
-    state_key = "last_post_result_scout_refresh_key"
+    due_state_key = "last_post_result_scout_refresh_key"
     if not due_key:
-        state.pop(state_key, None)
-    force_due_refresh = bool(due_key) and state.get(state_key) != due_key
+        state.pop(due_state_key, None)
+    force_due_refresh = bool(due_key) and state.get(due_state_key) != due_key
+    market_key = market_state_scout_refresh_key(markets or []) if markets is not None else None
+    market_state_key = "last_market_state_scout_refresh_key"
+    previous_market_key = state.get(market_state_key)
+    previous_market_version = (previous_market_key or {}).get("version") if isinstance(previous_market_key, dict) else None
+    force_market_refresh = (
+        bool(market_key)
+        and previous_market_key is not None
+        and previous_market_version == MARKET_STATE_FINGERPRINT_VERSION
+        and previous_market_key != market_key
+    )
+    force_refresh = force_due_refresh or force_market_refresh
     refresh = refresh_active_portfolio_scout_if_stale(
         state_dir,
         max_age_minutes=max_age_minutes,
-        force=force_due_refresh,
+        force=force_refresh,
     )
+    reasons: list[str] = []
     if force_due_refresh:
-        refresh["reason"] = "post_result_evidence_due"
+        reasons.append("post_result_evidence_due")
         refresh["due_templates"] = due_key
-        if refresh.get("status") != "failed":
-            state[state_key] = due_key
+    if force_market_refresh:
+        reasons.append("market_state_shift")
+        refresh["market_state_shift"] = market_state_refresh_summary(previous_market_key, market_key)
+    if reasons:
+        refresh["reasons"] = reasons
+        refresh["reason"] = reasons[0] if len(reasons) == 1 else "+".join(reasons)
+    if refresh.get("status") != "failed":
+        if due_key:
+            state[due_state_key] = due_key
+        if market_key:
+            state[market_state_key] = market_key
     return refresh
 
 
@@ -1327,13 +1452,22 @@ def scout_key(summary: dict[str, Any]) -> dict[str, Any] | None:
 
 def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
     refresh = summary.get("active_portfolio_scout_refresh") or {}
+    reasons = refresh.get("reasons") or []
+    if refresh.get("status") != "failed" and "market_state_shift" in reasons:
+        return {
+            "status": refresh.get("status"),
+            "reasons": reasons,
+        }
     if refresh.get("status") != "failed":
         return None
-    return {
+    failed = {
         "status": "failed",
         "returncode": refresh.get("returncode"),
         "error_tail": refresh.get("error_tail") or [],
     }
+    if reasons:
+        failed["reasons"] = reasons
+    return failed
 
 
 def ranking_view_stats(views: dict[str, Any], *, rounded: bool = False) -> dict[str, Any]:
@@ -1496,7 +1630,16 @@ def format_active_portfolio_scout_refresh(summary: dict[str, Any]) -> str:
     if not refresh:
         return "not requested"
     status = refresh.get("status")
-    prefix = "post-result evidence due; " if refresh.get("reason") == "post_result_evidence_due" else ""
+    reasons = set(refresh.get("reasons") or [])
+    if not reasons and refresh.get("reason"):
+        reasons.add(str(refresh.get("reason")))
+    prefix_parts = []
+    if "post_result_evidence_due" in reasons:
+        prefix_parts.append("post-result evidence due")
+    if "market_state_shift" in reasons:
+        prefix_parts.append("market state shift")
+    prefix = "; ".join(prefix_parts)
+    prefix = f"{prefix}; " if prefix else ""
     if status == "fresh":
         age = refresh.get("previous_age_seconds")
         age_text = f", age_seconds={age:.0f}" if isinstance(age, (int, float)) else ""
@@ -1687,13 +1830,6 @@ def main(argv: list[str] | None = None) -> int:
         scout_refresh = None
         templates = load_template_status(args.templates)
         due_templates = post_result_evidence_due(templates)
-        if args.refresh_active_portfolio_scout:
-            scout_refresh = maybe_refresh_active_portfolio_scout(
-                state,
-                args.state.parent,
-                max_age_minutes=args.active_portfolio_scout_max_age_minutes,
-                due_templates=due_templates,
-            )
         snap = account_snapshot()
         account = snap["account"]
         collateral = snap["collateral"]
@@ -1702,6 +1838,14 @@ def main(argv: list[str] | None = None) -> int:
         if not trader or not indexer_url:
             raise LoopError("account show did not return trader and indexer URL")
         monitoring = monitor(indexer_url, trader)
+        if args.refresh_active_portfolio_scout:
+            scout_refresh = maybe_refresh_active_portfolio_scout(
+                state,
+                args.state.parent,
+                max_age_minutes=args.active_portfolio_scout_max_age_minutes,
+                due_templates=due_templates,
+                markets=monitoring["markets"]["items"],
+            )
         template_promotion = None
         if args.promote_ready_templates:
             template_promotion = promote_ready_templates(args.templates, args.candidates, append=True)
