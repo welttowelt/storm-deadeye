@@ -1022,6 +1022,28 @@ def evidence_review_summary(candidate: dict[str, Any]) -> list[dict[str, Any]]:
     return rows
 
 
+def leaderboard_review_context(candidate: dict[str, Any]) -> dict[str, Any]:
+    prepared_from = candidate.get("prepared_from") or {}
+    return {
+        "label": candidate.get("label") or prepared_from.get("label"),
+        "opportunity_status": (
+            candidate.get("opportunity_status")
+            or prepared_from.get("status")
+        ),
+        "stored_quote_expected_value_xp": (
+            candidate.get("quote_expected_value_xp")
+            or prepared_from.get("quote_expected_value_xp")
+        ),
+        "belief_gap_improvement_xp": (
+            candidate.get("belief_gap_improvement_xp")
+            or prepared_from.get("belief_gap_improvement_xp")
+        ),
+        "current_blocker": candidate.get("current_blocker") or prepared_from.get("current_blocker"),
+        "quote_ev_alone_is_sufficient": False,
+        "review_basis": "evidence, leaderboard-gap impact, fresh quote, dry-run, and runner gates",
+    }
+
+
 def candidate_review_package(
     candidate: dict[str, Any],
     market_meta: dict[str, Any],
@@ -1046,6 +1068,7 @@ def candidate_review_package(
         "bankroll_xp": balance_xp,
         "min_expected_value": min_ev,
         "max_collateral": receipt.get("max_collateral"),
+        "leaderboard_context": leaderboard_review_context(candidate),
         "quote": quote_review_summary(quote),
         "dry_run": dry_run_review_summary(receipt.get("dry_run") or {}),
         "post_result_evidence_status": candidate.get("post_result_evidence_status"),

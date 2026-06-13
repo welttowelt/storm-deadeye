@@ -136,8 +136,11 @@ trade-cap, or operator-policy gates.
 
 When the marker is missing, the `review_required` event and processed-candidate
 mailbox line include a sanitized `review_package`: candidate id/template id,
-market, belief, budget, evidence packet reference, evidence-row summaries,
-selected quote fields, selected dry-run verdict fields, and max collateral.
+market, belief, budget, leaderboard context, evidence packet reference,
+evidence-row summaries, selected quote fields, selected dry-run verdict fields,
+and max collateral. The `leaderboard_context` block carries stored opportunity
+status, stored quote EV, belief-gap impact, current blocker, and an explicit
+flag that quote EV alone is not sufficient for review approval.
 Raw dry-run output, calldata, wallet config, journal path, and secrets are not
 included.
 

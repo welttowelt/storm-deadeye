@@ -552,6 +552,13 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             "budget": 100.0,
             "world_cup_post_result": True,
             "source_template_id": "germany-post-result-snap-template-20260612",
+            "prepared_from": {
+                "label": "Germany higher",
+                "status": "durable_watch",
+                "quote_expected_value_xp": 22.1,
+                "belief_gap_improvement_xp": 188.4,
+                "current_blocker": "waiting for official post-result evidence",
+            },
             "result_not_before_utc": "2026-06-14T20:00:00Z",
             "post_result_evidence_status": "captured_not_queue_approved",
             "post_result_evidence_packet": {
@@ -636,6 +643,12 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(package["candidate_id"], "germany-post-result-candidate")
         self.assertEqual(package["source_template_id"], "germany-post-result-snap-template-20260612")
         self.assertEqual(package["post_result_evidence_packet"]["captured_ids"], ["official_result", "quote_scout"])
+        self.assertEqual(package["leaderboard_context"]["label"], "Germany higher")
+        self.assertEqual(package["leaderboard_context"]["opportunity_status"], "durable_watch")
+        self.assertEqual(package["leaderboard_context"]["stored_quote_expected_value_xp"], 22.1)
+        self.assertEqual(package["leaderboard_context"]["belief_gap_improvement_xp"], 188.4)
+        self.assertFalse(package["leaderboard_context"]["quote_ev_alone_is_sufficient"])
+        self.assertIn("leaderboard-gap", package["leaderboard_context"]["review_basis"])
         self.assertEqual(package["quote"]["expected_value"], 22.0)
         self.assertEqual(package["quote"]["candidate_mean"], 3.7)
         self.assertTrue(package["dry_run"]["ok"])
