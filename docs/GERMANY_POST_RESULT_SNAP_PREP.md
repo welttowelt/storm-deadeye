@@ -44,9 +44,13 @@ Capture these before promoting or queueing:
 - Injuries/suspensions, `source_role: "team_news"`: pre-match and in-match
   changes that affect Germany's later tournament path.
 - Odds move, `source_role: "odds_snapshot"`: at least one pre-result snapshot
-  and one post-result snapshot for Germany outright odds or path odds.
+  and one post-result snapshot for Germany outright odds or path odds. The
+  claim must cite the stored baseline values, Germany `1.06`, draw `19.5`, or
+  Curacao `60`, and an explicit numeric updated odds value or delta.
 - Ratings move, `source_role: "ratings_snapshot"`: model/ratings source before
-  and after, if available.
+  and after, if available. The claim must cite the stored FIFA rank baseline,
+  Germany `10`, Curacao `82`, or update date `2026-06-11`, and an explicit
+  numeric updated rating/model value or delta.
 - Market state, `source_role: "deadeye_market_state"`: `deadeye markets show
   <market> --output json` after result.
 - Quote, `source_role: "deadeye_quote_scout"`: quote JSON after result using
@@ -97,9 +101,11 @@ these claim markers:
   post-match timing, Germany, path/availability impact, and source/checked
   marker.
 - `odds_move`: odds, post-result timing, movement/change, baseline or
-  pre-result comparison, and an updated odds value or delta.
+  pre-result comparison, stored baseline value, and `post_result_numeric_value`
+  via an updated numeric odds value or delta.
 - `ratings_move`: rating or model, post-result timing, movement/change,
-  baseline or pre-result comparison, and an updated rating/model value or
+  baseline or pre-result comparison, stored baseline value, and
+  `post_result_numeric_value` via an updated numeric rating/model value or
   delta.
 - `market_state`: market/Deadeye state from `deadeye markets show`, a
   generated/captured timestamp, and concrete `mu=<value>` plus
@@ -260,6 +266,13 @@ The generated packet includes the same commands under
 source, URL, or claim skeleton during the post-result window. The commands are
 still strict row captures, not approvals: source values, timestamps, and claim
 placeholders must reflect the actual post-result source.
+
+For `odds_move` and `ratings_move`, inspect
+`capture_plan.rows[].claim_must_include` before capture. Both rows now include
+`post_result_numeric_value`, which means a claim that only says "odds moved" or
+"ratings changed" will fail. The claim must include a numeric post-result value
+or delta near the update marker, for example `post_result_value updated odds
+Germany 1.04` or `delta -0.02`; ratings/model rows need the same numeric shape.
 
 Use `local-cli` as the URL only for `market_state` and `quote_scout`. Public
 rows must use the exact source URL checked by the operator. Each capture command
