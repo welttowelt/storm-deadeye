@@ -51,6 +51,15 @@ CAPTURE_NOTES = {
     "market_state": "Run the local read-only market-state command after the result or market state shifts.",
     "quote_scout": "Run the local read-only quote scout after the result or market state shifts.",
 }
+CLAIM_TEMPLATES = {
+    "official_result": "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
+    "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
+    "injuries_suspensions": "Post-match source checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
+    "odds_move": "Post-result Germany odds movement versus the pre-result baseline captured.",
+    "ratings_move": "Post-result ratings/model movement for Germany versus baseline captured.",
+    "market_state": "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+    "quote_scout": "Fresh active-portfolio quote scout EV and expected value captured after result/state shift.",
+}
 REQUIRED_CLAIM_KEYWORDS = {
     "official_result": (
         ("completion_marker", ("completed", "final", "full-time", "full time", "final whistle", "final-whistle", "ft")),
@@ -632,6 +641,7 @@ def read_only_commands(template: dict[str, Any]) -> list[str]:
 def row_capture_command(item_id: str, item: dict[str, Any], *, result_not_before: str) -> str:
     source = item.get("source") or "<source name>"
     url = item.get("url") or "<source URL or local-cli>"
+    claim = CLAIM_TEMPLATES.get(item_id, "<specific claim>")
     return " ".join([
         "python3",
         "scripts/storm_worldcup_evidence_packet.py",
@@ -640,7 +650,7 @@ def row_capture_command(item_id: str, item: dict[str, Any], *, result_not_before
         "--capture-row",
         shlex.quote(item_id),
         "--claim",
-        shlex.quote("<specific claim>"),
+        shlex.quote(claim),
         "--source",
         shlex.quote(str(source)),
         "--url",
@@ -688,6 +698,7 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
                 "capture_utc": "current UTC timestamp after source check",
             },
             "claim_must_include": marker_groups,
+            "claim_template": CLAIM_TEMPLATES.get(item_id, "<specific claim>"),
             "capture_note": CAPTURE_NOTES[item_id],
             "capture_command": row_capture_command(item_id, item, result_not_before=result_not_before),
             "read_only_command": local_commands.get(item_id),
@@ -697,7 +708,7 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
         "row_capture_command_template": (
             "python3 scripts/storm_worldcup_evidence_packet.py "
             "--packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json "
-            "--capture-row <evidence_id> --claim '<specific claim>' --source '<source name>' "
+            "--capture-row <evidence_id> --claim '<row-specific claim_template with source values filled>' --source '<source name>' "
             "--url '<source URL or local-cli>' --capture-utc <UTC timestamp> "
             "--output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json"
         ),

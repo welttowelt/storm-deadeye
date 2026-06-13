@@ -218,6 +218,11 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         )
         plan_rows = {row["id"]: row for row in result["capture_plan"]["rows"]}
         self.assertEqual(result["capture_plan"]["result_not_before_utc"], "2026-06-14T20:00:00Z")
+        self.assertIn(
+            "<row-specific claim_template with source values filled>",
+            result["capture_plan"]["row_capture_command_template"],
+        )
+        self.assertNotIn("<specific claim>", result["capture_plan"]["row_capture_command_template"])
         self.assertEqual(
             plan_rows["official_result"]["capture_utc_must_be_at_or_after"],
             "2026-06-14T20:00:00Z",
@@ -227,6 +232,10 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
             plan_rows["official_result"]["primary_url"],
             "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
         )
+        self.assertEqual(
+            plan_rows["official_result"]["claim_template"],
+            "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
+        )
         self.assertIn("--capture-row official_result", plan_rows["official_result"]["capture_command"])
         self.assertIn("'FIFA match centre'", plan_rows["official_result"]["capture_command"])
         self.assertIn(
@@ -234,15 +243,32 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
             plan_rows["official_result"]["capture_command"],
         )
         self.assertIn(
+            "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
+            plan_rows["official_result"]["capture_command"],
+        )
+        self.assertNotIn("<specific claim>", plan_rows["official_result"]["capture_command"])
+        self.assertIn(
             {"label": "numeric_score_value", "accepted_pattern": r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b"},
             plan_rows["official_result"]["claim_must_include"],
         )
         self.assertIn("deadeye markets show 0x1e7", plan_rows["market_state"]["read_only_command"])
         self.assertIn("storm_gap_analyzer.py", plan_rows["quote_scout"]["read_only_command"])
+        self.assertEqual(
+            plan_rows["market_state"]["claim_template"],
+            "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+        )
+        self.assertIn(
+            "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+            plan_rows["market_state"]["capture_command"],
+        )
         self.assertIn("--capture-row market_state", plan_rows["market_state"]["capture_command"])
         self.assertIn("--url local-cli", plan_rows["market_state"]["capture_command"])
         self.assertIn("--capture-row quote_scout", plan_rows["quote_scout"]["capture_command"])
         self.assertIn("--url local-cli", plan_rows["quote_scout"]["capture_command"])
+        for item_id, row in plan_rows.items():
+            self.assertIn("claim_template", row, item_id)
+            self.assertIn(row["claim_template"], row["capture_command"], item_id)
+            self.assertNotIn("<specific claim>", row["capture_command"], item_id)
         self.assertIn("--validate-packet", result["capture_plan"]["validation_command"])
         self.assertIn("storm_deadeye_loop.py", result["capture_plan"]["runner_command"])
         reachability = result["source_reachability"]

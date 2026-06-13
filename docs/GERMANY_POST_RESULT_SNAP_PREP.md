@@ -67,7 +67,9 @@ order at the window: it repeats the result-window timestamp, row-level source
 roles, ordered source fallbacks, required claim markers, and the local read-only
 commands for `market_state` and `quote_scout`. Each row also includes
 `capture_plan.rows[].capture_command`, a paste-ready command with that row id,
-default source, and URL already slotted. If a row does not satisfy its
+default source, URL, and row-specific claim template already slotted. Replace
+any claim placeholder such as `<score>` with the concrete source value before
+running the command. If a row does not satisfy its
 `capture_plan.rows[].claim_must_include` markers, do not promote the template.
 
 The packet can optionally include `source_reachability` by running with
@@ -223,7 +225,9 @@ Repeat `--capture-row` for every required evidence id:
 
 The generated packet includes the same commands under
 `capture_plan.rows[].capture_command`; prefer those over retyping the row id,
-source, or URL during the post-result window.
+source, URL, or claim skeleton during the post-result window. The commands are
+still strict row captures, not approvals: source values, timestamps, and claim
+placeholders must reflect the actual post-result source.
 
 Use `local-cli` as the URL only for `market_state` and `quote_scout`. Public
 rows must use the exact source URL checked by the operator. Each capture command
