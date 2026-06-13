@@ -97,8 +97,8 @@ def fill_packet_evidence(result: dict):
         "official_result": "Official final score Germany 3-0 Curacao and completed marker captured.",
         "confirmed_lineups": "Confirmed lineups, starting XI, substitutes, and late absences captured.",
         "injuries_suspensions": "Injuries, suspensions, bookings, and absences checked for path impact.",
-        "odds_move": "Post-result Germany odds movement versus the pre-result baseline captured.",
-        "ratings_move": "Post-result ratings/model movement versus baseline captured.",
+        "odds_move": "Post-result Germany odds movement versus the pre-result baseline Germany 1.06 captured.",
+        "ratings_move": "Post-result ratings/model movement versus baseline FIFA ranks Germany 10 and Curacao 82 captured.",
         "market_state": "Fresh post-result Deadeye market state distribution captured.",
         "quote_scout": "Fresh active-portfolio quote scout EV captured after result/state shift.",
     }
@@ -122,8 +122,8 @@ def fill_realistic_germany_result_evidence(result: dict):
         "official_result": "FIFA shows the match completed at full time with final score Germany 3-0 Curacao.",
         "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
         "injuries_suspensions": "Match report checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
-        "odds_move": "Post-result Germany outright odds and path odds movement versus baseline captured.",
-        "ratings_move": "Post-result ratings model movement for Germany versus baseline captured.",
+        "odds_move": "Post-result Germany outright odds and path odds movement versus baseline Germany 1.06 captured.",
+        "ratings_move": "Post-result ratings model movement for Germany versus baseline ranks Germany 10 and Curacao 82 captured.",
         "market_state": "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
         "quote_scout": "Fresh active-portfolio quote scout EV and expected value captured after result/state shift.",
     }
@@ -521,6 +521,69 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         )
 
         self.assertEqual(accepted, [])
+
+    def test_odds_move_capture_requires_stored_baseline_value_when_available(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_realistic_germany_result_evidence(result)
+            for item in result["evidence_placeholders"]:
+                if item["id"] == "odds_move":
+                    item["claim"] = "Post-result Germany odds movement versus the pre-result baseline captured."
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:08:00Z")
+
+        self.assertFalse(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertIn(
+            "odds_move:claim_missing_baseline_odds_value",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertEqual(validated["capture_status"]["missing_ids"], ["odds_move"])
+
+    def test_ratings_move_capture_requires_stored_baseline_value_when_available(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_realistic_germany_result_evidence(result)
+            for item in result["evidence_placeholders"]:
+                if item["id"] == "ratings_move":
+                    item["claim"] = "Post-result ratings model movement for Germany versus baseline captured."
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:08:00Z")
+
+        self.assertFalse(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertIn(
+            "ratings_move:claim_missing_baseline_rating_value",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertEqual(validated["capture_status"]["missing_ids"], ["ratings_move"])
+
+    def test_capture_plan_includes_baseline_values_for_move_rows(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "germany.json"
+            write_germany_template(template_path)
+
+            result = packet.build_packet(template_path, now="2026-06-13T06:42:00Z")
+
+        rows = {row["id"]: row for row in result["capture_plan"]["rows"]}
+        self.assertIn("Germany 1.06", rows["odds_move"]["claim_template"])
+        self.assertIn("Curacao 60.0", rows["odds_move"]["claim_template"])
+        self.assertIn("Germany 10", rows["ratings_move"]["claim_template"])
+        self.assertIn("Curacao 82", rows["ratings_move"]["claim_template"])
+        self.assertIn("baseline_value", [
+            marker["label"] for marker in rows["odds_move"]["claim_must_include"]
+        ])
+        self.assertIn("baseline_value", [
+            marker["label"] for marker in rows["ratings_move"]["claim_must_include"]
+        ])
 
     def test_validate_packet_recomputes_stale_result_window_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:

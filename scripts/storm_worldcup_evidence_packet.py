@@ -282,6 +282,40 @@ def claim_keyword_blockers(item_id: str, claim: Any) -> list[str]:
     return blockers
 
 
+def baseline_value_terms(template_or_baseline: dict[str, Any], item_id: str) -> list[str]:
+    baseline = template_or_baseline.get("pre_result_baseline") or template_or_baseline
+    terms: list[str] = []
+    if item_id == "odds_move":
+        decimal_odds = ((baseline.get("odds_snapshot") or {}).get("decimal_odds") or {})
+        for key in ("germany", "draw", "curacao"):
+            value = decimal_odds.get(key)
+            if value is not None:
+                terms.append(str(value))
+    elif item_id == "ratings_move":
+        ratings = (baseline.get("ratings_snapshot") or {})
+        ranks = ratings.get("ranks") or {}
+        for key in ("germany", "curacao"):
+            value = ranks.get(key)
+            if value is not None:
+                terms.append(str(value))
+        if ratings.get("updated_at"):
+            terms.append(str(ratings.get("updated_at")))
+    return dedupe_preserve_order(terms)
+
+
+def baseline_value_blockers(item_id: str, claim: Any, pre_result_baseline: dict[str, Any] | None) -> list[str]:
+    if item_id not in {"odds_move", "ratings_move"}:
+        return []
+    terms = baseline_value_terms(pre_result_baseline or {}, item_id)
+    if not terms:
+        return []
+    text = str(claim or "").lower()
+    if any(term.lower() in text for term in terms):
+        return []
+    label = "baseline_odds_value" if item_id == "odds_move" else "baseline_rating_value"
+    return [f"{item_id}:claim_missing_{label}"]
+
+
 def result_window_open_from_packet(packet: dict[str, Any], *, now: str | None = None) -> bool | None:
     template = packet.get("template") or {}
     raw_window = template.get("result_not_before_utc")
@@ -293,7 +327,11 @@ def result_window_open_from_packet(packet: dict[str, Any], *, now: str | None = 
         return None
 
 
-def evidence_item_blockers(item: dict[str, Any]) -> list[str]:
+def evidence_item_blockers(
+    item: dict[str, Any],
+    *,
+    pre_result_baseline: dict[str, Any] | None = None,
+) -> list[str]:
     item_id = str(item.get("id") or "unknown")
     blockers: list[str] = []
     if str(item.get("status") or "").lower() not in CAPTURED_STATUSES:
@@ -304,6 +342,7 @@ def evidence_item_blockers(item: dict[str, Any]) -> list[str]:
         blockers.append(f"{item_id}:claim_placeholder")
     else:
         blockers.extend(claim_keyword_blockers(item_id, item.get("claim")))
+        blockers.extend(baseline_value_blockers(item_id, item.get("claim"), pre_result_baseline))
     blockers.extend(evidence_url_blockers(item_id, item.get("url")))
     if not valid_capture_utc(item.get("capture_utc")):
         blockers.append(f"{item_id}:capture_utc_invalid")
@@ -436,6 +475,33 @@ def claim_template_blockers(item_id: str, claim_template: Any) -> list[str]:
     return blockers
 
 
+def claim_template_for_item(item_id: str, template: dict[str, Any]) -> str:
+    baseline = template.get("pre_result_baseline") or {}
+    if item_id == "odds_move":
+        decimal_odds = ((baseline.get("odds_snapshot") or {}).get("decimal_odds") or {})
+        germany = decimal_odds.get("germany")
+        draw = decimal_odds.get("draw")
+        curacao = decimal_odds.get("curacao")
+        if germany is not None and draw is not None and curacao is not None:
+            return (
+                "Post-result Germany odds movement versus pre-result baseline "
+                f"Germany {germany}, draw {draw}, Curacao {curacao} captured."
+            )
+    if item_id == "ratings_move":
+        ratings = (baseline.get("ratings_snapshot") or {})
+        ranks = ratings.get("ranks") or {}
+        germany = ranks.get("germany")
+        curacao = ranks.get("curacao")
+        if germany is not None and curacao is not None:
+            updated_at = ratings.get("updated_at")
+            updated = f" from {updated_at}" if updated_at else ""
+            return (
+                "Post-result ratings/model movement for Germany versus pre-result "
+                f"FIFA rank baseline{updated}: Germany {germany}, Curacao {curacao} captured."
+            )
+    return CLAIM_TEMPLATES.get(item_id, "<specific claim>")
+
+
 def pre_window_readiness(packet: dict[str, Any]) -> dict[str, Any]:
     blockers: list[str] = []
     item_blockers: dict[str, list[str]] = {}
@@ -488,6 +554,13 @@ def pre_window_readiness(packet: dict[str, Any]) -> dict[str, Any]:
         else:
             claim_template = plan.get("claim_template")
             row_blockers.extend(claim_template_blockers(item_id, claim_template))
+            row_blockers.extend(
+                baseline_value_blockers(
+                    item_id,
+                    claim_template,
+                    packet.get("pre_result_baseline") or {},
+                )
+            )
             command = str(plan.get("capture_command") or "")
             if f"--capture-row {item_id}" not in command:
                 row_blockers.append(f"{item_id}:capture_command_missing_row")
@@ -543,7 +616,10 @@ def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict
         if not item:
             blockers.append(f"{item_id}:missing")
             continue
-        current_blockers = evidence_item_blockers(item)
+        current_blockers = evidence_item_blockers(
+            item,
+            pre_result_baseline=packet.get("pre_result_baseline") or {},
+        )
         if current_blockers:
             item_blockers[item_id] = current_blockers
             blockers.extend(current_blockers)
@@ -732,10 +808,16 @@ def read_only_commands(template: dict[str, Any]) -> list[str]:
     ]
 
 
-def row_capture_command(item_id: str, item: dict[str, Any], *, result_not_before: str) -> str:
+def row_capture_command(
+    item_id: str,
+    item: dict[str, Any],
+    *,
+    result_not_before: str,
+    claim_template: str | None = None,
+) -> str:
     source = item.get("source") or "<source name>"
     url = item.get("url") or "<source URL or local-cli>"
-    claim = CLAIM_TEMPLATES.get(item_id, "<specific claim>")
+    claim = claim_template or CLAIM_TEMPLATES.get(item_id, "<specific claim>")
     return " ".join([
         "python3",
         "scripts/storm_worldcup_evidence_packet.py",
@@ -779,6 +861,13 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
                 "label": "numeric_score_value",
                 "accepted_pattern": r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b",
             })
+        baseline_terms = baseline_value_terms(template, item_id)
+        if baseline_terms:
+            marker_groups.append({
+                "label": "baseline_value",
+                "accepted_terms": baseline_terms,
+            })
+        claim_template = claim_template_for_item(item_id, template)
         rows.append({
             "id": item_id,
             "source_role": item.get("source_role") or EXPECTED_SOURCE_ROLES.get(item_id),
@@ -792,9 +881,14 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
                 "capture_utc": "current UTC timestamp after source check",
             },
             "claim_must_include": marker_groups,
-            "claim_template": CLAIM_TEMPLATES.get(item_id, "<specific claim>"),
+            "claim_template": claim_template,
             "capture_note": CAPTURE_NOTES[item_id],
-            "capture_command": row_capture_command(item_id, item, result_not_before=result_not_before),
+            "capture_command": row_capture_command(
+                item_id,
+                item,
+                result_not_before=result_not_before,
+                claim_template=claim_template,
+            ),
             "read_only_command": local_commands.get(item_id),
         })
     return {
