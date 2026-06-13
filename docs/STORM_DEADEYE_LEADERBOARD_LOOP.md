@@ -157,6 +157,20 @@ retry before failing the tick. External and built-in smoke must report
 `deadeye >= 0.1.20`; stale or missing smoke versions fail closed before any
 candidate can reach quote, dry-run, or submit.
 
+Claude's external smoke script should also enforce that floor before it runs
+markets list/show, doctor, or quote. Use the offline verifier before accepting
+that lane as fixed:
+
+```bash
+python3 scripts/verify_external_smoke_floor.py \
+  --smoke-script ../deadeye-claude-smoke/smoke.sh
+```
+
+The verifier replaces `deadeye` with a temporary fake binary and never calls
+the real CLI, RPC, indexer, wallet config, or any on-chain path. It passes only
+when `deadeye 0.1.20` reaches the read-only probes and stale, missing, or
+unparseable version output fails before any market reads.
+
 To let the runner append a mailbox update only when rank, health, gas tier,
 candidate processing, template readiness, scout signal counts, or scout-refresh
 failures change:
