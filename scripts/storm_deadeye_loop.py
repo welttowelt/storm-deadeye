@@ -1494,16 +1494,33 @@ def ranking_view_stats(views: dict[str, Any], *, rounded: bool = False) -> dict[
     return stats
 
 
+def view_slugs_by_status(views: dict[str, Any], status: str) -> list[str]:
+    return sorted(
+        slug
+        for slug, item in views.items()
+        if isinstance(item, dict) and item.get("status") == status
+    )
+
+
+def unavailable_view_slugs(views: dict[str, Any]) -> list[str]:
+    return sorted(
+        slug
+        for slug, item in views.items()
+        if not (item or {}).get("healthy") and (item or {}).get("status") != "mirrored"
+    )
+
+
 def summary_key(summary: dict[str, Any]) -> dict[str, Any]:
     rankings = summary.get("rankings", {})
     filters = rankings.get("filters", {})
     time_windows = rankings.get("time_windows", {})
     filter_time_windows = rankings.get("filter_time_windows", {})
-    unhealthy = sorted(slug for slug, item in filters.items() if not item.get("healthy"))
-    unhealthy_time_windows = sorted(slug for slug, item in time_windows.items() if not item.get("healthy"))
-    unhealthy_filter_time_windows = sorted(
-        slug for slug, item in filter_time_windows.items() if not item.get("healthy")
-    )
+    unhealthy = unavailable_view_slugs(filters)
+    unhealthy_time_windows = unavailable_view_slugs(time_windows)
+    unhealthy_filter_time_windows = unavailable_view_slugs(filter_time_windows)
+    mirrored = view_slugs_by_status(filters, "mirrored")
+    mirrored_time_windows = view_slugs_by_status(time_windows, "mirrored")
+    mirrored_filter_time_windows = view_slugs_by_status(filter_time_windows, "mirrored")
     processed = [
         {"id": item.get("id"), "status": item.get("status")}
         for item in summary.get("processed_candidates", [])
@@ -1527,6 +1544,9 @@ def summary_key(summary: dict[str, Any]) -> dict[str, Any]:
         "unhealthy_filters": unhealthy,
         "unhealthy_time_windows": unhealthy_time_windows,
         "unhealthy_filter_time_windows": unhealthy_filter_time_windows,
+        "mirrored_filters": mirrored,
+        "mirrored_time_windows": mirrored_time_windows,
+        "mirrored_filter_time_windows": mirrored_filter_time_windows,
         "healthy_view_ranks": {
             "filters": ranking_view_stats(filters, rounded=True),
             "time_windows": ranking_view_stats(time_windows, rounded=True),
@@ -1552,12 +1572,19 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
         "unhealthy_filters",
         "unhealthy_time_windows",
         "unhealthy_filter_time_windows",
+        "mirrored_filters",
+        "mirrored_time_windows",
+        "mirrored_filter_time_windows",
         "healthy_view_ranks",
         "processed",
         "promoted_templates",
         "post_result_evidence_due",
     )
     for field in stable_fields:
+        if field.startswith("mirrored_"):
+            if (stored.get(field) or []) != (current.get(field) or []):
+                return False
+            continue
         if stored.get(field) != current.get(field):
             return False
 
@@ -1592,6 +1619,17 @@ def format_unhealthy_views(key: dict[str, Any]) -> str:
         parts.append("time_windows=" + ", ".join(key["unhealthy_time_windows"]))
     if key.get("unhealthy_filter_time_windows"):
         parts.append("domain_time_windows=" + ", ".join(key["unhealthy_filter_time_windows"]))
+    return "; ".join(parts) if parts else "none"
+
+
+def format_mirrored_views(key: dict[str, Any]) -> str:
+    parts: list[str] = []
+    if key.get("mirrored_filters"):
+        parts.append("domains=" + ", ".join(key["mirrored_filters"]))
+    if key.get("mirrored_time_windows"):
+        parts.append("time_windows=" + ", ".join(key["mirrored_time_windows"]))
+    if key.get("mirrored_filter_time_windows"):
+        parts.append("domain_time_windows=" + ", ".join(key["mirrored_filter_time_windows"]))
     return "; ".join(parts) if parts else "none"
 
 
@@ -1692,6 +1730,11 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
             "time_windows": key["unhealthy_time_windows"],
             "filter_time_windows": key["unhealthy_filter_time_windows"],
         },
+        "mirrored_views": {
+            "filters": key["mirrored_filters"],
+            "time_windows": key["mirrored_time_windows"],
+            "filter_time_windows": key["mirrored_filter_time_windows"],
+        },
         "healthy_view_stats": {
             "filters": ranking_view_stats(filters),
             "time_windows": ranking_view_stats(time_windows),
@@ -1745,6 +1788,7 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
         f"Healthy leaderboard views: {format_healthy_view_stats(key)}.",
         f"Active portfolio scout: {format_active_portfolio_scout(summary)}.",
         f"Active portfolio scout refresh: {format_active_portfolio_scout_refresh(summary)}.",
+        f"Mirrored leaderboard views ignored: {format_mirrored_views(key)}.",
         f"Failures: unhealthy_ranking_views={format_unhealthy_views(key)}.",
         (
             "RCI pass: RCI_Storm pass by Codex_Storm Deadeye. The loop only "

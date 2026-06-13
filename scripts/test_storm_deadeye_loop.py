@@ -215,6 +215,7 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                 "overall": {"rank": 4, "gap_to_first": 479.0864, "pnl": 50.0161},
                 "filters": {
                     "economics": {"healthy": False},
+                    "world-cup": {"healthy": False, "status": "mirrored", "mirror_of": "overall"},
                     "cpi": {
                         "healthy": True,
                         "rank": 2,
@@ -224,6 +225,13 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                         "markets_traded": 1,
                         "total_trades": 2,
                     },
+                },
+                "time_windows": {
+                    "last-24h": {"healthy": False, "status": "mirrored", "mirror_of": "overall"},
+                    "last-7d": {"healthy": False, "status": 503},
+                },
+                "filter_time_windows": {
+                    "world-cup/last-24h": {"healthy": False, "status": "mirrored", "mirror_of": "overall"},
                 },
             },
             "gas_tier": "ok",
@@ -251,8 +259,16 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         key = loop.summary_key(summary)
         self.assertEqual(key["rank"], 4)
         self.assertEqual(key["unhealthy_filters"], ["economics"])
-        self.assertEqual(key["unhealthy_time_windows"], [])
+        self.assertEqual(key["unhealthy_time_windows"], ["last-7d"])
         self.assertEqual(key["unhealthy_filter_time_windows"], [])
+        self.assertEqual(key["mirrored_filters"], ["world-cup"])
+        self.assertEqual(key["mirrored_time_windows"], ["last-24h"])
+        self.assertEqual(key["mirrored_filter_time_windows"], ["world-cup/last-24h"])
+        self.assertEqual(loop.format_unhealthy_views(key), "domains=economics; time_windows=last-7d")
+        self.assertEqual(
+            loop.format_mirrored_views(key),
+            "domains=world-cup; time_windows=last-24h; domain_time_windows=world-cup/last-24h",
+        )
         self.assertEqual(
             key["healthy_view_ranks"]["filters"]["cpi"],
             {
@@ -590,7 +606,8 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     "total_trades": 2,
                 },
                 "filters": {
-                    "world-cup": {"healthy": False},
+                    "world-cup": {"healthy": False, "status": "mirrored", "mirror_of": "overall"},
+                    "soccer": {"healthy": False, "status": 503},
                     "economics": {
                         "healthy": True,
                         "rank": 1,
@@ -636,7 +653,8 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(compact["strk_balance"], 1042.0)
         self.assertEqual(compact["xp_balance"], 19832.0)
         self.assertEqual(compact["healthy_views"]["filters"], ["economics"])
-        self.assertEqual(compact["unhealthy_views"]["filters"], ["world-cup"])
+        self.assertEqual(compact["unhealthy_views"]["filters"], ["soccer"])
+        self.assertEqual(compact["mirrored_views"]["filters"], ["world-cup"])
         self.assertEqual(compact["healthy_view_stats"]["filters"]["economics"]["rank"], 1)
         self.assertEqual(compact["healthy_view_stats"]["filters"]["economics"]["gap_to_first"], 0.0)
         self.assertEqual(compact["active_portfolio_scout"]["coverage"]["covered_active_tradeable_markets"], 11)
