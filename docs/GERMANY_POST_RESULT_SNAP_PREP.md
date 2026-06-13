@@ -64,6 +64,11 @@ these claim markers:
 - `market_state`: market/Deadeye plus state, mu, sigma, or distribution.
 - `quote_scout`: quote plus scout, EV, or expected value.
 
+The test suite includes a synthetic realistic filled Germany packet proving
+these strict gates can clear when all required post-window evidence rows are
+specific and correctly slotted. This is only a regression test; it is not live
+evidence and does not approve queueing or execution.
+
 ## Pre-Result Baseline
 
 Captured for comparison on `2026-06-13T05:37Z`. Treat these as scout context,

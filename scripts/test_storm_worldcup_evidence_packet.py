@@ -88,6 +88,33 @@ def fill_packet_evidence_before_window(result: dict):
         item["capture_utc"] = "2026-06-14T19:59:00Z"
 
 
+def fill_realistic_germany_result_evidence(result: dict):
+    claims = {
+        "official_result": "FIFA shows the match completed at full time with final score Germany 3-0 Curacao.",
+        "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
+        "injuries_suspensions": "Match report checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
+        "odds_move": "Post-result Germany outright odds and path odds movement versus baseline captured.",
+        "ratings_move": "Post-result ratings model movement for Germany versus baseline captured.",
+        "market_state": "Fresh post-result Deadeye market state distribution with mu and sigma captured.",
+        "quote_scout": "Fresh active-portfolio quote scout EV and expected value captured after result/state shift.",
+    }
+    urls = {
+        "official_result": "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
+        "confirmed_lineups": "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
+        "injuries_suspensions": "https://www.fifa.com/en/match-centre/match/17/285023/289273/400021464",
+        "odds_move": "https://www.sportytrader.com/en/odds/germany-curacao-7937446/",
+        "ratings_move": "https://www.bundesliga.com/en/bundesliga/news/how-will-germany-line-up-havertz-musiala-wirtz-nagelsmann-world-cup-2026-28807",
+        "market_state": "local-cli",
+        "quote_scout": "local-cli",
+    }
+    for item in result["evidence_placeholders"]:
+        item["status"] = "captured"
+        item["post_result"] = True
+        item["capture_utc"] = "2026-06-14T20:07:00Z"
+        item["claim"] = claims[item["id"]]
+        item["url"] = urls[item["id"]]
+
+
 class StormWorldCupEvidencePacketTests(unittest.TestCase):
     def test_packet_keeps_blocked_template_non_queueable(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -153,6 +180,24 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertEqual(status["next_action"], "apply_to_template")
         self.assertEqual(status["missing_ids"], [])
         self.assertTrue(all(row["captured"] for row in status["rows"]))
+
+    def test_realistic_post_result_packet_clears_strict_gates(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_realistic_germany_result_evidence(result)
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:08:00Z")
+
+        self.assertTrue(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertEqual(validated["capture_readiness"]["blockers"], [])
+        self.assertEqual(validated["capture_status"]["next_action"], "apply_to_template")
+        self.assertEqual(validated["capture_status"]["missing_ids"], [])
+        self.assertEqual(validated["capture_status"]["captured_ids"], list(packet.REQUIRED_EVIDENCE_IDS))
 
     def test_validate_packet_recomputes_stale_result_window_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:
