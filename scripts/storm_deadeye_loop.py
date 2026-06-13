@@ -37,6 +37,7 @@ DEFAULT_SMOKE_MARKET = "0x5e678bd092173e9ef0945f348d09e6c1c22f78e06c0ef380441444
 DEFAULT_TEMPLATES = DEFAULT_STATE_DIR / "templates"
 DEFAULT_ACTIVE_PORTFOLIO_SCOUT_MAX_AGE_MINUTES = 60.0
 DEFAULT_PRE_WINDOW_SOURCE_REACHABILITY_MAX_AGE_HOURS = 24.0
+DEFAULT_PRE_WINDOW_SOURCE_TIMEOUT_SECONDS = 8.0
 ACTIVE_PORTFOLIO_SCOUT_BUDGET = 4000.0
 
 XP_RESERVE = 1000.0
@@ -659,6 +660,158 @@ def evidence_packet_status_for_template(
             "unreachable_count": source_reachability.get("unreachable_count"),
             "advisory_only": bool(source_reachability.get("advisory_only")),
         },
+    }
+
+
+def pre_window_source_refresh_targets(
+    templates: list[dict[str, Any]],
+    *,
+    state_dir: Path,
+    templates_dir: Path,
+    now: datetime | None = None,
+) -> list[dict[str, Any]]:
+    readiness = pre_window_evidence_readiness(templates, now=now, state_dir=state_dir)
+    if not readiness:
+        return []
+    next_window = readiness[0].get("result_not_before_utc")
+    targets: list[dict[str, Any]] = []
+    for item in readiness:
+        if item.get("result_not_before_utc") != next_window:
+            continue
+        packet = item.get("evidence_packet") or {}
+        pre_window = packet.get("pre_window_readiness") or {}
+        reasons: list[str] = []
+        if not packet.get("exists"):
+            reasons.append("packet_missing")
+        elif packet.get("error"):
+            targets.append({
+                "id": item.get("id"),
+                "label": item.get("label"),
+                "result_not_before_utc": item.get("result_not_before_utc"),
+                "packet": packet.get("path"),
+                "refreshable": False,
+                "reasons": ["packet_unreadable"],
+                "error": packet.get("error"),
+            })
+            continue
+        else:
+            if not pre_window.get("source_reachability_checked"):
+                reasons.append("source_reachability_not_checked")
+            if pre_window.get("source_reachability_checked_at_missing"):
+                reasons.append("source_reachability_checked_at_missing")
+            if pre_window.get("source_reachability_stale"):
+                reasons.append("source_reachability_stale")
+        if not reasons:
+            continue
+        packet_path = evidence_packet_path_for_template(state_dir, item)
+        template_file = item.get("file")
+        if not template_file:
+            for template in templates:
+                if template.get("id") == item.get("id"):
+                    template_file = template.get("file")
+                    break
+        template_path = templates_dir / str(template_file) if template_file else None
+        target = {
+            "id": item.get("id"),
+            "label": item.get("label"),
+            "result_not_before_utc": item.get("result_not_before_utc"),
+            "packet": str(packet_path) if packet_path else packet.get("path"),
+            "template": str(template_path) if template_path else None,
+            "refreshable": bool(packet_path and (packet.get("exists") or template_path and template_path.exists())),
+            "packet_exists": bool(packet.get("exists")),
+            "reasons": sorted(set(reasons)),
+        }
+        if template_path and not template_path.exists() and not packet.get("exists"):
+            target["refreshable"] = False
+            target["error"] = "template file missing"
+        targets.append(target)
+    return targets
+
+
+def maybe_refresh_pre_window_evidence_sources(
+    state_dir: Path,
+    templates_dir: Path,
+    templates: list[dict[str, Any]],
+    *,
+    now: datetime | None = None,
+    source_timeout_seconds: float = DEFAULT_PRE_WINDOW_SOURCE_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
+    targets = pre_window_source_refresh_targets(
+        templates,
+        state_dir=state_dir,
+        templates_dir=templates_dir,
+        now=now,
+    )
+    if not targets:
+        return {"status": "fresh", "attempted": False}
+    refreshed: list[dict[str, Any]] = []
+    failures: list[dict[str, Any]] = []
+    for target in targets:
+        if not target.get("refreshable"):
+            failures.append({
+                "id": target.get("id"),
+                "reasons": target.get("reasons") or [],
+                "error": target.get("error") or "target is not refreshable",
+            })
+            continue
+        packet_path = str(target.get("packet") or "")
+        if not packet_path:
+            failures.append({
+                "id": target.get("id"),
+                "reasons": target.get("reasons") or [],
+                "error": "packet path missing",
+            })
+            continue
+        args = [
+            sys.executable,
+            "scripts/storm_worldcup_evidence_packet.py",
+        ]
+        if target.get("packet_exists"):
+            args.extend(["--validate-packet", packet_path])
+        else:
+            template_path = str(target.get("template") or "")
+            if not template_path:
+                failures.append({
+                    "id": target.get("id"),
+                    "reasons": target.get("reasons") or [],
+                    "error": "template path missing",
+                })
+                continue
+            args.extend(["--template", template_path])
+        args.extend([
+            "--check-sources",
+            "--source-timeout-seconds",
+            str(source_timeout_seconds),
+            "--output",
+            packet_path,
+        ])
+        if now is not None:
+            args.extend(["--now", now.isoformat().replace("+00:00", "Z")])
+        try:
+            run_cmd(args, timeout=max(60, int(source_timeout_seconds * 20)), check=True)
+        except Exception as exc:  # noqa: BLE001 - source refresh must not crash the monitor loop.
+            failures.append({
+                "id": target.get("id"),
+                "reasons": target.get("reasons") or [],
+                "error": str(exc)[:240],
+            })
+            continue
+        refreshed.append({
+            "id": target.get("id"),
+            "reasons": target.get("reasons") or [],
+            "packet": packet_path,
+        })
+    if failures:
+        return {
+            "status": "failed",
+            "attempted": bool(refreshed or failures),
+            "refreshed": refreshed,
+            "failures": failures,
+        }
+    return {
+        "status": "refreshed",
+        "attempted": True,
+        "refreshed": refreshed,
     }
 
 
@@ -2157,6 +2310,26 @@ def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
     return failed
 
 
+def pre_window_source_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
+    refresh = summary.get("pre_window_evidence_source_refresh") or {}
+    if refresh.get("status") != "failed":
+        return None
+    failures = []
+    for item in refresh.get("failures") or []:
+        if not isinstance(item, dict):
+            continue
+        failures.append({
+            "id": item.get("id"),
+            "reasons": item.get("reasons") or [],
+            "error": str(item.get("error") or "")[:160],
+        })
+    return {
+        "status": "failed",
+        "failures": failures,
+        "refreshed_count": len(refresh.get("refreshed") or []),
+    }
+
+
 def ranking_view_stats(views: dict[str, Any], *, rounded: bool = False) -> dict[str, Any]:
     stats: dict[str, Any] = {}
     for slug in sorted(views):
@@ -2246,6 +2419,7 @@ def summary_key(summary: dict[str, Any]) -> dict[str, Any]:
         },
         "active_portfolio_scout": scout_key(summary),
         "active_portfolio_scout_refresh": scout_refresh_key(summary),
+        "pre_window_evidence_source_refresh": pre_window_source_refresh_key(summary),
         "processed": processed,
         "promoted_templates": promoted_templates,
         "post_result_evidence_due": due_templates,
@@ -2272,6 +2446,7 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
         "processed",
         "promoted_templates",
         "post_result_evidence_due",
+        "pre_window_evidence_source_refresh",
     )
     for field in stable_fields:
         if field.startswith("mirrored_"):
@@ -2410,6 +2585,23 @@ def format_active_portfolio_scout_refresh(summary: dict[str, Any]) -> str:
     return prefix + str(status or "unknown") + failure_suffix
 
 
+def format_pre_window_evidence_source_refresh(summary: dict[str, Any]) -> str:
+    refresh = summary.get("pre_window_evidence_source_refresh") or {}
+    if not refresh:
+        return "not checked"
+    status = refresh.get("status")
+    if status == "fresh":
+        return "fresh"
+    if status == "refreshed":
+        refreshed = refresh.get("refreshed") or []
+        ids = ", ".join(str(item.get("id")) for item in refreshed if isinstance(item, dict))
+        return f"refreshed {ids}" if ids else "refreshed"
+    if status == "failed":
+        failures = refresh.get("failures") or []
+        return f"failed count={len(failures)}"
+    return str(status or "unknown")
+
+
 def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
     rankings = summary.get("rankings") or {}
     filters = rankings.get("filters") or {}
@@ -2480,6 +2672,7 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "template_promotion": summary.get("template_promotion"),
         "active_portfolio_scout": summary.get("active_portfolio_scout"),
         "active_portfolio_scout_refresh": summary.get("active_portfolio_scout_refresh"),
+        "pre_window_evidence_source_refresh": summary.get("pre_window_evidence_source_refresh"),
     }
 
 
@@ -2524,6 +2717,7 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
         f"Healthy leaderboard views: {format_healthy_view_stats(key)}.",
         f"Active portfolio scout: {format_active_portfolio_scout(summary)}.",
         f"Active portfolio scout refresh: {format_active_portfolio_scout_refresh(summary)}.",
+        f"Pre-window evidence source refresh: {format_pre_window_evidence_source_refresh(summary)}.",
         f"Mirrored leaderboard views ignored: {format_mirrored_views(key)}.",
         f"Failures: unhealthy_ranking_views={format_unhealthy_views(key)}.",
         (
@@ -2635,6 +2829,11 @@ def main(argv: list[str] | None = None) -> int:
             state["last_smoke"] = smoke_result
         scout_refresh = None
         templates = load_template_status(args.templates)
+        pre_window_evidence_source_refresh = maybe_refresh_pre_window_evidence_sources(
+            args.state.parent,
+            args.templates,
+            templates,
+        )
         due_templates = post_result_evidence_due(templates)
         snap = account_snapshot()
         account = snap["account"]
@@ -2694,6 +2893,7 @@ def main(argv: list[str] | None = None) -> int:
             "templates": templates,
             "active_portfolio_scout": latest_active_portfolio_scout(args.state.parent),
             "active_portfolio_scout_refresh": scout_refresh,
+            "pre_window_evidence_source_refresh": pre_window_evidence_source_refresh,
             "state_dir": str(args.state.parent),
             "candidate_file": str(args.candidates),
             "events_file": str(args.events),

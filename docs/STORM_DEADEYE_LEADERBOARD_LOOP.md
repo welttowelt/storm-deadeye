@@ -78,7 +78,11 @@ JSON, or `pre_window_readiness.ready_for_result_window=false` is treated as a
 readiness regression and enters the mailbox-change key. Source reachability
 also has a 24-hour freshness gate, so an old pre-window URL check is surfaced
 before final whistle. Later template backlog does not create routine mailbox
-noise.
+noise. The loop automatically refreshes public source reachability for the next
+pre-window packet when that check is missing or stale; this only updates the
+local evidence packet and never captures post-result evidence, promotes a
+template, queues a candidate, or touches on-chain state. Refresh failures are
+mailbox-visible.
 
 ## Monitor Tick
 

@@ -2276,6 +2276,112 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(regression["source_reachability_checked_at"], "2099-06-13T07:00:00Z")
         self.assertEqual(regression["source_reachability_max_age_hours"], 24.0)
 
+    def test_pre_window_source_refresh_validates_stale_existing_packet(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            templates_dir = state_dir / "templates"
+            templates_dir.mkdir()
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text(json.dumps({
+                "pre_window_readiness": {
+                    "ready_for_result_window": True,
+                    "source_reachability_checked": True,
+                    "source_reachability_checked_at": "2099-06-13T07:00:00Z",
+                    "blockers": [],
+                },
+            }), encoding="utf-8")
+            templates = [
+                {
+                    "file": "germany-post-result-snap-template-20260612.json",
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2099-06-16T20:00:00Z",
+                    "blockers": ["template_result_window_not_reached", "missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ]
+
+            with mock.patch.object(loop, "run_cmd", return_value=loop.CmdResult([], 0, "{}", "")) as run_cmd:
+                result = loop.maybe_refresh_pre_window_evidence_sources(
+                    state_dir,
+                    templates_dir,
+                    templates,
+                    now=loop.parse_utc_timestamp("2099-06-15T08:00:00Z"),
+                )
+
+        self.assertEqual(result["status"], "refreshed")
+        self.assertEqual(result["refreshed"][0]["id"], "germany-post-result-snap-template-20260612")
+        args = run_cmd.call_args.args[0]
+        self.assertIn("--validate-packet", args)
+        self.assertIn(str(packet_path), args)
+        self.assertIn("--check-sources", args)
+        self.assertIn("--output", args)
+
+    def test_pre_window_source_refresh_builds_missing_next_packet(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            templates_dir = state_dir / "templates"
+            templates_dir.mkdir()
+            template_path = templates_dir / "germany-post-result-snap-template-20260612.json"
+            template_path.write_text("{}", encoding="utf-8")
+            templates = [
+                {
+                    "file": template_path.name,
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2099-06-16T20:00:00Z",
+                    "blockers": ["template_result_window_not_reached", "missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ]
+
+            with mock.patch.object(loop, "run_cmd", return_value=loop.CmdResult([], 0, "{}", "")) as run_cmd:
+                result = loop.maybe_refresh_pre_window_evidence_sources(
+                    state_dir,
+                    templates_dir,
+                    templates,
+                    now=loop.parse_utc_timestamp("2099-06-15T08:00:00Z"),
+                )
+
+        packet_path = state_dir / "germany-post-result-evidence-packet.json"
+        self.assertEqual(result["status"], "refreshed")
+        args = run_cmd.call_args.args[0]
+        self.assertIn("--template", args)
+        self.assertIn(str(template_path), args)
+        self.assertIn("--output", args)
+        self.assertIn(str(packet_path), args)
+
+    def test_pre_window_source_refresh_does_not_overwrite_unreadable_packet(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            templates_dir = state_dir / "templates"
+            templates_dir.mkdir()
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text("{not-json", encoding="utf-8")
+            templates = [
+                {
+                    "file": "germany-post-result-snap-template-20260612.json",
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2099-06-16T20:00:00Z",
+                    "blockers": ["template_result_window_not_reached", "missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ]
+
+            with mock.patch.object(loop, "run_cmd") as run_cmd:
+                result = loop.maybe_refresh_pre_window_evidence_sources(
+                    state_dir,
+                    templates_dir,
+                    templates,
+                    now=loop.parse_utc_timestamp("2099-06-15T08:00:00Z"),
+                )
+
+        self.assertEqual(result["status"], "failed")
+        self.assertEqual(result["failures"][0]["id"], "germany-post-result-snap-template-20260612")
+        self.assertIn("packet_unreadable", result["failures"][0]["reasons"])
+        run_cmd.assert_not_called()
+
     def test_pre_window_regressions_ignore_later_missing_packet_when_next_is_ready(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             state_dir = Path(tmpdir)
