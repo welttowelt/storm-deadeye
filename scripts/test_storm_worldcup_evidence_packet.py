@@ -94,7 +94,7 @@ def write_germany_template(path: Path):
 
 def fill_packet_evidence(result: dict):
     claims = {
-        "official_result": "Official final score Germany 3-0 Curacao and completed marker captured.",
+        "official_result": "FIFA official final score Germany 3-0 Curacao and completed marker captured.",
         "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
         "injuries_suspensions": "Post-match source checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
         "odds_move": "Post-result Germany odds movement versus the pre-result baseline Germany 1.06 captured.",
@@ -481,7 +481,7 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
     def test_official_result_claim_accepts_final_whistle_marker(self):
         blockers = packet.claim_keyword_blockers(
             "official_result",
-            "Official final score Germany 3-0 Curacao and final whistle marker captured.",
+            "FIFA official final score Germany 3-0 Curacao and final whistle marker captured.",
         )
 
         self.assertEqual(blockers, [])
@@ -493,6 +493,16 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         )
 
         self.assertIn("official_result:claim_missing_score_value", blockers)
+
+    def test_official_result_claim_requires_source_and_teams(self):
+        blockers = packet.claim_keyword_blockers(
+            "official_result",
+            "Final score 3-0 and final whistle marker captured.",
+        )
+
+        self.assertIn("official_result:claim_missing_official_source", blockers)
+        self.assertIn("official_result:claim_missing_germany", blockers)
+        self.assertIn("official_result:claim_missing_curacao", blockers)
 
     def test_lineup_claim_requires_teams_confirmation_and_post_result_timing(self):
         blockers = packet.claim_keyword_blockers(

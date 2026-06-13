@@ -88,8 +88,9 @@ candidate, or approve execution.
 Required packet claims must be specific, not generic. The validator checks for
 these claim markers:
 
-- `official_result`: final-whistle/full-time/completed marker plus a concrete
-  score value such as `3-0` or `3:0`.
+- `official_result`: FIFA/official source marker, Germany, Curacao,
+  final-whistle/full-time/completed marker, and a concrete score value such as
+  `3-0` or `3:0`.
 - `confirmed_lineups`: confirmed/official lineup or starting XI, Germany,
   Curacao, and post-result/full-time timing.
 - `injuries_suspensions`: injury, suspension, booking, or absence plus

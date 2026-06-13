@@ -64,6 +64,9 @@ REQUIRED_CLAIM_KEYWORDS = {
     "official_result": (
         ("completion_marker", ("completed", "final", "full-time", "full time", "final whistle", "final-whistle", "ft")),
         ("score", ("score",)),
+        ("official_source", ("fifa", "official")),
+        ("germany", ("germany",)),
+        ("curacao", ("curacao",)),
     ),
     "confirmed_lineups": (
         ("lineup", ("lineup", "lineups", "starting xi", "starting xis")),
