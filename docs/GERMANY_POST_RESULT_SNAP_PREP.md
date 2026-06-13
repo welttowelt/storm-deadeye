@@ -134,7 +134,9 @@ python3 scripts/storm_worldcup_evidence_packet.py \
 ```
 
 `capture_readiness.ready_for_template_update` must be `true` before any template
-edit. This still does not approve queueing or execution.
+edit. Check `capture_status.next_action`, `capture_status.missing_ids`, and the
+row-level `capture_status.rows[].blockers` to see what is still missing. This
+still does not approve queueing or execution.
 
 After validation passes, copy the captured evidence into the local template:
 

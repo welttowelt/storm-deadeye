@@ -89,6 +89,9 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertIn("missing_world_cup_post_result", result["queue_blockers"])
         self.assertFalse(result["capture_readiness"]["ready_for_template_update"])
         self.assertIn("result_window_not_open", result["capture_readiness"]["blockers"])
+        self.assertEqual(result["capture_status"]["next_action"], "wait_for_result_window")
+        self.assertEqual(result["capture_status"]["missing_ids"], list(packet.REQUIRED_EVIDENCE_IDS))
+        self.assertEqual(result["capture_status"]["blocker_count"], 29)
 
     def test_packet_has_required_evidence_placeholders_and_commands(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -113,6 +116,10 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertTrue(any("deadeye markets show 0x1e7" in cmd for cmd in result["read_only_commands_after_result"]))
         self.assertTrue(any("storm_gap_analyzer.py" in cmd for cmd in result["read_only_commands_after_result"]))
         self.assertTrue(any("--validate-packet" in cmd for cmd in result["read_only_commands_after_result"]))
+        status_rows = {row["id"]: row for row in result["capture_status"]["rows"]}
+        self.assertFalse(status_rows["official_result"]["captured"])
+        self.assertFalse(status_rows["official_result"]["claim_ready"])
+        self.assertTrue(status_rows["official_result"]["url_ready"])
 
     def test_filled_packet_capture_readiness_passes_after_window(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -122,10 +129,15 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
             result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
             fill_packet_evidence(result)
             readiness = packet.capture_readiness(result, now="2026-06-14T20:06:00Z")
+            result["capture_readiness"] = readiness
+            status = packet.evidence_capture_status(result)
 
         self.assertTrue(readiness["ready_for_template_update"])
         self.assertEqual(readiness["blockers"], [])
         self.assertEqual(readiness["captured_ids"], list(packet.REQUIRED_EVIDENCE_IDS))
+        self.assertEqual(status["next_action"], "apply_to_template")
+        self.assertEqual(status["missing_ids"], [])
+        self.assertTrue(all(row["captured"] for row in status["rows"]))
 
     def test_validate_packet_recomputes_stale_result_window_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -142,6 +154,8 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
 
         self.assertTrue(validated["result_window_open"])
         self.assertTrue(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertEqual(validated["capture_status"]["next_action"], "apply_to_template")
+        self.assertEqual(validated["capture_status"]["missing_ids"], [])
 
     def test_main_writes_packet_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

@@ -246,6 +246,59 @@ def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict
     }
 
 
+def evidence_capture_status(packet: dict[str, Any]) -> dict[str, Any]:
+    readiness = packet.get("capture_readiness") or {}
+    item_blockers = readiness.get("item_blockers") or {}
+    rows: list[dict[str, Any]] = []
+    by_id = {
+        str(item.get("id")): item
+        for item in packet.get("evidence_placeholders") or []
+        if isinstance(item, dict)
+    }
+    captured_ids = set(readiness.get("captured_ids") or [])
+    missing_ids: list[str] = []
+    for item_id in REQUIRED_EVIDENCE_IDS:
+        item = by_id.get(item_id)
+        blockers = list(item_blockers.get(item_id) or [])
+        claim = (item or {}).get("claim")
+        if item_id not in captured_ids:
+            missing_ids.append(item_id)
+        rows.append({
+            "id": item_id,
+            "captured": item_id in captured_ids,
+            "status": (item or {}).get("status"),
+            "source_role": (item or {}).get("source_role"),
+            "source": (item or {}).get("source"),
+            "url": (item or {}).get("url"),
+            "post_result": (item or {}).get("post_result"),
+            "claim_ready": bool(item)
+            and not is_placeholder(claim)
+            and not str(claim or "").strip().upper().startswith("TO_FILL"),
+            "url_ready": bool(item) and not is_placeholder((item or {}).get("url")),
+            "capture_utc_ready": bool(item) and valid_capture_utc((item or {}).get("capture_utc")),
+            "blockers": blockers or ([] if item_id in captured_ids else [f"{item_id}:missing"]),
+        })
+
+    if readiness.get("ready_for_template_update"):
+        next_action = "apply_to_template"
+    elif not packet.get("result_window_open"):
+        next_action = "wait_for_result_window"
+    elif missing_ids:
+        next_action = "fill_required_evidence"
+    else:
+        next_action = "resolve_capture_blockers"
+
+    return {
+        "ready_for_template_update": bool(readiness.get("ready_for_template_update")),
+        "result_window_open": bool(packet.get("result_window_open")),
+        "captured_ids": list(readiness.get("captured_ids") or []),
+        "missing_ids": missing_ids,
+        "blocker_count": len(readiness.get("blockers") or []),
+        "next_action": next_action,
+        "rows": rows,
+    }
+
+
 def read_only_commands(template: dict[str, Any]) -> list[str]:
     market = template.get("market") or "<market>"
     return [
@@ -309,6 +362,7 @@ def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, An
         ],
     }
     packet["capture_readiness"] = capture_readiness(packet, now=generated_at)
+    packet["capture_status"] = evidence_capture_status(packet)
     return packet
 
 
@@ -320,6 +374,7 @@ def validate_packet_file(packet_path: Path, *, now: str | None = None) -> dict[s
     if window_open is not None:
         packet["result_window_open"] = window_open
     packet["capture_readiness"] = capture_readiness(packet, now=now)
+    packet["capture_status"] = evidence_capture_status(packet)
     return packet
 
 
