@@ -743,6 +743,12 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertIn("baseline_value", [
             marker["label"] for marker in rows["ratings_move"]["claim_must_include"]
         ])
+        self.assertIn("post_result_numeric_value", [
+            marker["label"] for marker in rows["odds_move"]["claim_must_include"]
+        ])
+        self.assertIn("post_result_numeric_value", [
+            marker["label"] for marker in rows["ratings_move"]["claim_must_include"]
+        ])
 
     def test_validate_packet_recomputes_stale_result_window_flag(self):
         with tempfile.TemporaryDirectory() as tmpdir:

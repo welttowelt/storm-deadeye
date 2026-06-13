@@ -917,6 +917,11 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
                 "label": "sigma_value",
                 "accepted_pattern": rf"\b(?:sigma|sd)\s*(?:=|:)\s*{NUMBER_PATTERN}\b",
             })
+        if item_id in MOVE_POST_RESULT_VALUE_RE:
+            marker_groups.append({
+                "label": "post_result_numeric_value",
+                "accepted_pattern": MOVE_POST_RESULT_VALUE_RE[item_id].pattern,
+            })
         baseline_terms = baseline_value_terms(template, item_id)
         if baseline_terms:
             marker_groups.append({
