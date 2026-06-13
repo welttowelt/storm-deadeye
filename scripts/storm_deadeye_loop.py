@@ -2715,19 +2715,12 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
         "unhealthy_filters",
         "unhealthy_time_windows",
         "unhealthy_filter_time_windows",
-        "mirrored_filters",
-        "mirrored_time_windows",
-        "mirrored_filter_time_windows",
         "healthy_view_ranks",
         "processed",
         "promoted_templates",
         "post_result_evidence_due",
     )
     for field in stable_fields:
-        if field.startswith("mirrored_"):
-            if (stored.get(field) or []) != (current.get(field) or []):
-                return False
-            continue
         if stored.get(field) != current.get(field):
             return False
     if (stored.get("pre_window_evidence_regressions") or []) != (

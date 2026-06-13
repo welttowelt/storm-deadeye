@@ -606,6 +606,68 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertFalse(loop.mailbox_keys_equivalent(base, refreshed))
         self.assertTrue(loop.mailbox_keys_equivalent(refreshed, base))
 
+    def test_mailbox_key_ignores_mirrored_view_churn(self):
+        base = {
+            "rank": 10,
+            "gap": 915.922,
+            "pnl": 79.2442,
+            "gas_tier": "ok",
+            "unhealthy_filters": [],
+            "unhealthy_time_windows": [],
+            "unhealthy_filter_time_windows": [],
+            "mirrored_filters": [],
+            "mirrored_time_windows": [],
+            "mirrored_filter_time_windows": [],
+            "healthy_view_ranks": {"filters": {}, "time_windows": {}, "filter_time_windows": {}},
+            "processed": [],
+            "promoted_templates": [],
+            "post_result_evidence_due": [],
+            "pre_window_evidence_regressions": [],
+        }
+        mirrored = json.loads(json.dumps(base))
+        mirrored["mirrored_filters"] = ["world-cup"]
+        mirrored["mirrored_time_windows"] = ["last-24h"]
+        mirrored["mirrored_filter_time_windows"] = ["world-cup/last-24h"]
+
+        self.assertTrue(loop.mailbox_keys_equivalent(base, mirrored))
+
+    def test_mailbox_key_records_real_filtered_board_rank_change(self):
+        base = {
+            "rank": 10,
+            "gap": 915.922,
+            "pnl": 79.2442,
+            "gas_tier": "ok",
+            "unhealthy_filters": [],
+            "unhealthy_time_windows": [],
+            "unhealthy_filter_time_windows": [],
+            "mirrored_filters": ["world-cup"],
+            "mirrored_time_windows": [],
+            "mirrored_filter_time_windows": [],
+            "healthy_view_ranks": {"filters": {}, "time_windows": {}, "filter_time_windows": {}},
+            "processed": [],
+            "promoted_templates": [],
+            "post_result_evidence_due": [],
+            "pre_window_evidence_regressions": [],
+        }
+        distinct = json.loads(json.dumps(base))
+        distinct["mirrored_filters"] = []
+        distinct["healthy_view_ranks"] = {
+            "filters": {
+                "world-cup": {
+                    "rank": 2,
+                    "pnl": 120.5,
+                    "gap_to_first": 8.25,
+                    "top_pnl": 128.75,
+                    "markets_traded": 3,
+                    "total_trades": 6,
+                }
+            },
+            "time_windows": {},
+            "filter_time_windows": {},
+        }
+
+        self.assertFalse(loop.mailbox_keys_equivalent(base, distinct))
+
     def test_mailbox_update_migrates_legacy_scout_key_without_entry(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             mailbox = Path(tmpdir) / "mailbox.md"
