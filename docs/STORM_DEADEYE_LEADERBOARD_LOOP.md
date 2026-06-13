@@ -97,6 +97,12 @@ discovered domain/category/topic/tag slugs plus standard overall time windows
 also checks domain+time-window views. Filtered boards returning HTTP 503 are
 recorded as unhealthy rather than empty, and filtered rank/gap calculations use
 matching filtered trader stats instead of overall wallet P&L.
+Overall is probed every tick. Non-overall views that are healthy are also
+probed every tick. Non-overall views that are unhealthy or mirror the overall
+board are cached and re-probed on a one-hour cooldown, so the loop still detects
+recovered distinct boards without spending every tick on fake or unavailable
+views. The sanitized summary exposes `ranking_probe_cooldown` skipped counts;
+cooldown skips do not create mailbox updates.
 
 When the external read-only smoke script is present, the runner allows one
 retry before failing the tick. External and built-in smoke must report

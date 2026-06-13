@@ -112,6 +112,99 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(classified["mirror_of"], "overall")
         self.assertNotIn("_rows_signature", classified)
 
+    def test_monitor_skips_cached_unhealthy_filter_inside_cooldown(self):
+        rows = [{"trader": "0xaaa", "totalPnl": 20.0, "marketsTraded": 1, "totalTrades": 1}]
+        current_ts = loop.now_ts()
+        cache = {
+            loop.ranking_probe_cache_key("filter", "world-cup"): {
+                "checked_at": current_ts,
+                "view": {"healthy": False, "status": 503, "error": "cached unavailable"},
+            }
+        }
+        calls = []
+
+        def fake_get(_base_url, path, *, timeout=15):
+            calls.append(path)
+            if path == "/health":
+                return 200, {"ok": True}
+            if path == "/api/markets":
+                return 200, [{"isActive": True, "domain": "World Cup", "title": "Germany"}]
+            if path == "/api/positions/0x4418f/stats":
+                return 200, {}
+            if path == "/api/positions/0x4418f":
+                return 200, []
+            if path == "/api/rankings?limit=100":
+                return 200, rows
+            if path.startswith("/api/rankings?limit=100&from="):
+                return 503, {"error": "time views unavailable"}
+            if path == "/api/rankings?limit=100&domain=world-cup":
+                raise AssertionError("cached unhealthy filter should not be re-probed inside cooldown")
+            raise AssertionError(f"unexpected path {path}")
+
+        with mock.patch.object(loop, "http_get_json", side_effect=fake_get):
+            result = loop.monitor(
+                "https://indexer.test",
+                "0x04418f",
+                ranking_probe_cache=cache,
+                ranking_probe_cooldown_seconds=3600,
+            )
+
+        view = result["rankings"]["filters"]["world-cup"]
+        self.assertFalse(view["healthy"])
+        self.assertEqual(view["status"], 503)
+        self.assertTrue(view["probe_skipped"])
+        self.assertNotIn("/api/rankings?limit=100&domain=world-cup", calls)
+
+    def test_monitor_reprobes_cached_unhealthy_filter_after_cooldown(self):
+        rows = [
+            {"trader": "0xaaa", "totalPnl": 20.0, "marketsTraded": 1, "totalTrades": 1},
+            {"trader": "0x04418f", "totalPnl": 3.0, "marketsTraded": 1, "totalTrades": 2},
+        ]
+        cache = {
+            loop.ranking_probe_cache_key("filter", "world-cup"): {
+                "checked_at": 1,
+                "view": {"healthy": False, "status": 503, "error": "cached unavailable"},
+            }
+        }
+        calls = []
+
+        def fake_get(_base_url, path, *, timeout=15):
+            calls.append(path)
+            if path == "/health":
+                return 200, {"ok": True}
+            if path == "/api/markets":
+                return 200, [{"isActive": True, "domain": "World Cup", "title": "Germany"}]
+            if path == "/api/positions/0x4418f/stats":
+                return 200, {}
+            if path == "/api/positions/0x4418f":
+                return 200, []
+            if path == "/api/rankings?limit=100":
+                return 200, [{"trader": "0xbbb", "totalPnl": 25.0, "marketsTraded": 1, "totalTrades": 1}]
+            if path == "/api/rankings?limit=100&domain=world-cup":
+                return 200, rows
+            if path == "/api/positions/0x4418f/stats?domain=world-cup":
+                return 200, {"totalPnl": 3.0}
+            if path.startswith("/api/rankings?limit=100&from=") or (
+                path.startswith("/api/rankings?limit=100&domain=world-cup&from=")
+            ):
+                return 503, {"error": "time views unavailable"}
+            raise AssertionError(f"unexpected path {path}")
+
+        with mock.patch.object(loop, "http_get_json", side_effect=fake_get):
+            result = loop.monitor(
+                "https://indexer.test",
+                "0x04418f",
+                ranking_probe_cache=cache,
+                ranking_probe_cooldown_seconds=1,
+            )
+
+        view = result["rankings"]["filters"]["world-cup"]
+        self.assertTrue(view["healthy"])
+        self.assertEqual(view["rank"], 2)
+        self.assertIn("/api/rankings?limit=100&domain=world-cup", calls)
+        cached_view = cache[loop.ranking_probe_cache_key("filter", "world-cup")]["view"]
+        self.assertTrue(cached_view["healthy"])
+
     def test_world_cup_detection_uses_category_even_without_title(self):
         market = {"marketType": "lognormal", "category": "World Cup", "title": "When will France be eliminated?"}
         self.assertTrue(loop.is_world_cup_market(market))

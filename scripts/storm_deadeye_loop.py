@@ -38,6 +38,7 @@ DEFAULT_TEMPLATES = DEFAULT_STATE_DIR / "templates"
 DEFAULT_ACTIVE_PORTFOLIO_SCOUT_MAX_AGE_MINUTES = 60.0
 DEFAULT_PRE_WINDOW_SOURCE_REACHABILITY_MAX_AGE_HOURS = 24.0
 DEFAULT_PRE_WINDOW_SOURCE_TIMEOUT_SECONDS = 8.0
+NON_OVERALL_RANKING_PROBE_COOLDOWN_SECONDS = 3600
 ACTIVE_PORTFOLIO_SCOUT_BUDGET = 4000.0
 
 XP_RESERVE = 1000.0
@@ -973,6 +974,81 @@ def classify_ranking_view(view: dict[str, Any], overall_signature: list[tuple[st
     return view
 
 
+def ranking_probe_cache_key(kind: str, slug: str) -> str:
+    return f"{kind}:{slug}"
+
+
+def cached_ranking_view(
+    cache: dict[str, Any] | None,
+    key: str,
+    *,
+    current_ts: int,
+    cooldown_seconds: int,
+) -> dict[str, Any] | None:
+    if not isinstance(cache, dict):
+        return None
+    entry = cache.get(key)
+    if not isinstance(entry, dict):
+        return None
+    view = entry.get("view")
+    checked_at = entry.get("checked_at")
+    if not isinstance(view, dict) or checked_at is None:
+        return None
+    try:
+        checked_at_int = int(checked_at)
+    except (TypeError, ValueError):
+        return None
+    if view.get("healthy"):
+        return None
+    if current_ts - checked_at_int >= cooldown_seconds:
+        return None
+    result = dict(view)
+    result["probe_skipped"] = True
+    result["last_checked_at"] = checked_at_int
+    result["cooldown_seconds"] = cooldown_seconds
+    return result
+
+
+def store_ranking_view_cache(cache: dict[str, Any] | None, key: str, view: dict[str, Any], *, checked_at: int) -> None:
+    if not isinstance(cache, dict):
+        return
+    cached_view = {
+        k: v
+        for k, v in view.items()
+        if k not in {"probe_skipped", "last_checked_at", "cooldown_seconds", "_rows_signature"}
+    }
+    cache[key] = {"checked_at": checked_at, "view": cached_view}
+
+
+def fetch_classified_rankings_view(
+    indexer_url: str,
+    trader: str,
+    *,
+    overall_signature: list[tuple[str, float, int, int]] | None,
+    cache: dict[str, Any] | None,
+    cache_key: str,
+    current_ts: int,
+    cooldown_seconds: int,
+    domain: str | None = None,
+    from_ts: int | None = None,
+    to_ts: int | None = None,
+) -> dict[str, Any]:
+    cached = cached_ranking_view(
+        cache,
+        cache_key,
+        current_ts=current_ts,
+        cooldown_seconds=cooldown_seconds,
+    )
+    if cached is not None:
+        return cached
+    view = classify_ranking_view(
+        fetch_rankings_view(indexer_url, trader, domain=domain, from_ts=from_ts, to_ts=to_ts),
+        overall_signature,
+    )
+    store_ranking_view_cache(cache, cache_key, view, checked_at=current_ts)
+    return view
+
+
 def build_rankings_path(
     *,
     limit: int = 100,
@@ -1438,7 +1514,13 @@ def smoke_version_error(version_text: str | None) -> str | None:
     return None
 
 
-def monitor(indexer_url: str, trader: str) -> dict[str, Any]:
+def monitor(
+    indexer_url: str,
+    trader: str,
+    *,
+    ranking_probe_cache: dict[str, Any] | None = None,
+    ranking_probe_cooldown_seconds: int = NON_OVERALL_RANKING_PROBE_COOLDOWN_SECONDS,
+) -> dict[str, Any]:
     status_health, health = http_get_json(indexer_url, "/health")
     status_markets, markets = http_get_json(indexer_url, "/api/markets")
     if status_markets != 200 or not isinstance(markets, list):
@@ -1455,33 +1537,48 @@ def monitor(indexer_url: str, trader: str) -> dict[str, Any]:
         raise LoopError(f"indexer rankings unavailable status={overall.get('status')}")
     overall_signature = overall.pop("_rows_signature", None)
     overall.pop("healthy", None)
+    current_ts = now_ts()
     filter_status: dict[str, Any] = {}
     for slug in discover_filter_slugs(markets):
-        filter_status[slug] = classify_ranking_view(
-            fetch_rankings_view(indexer_url, trader, domain=slug),
-            overall_signature,
+        filter_status[slug] = fetch_classified_rankings_view(
+            indexer_url,
+            trader,
+            overall_signature=overall_signature,
+            cache=ranking_probe_cache,
+            cache_key=ranking_probe_cache_key("filter", slug),
+            current_ts=current_ts,
+            cooldown_seconds=ranking_probe_cooldown_seconds,
+            domain=slug,
         )
-    current_ts = now_ts()
     time_window_status: dict[str, Any] = {}
     filter_time_window_status: dict[str, Any] = {}
     for label, seconds in RANKING_TIME_WINDOWS:
         from_ts = current_ts - seconds
-        time_window_status[label] = classify_ranking_view(
-            fetch_rankings_view(indexer_url, trader, from_ts=from_ts),
-            overall_signature,
+        time_window_status[label] = fetch_classified_rankings_view(
+            indexer_url,
+            trader,
+            overall_signature=overall_signature,
+            cache=ranking_probe_cache,
+            cache_key=ranking_probe_cache_key("time", label),
+            current_ts=current_ts,
+            cooldown_seconds=ranking_probe_cooldown_seconds,
+            from_ts=from_ts,
         )
     healthy_slugs = [slug for slug, item in filter_status.items() if item.get("healthy")]
     for slug in healthy_slugs:
         for label, seconds in RANKING_TIME_WINDOWS:
             from_ts = current_ts - seconds
-            filter_time_window_status[f"{slug}/{label}"] = classify_ranking_view(
-                fetch_rankings_view(
-                    indexer_url,
-                    trader,
-                    domain=slug,
-                    from_ts=from_ts,
-                ),
-                overall_signature,
+            cache_slug = f"{slug}/{label}"
+            filter_time_window_status[cache_slug] = fetch_classified_rankings_view(
+                indexer_url,
+                trader,
+                overall_signature=overall_signature,
+                cache=ranking_probe_cache,
+                cache_key=ranking_probe_cache_key("filter_time", cache_slug),
+                current_ts=current_ts,
+                cooldown_seconds=ranking_probe_cooldown_seconds,
+                domain=slug,
+                from_ts=from_ts,
             )
     return {
         "health": {"status": status_health, "payload": health},
@@ -2354,6 +2451,30 @@ def ranking_view_stats(views: dict[str, Any], *, rounded: bool = False) -> dict[
     return stats
 
 
+def ranking_probe_cooldown_summary(rankings: dict[str, Any]) -> dict[str, Any]:
+    groups = {
+        "filters": rankings.get("filters") or {},
+        "time_windows": rankings.get("time_windows") or {},
+        "filter_time_windows": rankings.get("filter_time_windows") or {},
+    }
+    summary: dict[str, Any] = {}
+    skipped_count = 0
+    for group, views in groups.items():
+        skipped = sorted(
+            slug
+            for slug, item in views.items()
+            if isinstance(item, dict) and item.get("probe_skipped")
+        )
+        summary[group] = {
+            "skipped": skipped,
+            "skipped_count": len(skipped),
+        }
+        skipped_count += len(skipped)
+    summary["skipped_count"] = skipped_count
+    summary["cooldown_seconds"] = NON_OVERALL_RANKING_PROBE_COOLDOWN_SECONDS
+    return summary
+
+
 def view_slugs_by_status(views: dict[str, Any], status: str) -> list[str]:
     return sorted(
         slug
@@ -2654,6 +2775,7 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
             "time_windows": ranking_view_stats(time_windows),
             "filter_time_windows": ranking_view_stats(filter_time_windows),
         },
+        "ranking_probe_cooldown": ranking_probe_cooldown_summary(rankings),
         "processed_candidates": summary.get("processed_candidates") or [],
         "templates": templates,
         "next_template_window": next_template_window(templates),
@@ -2842,7 +2964,11 @@ def main(argv: list[str] | None = None) -> int:
         indexer_url = account.get("indexer_url")
         if not trader or not indexer_url:
             raise LoopError("account show did not return trader and indexer URL")
-        monitoring = monitor(indexer_url, trader)
+        ranking_probe_cache = state.get("ranking_view_probe_cache")
+        if not isinstance(ranking_probe_cache, dict):
+            ranking_probe_cache = {}
+            state["ranking_view_probe_cache"] = ranking_probe_cache
+        monitoring = monitor(indexer_url, trader, ranking_probe_cache=ranking_probe_cache)
         if args.refresh_active_portfolio_scout:
             world_cup_market_state_reads = fetch_world_cup_market_states(
                 monitoring["markets"]["items"],
