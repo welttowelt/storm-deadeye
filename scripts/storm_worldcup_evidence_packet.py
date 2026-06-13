@@ -14,6 +14,8 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+import urllib.error
+import urllib.request
 from urllib.parse import urlparse
 
 import storm_deadeye_loop as loop
@@ -77,6 +79,7 @@ REQUIRED_CLAIM_KEYWORDS = {
 CAPTURED_STATUSES = {"captured", "complete", "filled"}
 PLACEHOLDER_VALUES = {"", "TO_FILL", "<MARKET>"}
 SCORE_VALUE_RE = re.compile(r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b")
+DEFAULT_SOURCE_TIMEOUT_SECONDS = 8.0
 
 
 def utc_now() -> str:
@@ -308,6 +311,101 @@ def evidence_url_blockers(item_id: str, url: Any) -> list[str]:
     return [f"{item_id}:url_not_http"]
 
 
+def public_source_options(placeholders: list[dict[str, Any]]) -> list[str]:
+    urls: list[str] = []
+    for item in placeholders:
+        item_id = str(item.get("id") or "")
+        if item_id in LOCAL_SOURCE_EVIDENCE_IDS:
+            continue
+        urls.extend(str(value) for value in (item.get("source_options") or []))
+    return [
+        url for url in dedupe_preserve_order(urls)
+        if not is_placeholder(url) and not evidence_url_blockers("public_source", url)
+    ]
+
+
+def probe_source_url(url: str, *, timeout_seconds: float, checked_at: str) -> dict[str, Any]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "storm-deadeye-evidence-packet/1",
+            "Accept": "text/html,application/xhtml+xml,application/json;q=0.9,*/*;q=0.8",
+            "Range": "bytes=0-4095",
+        },
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout_seconds) as response:
+            response.read(4096)
+            status = int(getattr(response, "status", response.getcode()))
+            return {
+                "url": url,
+                "checked_at": checked_at,
+                "status": status,
+                "reachable": 200 <= status < 500,
+                "note": "HTTP 4xx can still be operator-reachable in a browser; use source_options fallbacks if capture fails.",
+            }
+    except urllib.error.HTTPError as exc:
+        return {
+            "url": url,
+            "checked_at": checked_at,
+            "status": exc.code,
+            "reachable": 200 <= int(exc.code) < 500,
+            "note": "HTTP 4xx can still be operator-reachable in a browser; use source_options fallbacks if capture fails.",
+        }
+    except Exception as exc:  # noqa: BLE001 - advisory source probes must not fail packet generation.
+        return {
+            "url": url,
+            "checked_at": checked_at,
+            "status": 0,
+            "reachable": False,
+            "error": str(exc)[:240],
+        }
+
+
+def source_reachability_report(
+    placeholders: list[dict[str, Any]],
+    *,
+    checked_at: str,
+    check_sources: bool,
+    timeout_seconds: float,
+) -> dict[str, Any]:
+    urls = public_source_options(placeholders)
+    by_url: dict[str, dict[str, Any]] = {}
+    if check_sources:
+        for url in urls:
+            by_url[url] = probe_source_url(url, timeout_seconds=timeout_seconds, checked_at=checked_at)
+    rows = []
+    for item in placeholders:
+        options = [
+            url for url in (item.get("source_options") or [])
+            if isinstance(url, str) and url in urls
+        ]
+        rows.append({
+            "id": item.get("id"),
+            "source_role": item.get("source_role"),
+            "source_options": options,
+            "reachable_options": [
+                url for url in options
+                if (by_url.get(url) or {}).get("reachable")
+            ],
+            "unreachable_options": [
+                url for url in options
+                if url in by_url and not (by_url.get(url) or {}).get("reachable")
+            ],
+        })
+    return {
+        "checked": check_sources,
+        "checked_at": checked_at if check_sources else None,
+        "timeout_seconds": timeout_seconds if check_sources else None,
+        "url_count": len(urls),
+        "reachable_count": sum(1 for item in by_url.values() if item.get("reachable")),
+        "unreachable_count": sum(1 for item in by_url.values() if not item.get("reachable")),
+        "probes": [by_url[url] for url in urls if url in by_url],
+        "rows": rows,
+        "advisory_only": True,
+    }
+
+
 def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict[str, Any]:
     validated_at = now or utc_now()
     blockers: list[str] = []
@@ -493,7 +591,13 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
     }
 
 
-def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, Any]:
+def build_packet(
+    template_path: Path,
+    *,
+    now: str | None = None,
+    check_sources: bool = False,
+    source_timeout_seconds: float = DEFAULT_SOURCE_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
     template = loop.load_json(template_path, {})
     if not isinstance(template, dict):
         raise loop.LoopError(f"{template_path} did not contain a JSON object")
@@ -532,6 +636,12 @@ def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, An
         "source_urls": source_urls(template),
         "evidence_placeholders": placeholders,
         "capture_plan": capture_plan(template, placeholders),
+        "source_reachability": source_reachability_report(
+            placeholders,
+            checked_at=generated_at,
+            check_sources=check_sources,
+            timeout_seconds=source_timeout_seconds,
+        ),
         "read_only_commands_after_result": read_only_commands(template),
         "template_update_requirements_after_capture": [
             "copy captured evidence rows into the source template",
@@ -551,13 +661,34 @@ def build_packet(template_path: Path, *, now: str | None = None) -> dict[str, An
     return packet
 
 
-def validate_packet_file(packet_path: Path, *, now: str | None = None) -> dict[str, Any]:
+def validate_packet_file(
+    packet_path: Path,
+    *,
+    now: str | None = None,
+    check_sources: bool = False,
+    source_timeout_seconds: float = DEFAULT_SOURCE_TIMEOUT_SECONDS,
+) -> dict[str, Any]:
     packet = loop.load_json(packet_path, {})
     if not isinstance(packet, dict):
         raise loop.LoopError(f"{packet_path} did not contain a JSON object")
+    checked_at = now or utc_now()
     window_open = result_window_open_from_packet(packet, now=now)
     if window_open is not None:
         packet["result_window_open"] = window_open
+    if check_sources:
+        packet["source_reachability"] = source_reachability_report(
+            packet.get("evidence_placeholders") or [],
+            checked_at=checked_at,
+            check_sources=True,
+            timeout_seconds=source_timeout_seconds,
+        )
+    elif "source_reachability" not in packet:
+        packet["source_reachability"] = source_reachability_report(
+            packet.get("evidence_placeholders") or [],
+            checked_at=checked_at,
+            check_sources=False,
+            timeout_seconds=source_timeout_seconds,
+        )
     packet["capture_readiness"] = capture_readiness(packet, now=now)
     packet["capture_status"] = evidence_capture_status(packet)
     return packet
@@ -668,6 +799,13 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--validate-packet", type=Path, help="Validate an already filled packet instead of building a new one.")
     parser.add_argument("--apply-to-template", type=Path, help="Validate a filled packet and copy its captured evidence into the template.")
     parser.add_argument("--now", help="UTC timestamp override for tests/backfills, e.g. 2026-06-14T20:05:00Z.")
+    parser.add_argument("--check-sources", action="store_true", help="Probe public source_options URLs and record advisory reachability.")
+    parser.add_argument(
+        "--source-timeout-seconds",
+        type=float,
+        default=DEFAULT_SOURCE_TIMEOUT_SECONDS,
+        help="Per-source timeout for --check-sources.",
+    )
     return parser
 
 
@@ -677,9 +815,19 @@ def main(argv: list[str] | None = None) -> int:
         if args.apply_to_template:
             packet = apply_packet_to_template(args.apply_to_template, template_path=args.template, now=args.now)
         elif args.validate_packet:
-            packet = validate_packet_file(args.validate_packet, now=args.now)
+            packet = validate_packet_file(
+                args.validate_packet,
+                now=args.now,
+                check_sources=args.check_sources,
+                source_timeout_seconds=args.source_timeout_seconds,
+            )
         else:
-            packet = build_packet(args.template or DEFAULT_GERMANY_TEMPLATE, now=args.now)
+            packet = build_packet(
+                args.template or DEFAULT_GERMANY_TEMPLATE,
+                now=args.now,
+                check_sources=args.check_sources,
+                source_timeout_seconds=args.source_timeout_seconds,
+            )
     except loop.LoopError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))
         return 1

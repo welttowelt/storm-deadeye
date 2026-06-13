@@ -68,6 +68,12 @@ roles, ordered source fallbacks, required claim markers, and the local read-only
 commands for `market_state` and `quote_scout`. If a row does not satisfy its
 `capture_plan.rows[].claim_must_include` markers, do not promote the template.
 
+The packet can optionally include `source_reachability` by running with
+`--check-sources`. This is advisory only: use it to learn which public fallback
+URLs are reachable before the window, but do not treat a reachable source as
+evidence capture and do not treat an unreachable probe as a failed evidence row
+until a human/source-capture attempt confirms it.
+
 Required packet claims must be specific, not generic. The validator checks for
 these claim markers:
 
@@ -176,6 +182,16 @@ Build the fillable evidence packet first:
 ```bash
 python3 scripts/storm_worldcup_evidence_packet.py \
   --template ~/.local/state/storm-deadeye/templates/germany-post-result-snap-template-20260612.json \
+  --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
+```
+
+Before the result window, optionally refresh advisory source reachability:
+
+```bash
+python3 scripts/storm_worldcup_evidence_packet.py \
+  --template ~/.local/state/storm-deadeye/templates/germany-post-result-snap-template-20260612.json \
+  --check-sources \
+  --source-timeout-seconds 8 \
   --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
 ```
 

@@ -6,6 +6,7 @@ import tempfile
 import unittest
 from contextlib import redirect_stdout
 from pathlib import Path
+from unittest import mock
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import storm_worldcup_evidence_packet as packet
@@ -234,6 +235,77 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertIn("storm_gap_analyzer.py", plan_rows["quote_scout"]["read_only_command"])
         self.assertIn("--validate-packet", result["capture_plan"]["validation_command"])
         self.assertIn("storm_deadeye_loop.py", result["capture_plan"]["runner_command"])
+        reachability = result["source_reachability"]
+        self.assertFalse(reachability["checked"])
+        self.assertTrue(reachability["advisory_only"])
+        self.assertEqual(reachability["url_count"], 9)
+        self.assertEqual(reachability["probes"], [])
+
+    def test_source_reachability_probe_is_advisory_and_row_mapped(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "germany.json"
+            write_germany_template(template_path)
+
+            def fake_probe(url, *, timeout_seconds, checked_at):
+                return {
+                    "url": url,
+                    "checked_at": checked_at,
+                    "status": 200 if "sportsmole" not in url else 0,
+                    "reachable": "sportsmole" not in url,
+                }
+
+            with mock.patch.object(packet, "probe_source_url", side_effect=fake_probe) as probe:
+                result = packet.build_packet(
+                    template_path,
+                    now="2026-06-13T07:30:00Z",
+                    check_sources=True,
+                    source_timeout_seconds=0.25,
+                )
+
+        reachability = result["source_reachability"]
+        self.assertTrue(reachability["checked"])
+        self.assertTrue(reachability["advisory_only"])
+        self.assertEqual(reachability["checked_at"], "2026-06-13T07:30:00Z")
+        self.assertEqual(reachability["url_count"], 9)
+        self.assertEqual(reachability["unreachable_count"], 1)
+        self.assertEqual(probe.call_count, 9)
+        rows = {row["id"]: row for row in reachability["rows"]}
+        self.assertIn(
+            "https://www.sportsmole.co.uk/football/germany/world-cup-2026/preview/germany-vs-curacao-prediction-team-news-lineups_599044.html",
+            rows["injuries_suspensions"]["unreachable_options"],
+        )
+        self.assertEqual(rows["market_state"]["source_options"], [])
+        self.assertEqual(rows["quote_scout"]["source_options"], [])
+
+    def test_validate_packet_check_sources_refreshes_reachability(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-13T07:30:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            with mock.patch.object(
+                packet,
+                "probe_source_url",
+                return_value={
+                    "url": "https://example.com",
+                    "checked_at": "2026-06-13T07:31:00Z",
+                    "status": 200,
+                    "reachable": True,
+                },
+            ):
+                validated = packet.validate_packet_file(
+                    packet_path,
+                    now="2026-06-13T07:31:00Z",
+                    check_sources=True,
+                    source_timeout_seconds=0.25,
+                )
+
+        self.assertTrue(validated["source_reachability"]["checked"])
+        self.assertEqual(validated["source_reachability"]["checked_at"], "2026-06-13T07:31:00Z")
+        self.assertEqual(validated["source_reachability"]["reachable_count"], 9)
 
     def test_packet_preserves_numeric_pre_result_odds_snapshot(self):
         with tempfile.TemporaryDirectory() as tmpdir:
