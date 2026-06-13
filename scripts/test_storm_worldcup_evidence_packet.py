@@ -95,8 +95,8 @@ def write_germany_template(path: Path):
 def fill_packet_evidence(result: dict):
     claims = {
         "official_result": "Official final score Germany 3-0 Curacao and completed marker captured.",
-        "confirmed_lineups": "Confirmed lineups, starting XI, substitutes, and late absences captured.",
-        "injuries_suspensions": "Injuries, suspensions, bookings, and absences checked for path impact.",
+        "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
+        "injuries_suspensions": "Post-match source checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
         "odds_move": "Post-result Germany odds movement versus the pre-result baseline Germany 1.06 captured.",
         "ratings_move": "Post-result ratings/model movement versus baseline FIFA ranks Germany 10 and Curacao 82 captured.",
         "market_state": "Fresh post-result Deadeye market state from deadeye markets show generated_at 2026-06-14T20:06:30Z with mu=3.2291 and sigma=0.2702 captured.",
@@ -121,7 +121,7 @@ def fill_realistic_germany_result_evidence(result: dict):
     claims = {
         "official_result": "FIFA shows the match completed at full time with final score Germany 3-0 Curacao.",
         "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
-        "injuries_suspensions": "Match report checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
+        "injuries_suspensions": "Post-match report checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
         "odds_move": "Post-result Germany outright odds and path odds movement versus baseline Germany 1.06 captured.",
         "ratings_move": "Post-result ratings model movement for Germany versus baseline ranks Germany 10 and Curacao 82 captured.",
         "market_state": "Fresh post-result Deadeye market state from deadeye markets show generated_at 2026-06-14T20:06:30Z with mu=3.2291 and sigma=0.2702 captured.",
@@ -493,6 +493,41 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         )
 
         self.assertIn("official_result:claim_missing_score_value", blockers)
+
+    def test_lineup_claim_requires_teams_confirmation_and_post_result_timing(self):
+        blockers = packet.claim_keyword_blockers(
+            "confirmed_lineups",
+            "Confirmed lineups and starting XI captured.",
+        )
+
+        self.assertIn("confirmed_lineups:claim_missing_germany", blockers)
+        self.assertIn("confirmed_lineups:claim_missing_curacao", blockers)
+        self.assertIn("confirmed_lineups:claim_missing_post_result", blockers)
+
+        accepted = packet.claim_keyword_blockers(
+            "confirmed_lineups",
+            "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
+        )
+
+        self.assertEqual(accepted, [])
+
+    def test_injury_claim_requires_post_match_germany_path_and_source(self):
+        blockers = packet.claim_keyword_blockers(
+            "injuries_suspensions",
+            "Injuries, suspensions, bookings, and absences captured.",
+        )
+
+        self.assertIn("injuries_suspensions:claim_missing_post_result", blockers)
+        self.assertIn("injuries_suspensions:claim_missing_germany", blockers)
+        self.assertIn("injuries_suspensions:claim_missing_path_impact", blockers)
+        self.assertIn("injuries_suspensions:claim_missing_source_or_checked", blockers)
+
+        accepted = packet.claim_keyword_blockers(
+            "injuries_suspensions",
+            "Post-match source checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
+        )
+
+        self.assertEqual(accepted, [])
 
     def test_odds_move_claim_requires_post_result_movement_and_baseline(self):
         blockers = packet.claim_keyword_blockers(

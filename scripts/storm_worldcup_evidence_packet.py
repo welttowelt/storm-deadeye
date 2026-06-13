@@ -67,9 +67,17 @@ REQUIRED_CLAIM_KEYWORDS = {
     ),
     "confirmed_lineups": (
         ("lineup", ("lineup", "lineups", "starting xi", "starting xis")),
+        ("confirmed", ("confirmed", "official")),
+        ("germany", ("germany",)),
+        ("curacao", ("curacao",)),
+        ("post_result", ("after full time", "full time", "post-match", "post match", "after result", "post-result")),
     ),
     "injuries_suspensions": (
         ("injury_or_suspension", ("injur", "suspens", "booking", "absence", "absences")),
+        ("post_result", ("post-match", "post match", "after result", "post-result", "after full time", "full time")),
+        ("germany", ("germany",)),
+        ("path_impact", ("path", "impact", "availability", "later tournament")),
+        ("source_or_checked", ("source", "checked", "report", "fifa", "team news")),
     ),
     "odds_move": (
         ("odds", ("odds",)),

@@ -90,8 +90,11 @@ these claim markers:
 
 - `official_result`: final-whistle/full-time/completed marker plus a concrete
   score value such as `3-0` or `3:0`.
-- `confirmed_lineups`: lineup or starting XI.
-- `injuries_suspensions`: injury, suspension, booking, or absence.
+- `confirmed_lineups`: confirmed/official lineup or starting XI, Germany,
+  Curacao, and post-result/full-time timing.
+- `injuries_suspensions`: injury, suspension, booking, or absence plus
+  post-match timing, Germany, path/availability impact, and source/checked
+  marker.
 - `odds_move`: odds, post-result timing, movement/change, and baseline or
   pre-result comparison.
 - `ratings_move`: rating or model, post-result timing, movement/change, and
