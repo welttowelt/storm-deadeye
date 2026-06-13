@@ -96,10 +96,11 @@ these claim markers:
 - `injuries_suspensions`: injury, suspension, booking, or absence plus
   post-match timing, Germany, path/availability impact, and source/checked
   marker.
-- `odds_move`: odds, post-result timing, movement/change, and baseline or
-  pre-result comparison.
-- `ratings_move`: rating or model, post-result timing, movement/change, and
-  baseline or pre-result comparison.
+- `odds_move`: odds, post-result timing, movement/change, baseline or
+  pre-result comparison, and an updated odds value or delta.
+- `ratings_move`: rating or model, post-result timing, movement/change,
+  baseline or pre-result comparison, and an updated rating/model value or
+  delta.
 - `market_state`: market/Deadeye state from `deadeye markets show`, a
   generated/captured timestamp, and concrete `mu=<value>` plus
   `sigma=<value>`.

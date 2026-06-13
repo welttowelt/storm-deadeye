@@ -55,8 +55,8 @@ CLAIM_TEMPLATES = {
     "official_result": "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
     "confirmed_lineups": "FIFA confirmed lineups and starting XI for Germany and Curacao were captured after full time.",
     "injuries_suspensions": "Post-match source checked injuries, suspensions, bookings, and absences affecting Germany path impact.",
-    "odds_move": "Post-result Germany odds movement versus the pre-result baseline captured.",
-    "ratings_move": "Post-result ratings/model movement for Germany versus baseline captured.",
+    "odds_move": "Post-result Germany odds movement versus the pre-result baseline with post_result_value <updated odds/delta> captured.",
+    "ratings_move": "Post-result ratings/model movement for Germany versus baseline with post_result_value <updated rating/model/delta> captured.",
     "market_state": "Fresh post-result Deadeye market state from deadeye markets show generated_at <timestamp> with mu=<mu> and sigma=<sigma> captured.",
     "quote_scout": "Fresh active-portfolio quote scout output <artifact> generated_at <timestamp> with runner_pass_rows <count> captured after result/state shift.",
 }
@@ -87,12 +87,14 @@ REQUIRED_CLAIM_KEYWORDS = {
         ("post_result", ("post-result", "post result", "after result", "post-match", "post match")),
         ("movement", ("movement", "move", "delta", "change", "repric")),
         ("baseline", ("baseline", "pre-result", "pre result", "before result")),
+        ("post_result_value", ("post_result_value", "post-result value", "post result value", "updated odds", "current odds", "new odds", "odds now", "delta=")),
     ),
     "ratings_move": (
         ("ratings_or_model", ("rating", "ratings", "model")),
         ("post_result", ("post-result", "post result", "after result", "post-match", "post match")),
         ("movement", ("movement", "move", "delta", "change", "repric")),
         ("baseline", ("baseline", "pre-result", "pre result", "before result")),
+        ("post_result_value", ("post_result_value", "post-result value", "post result value", "updated rating", "current rating", "new rating", "updated model", "current model", "new model", "delta=")),
     ),
     "market_state": (
         ("market", ("market", "deadeye")),
@@ -116,6 +118,16 @@ SCORE_VALUE_RE = re.compile(r"\b\d{1,2}\s*(?:-|:|\u2013|\u2014)\s*\d{1,2}\b")
 NUMBER_PATTERN = r"[-+]?(?:\d+(?:\.\d*)?|\.\d+)(?:e[-+]?\d+)?"
 MARKET_STATE_MU_VALUE_RE = re.compile(rf"\b(?:mu|mean)\s*(?:=|:)\s*{NUMBER_PATTERN}\b", re.IGNORECASE)
 MARKET_STATE_SIGMA_VALUE_RE = re.compile(rf"\b(?:sigma|sd)\s*(?:=|:)\s*{NUMBER_PATTERN}\b", re.IGNORECASE)
+MOVE_POST_RESULT_VALUE_RE = {
+    "odds_move": re.compile(
+        rf"\b(?:post_result_value|post[- ]result value|updated odds|current odds|new odds|odds now|delta|change)\b[^.;\n]{{0,80}}{NUMBER_PATTERN}\b",
+        re.IGNORECASE,
+    ),
+    "ratings_move": re.compile(
+        rf"\b(?:post_result_value|post[- ]result value|updated rating|current rating|new rating|updated model|current model|new model|delta|change)\b[^.;\n]{{0,80}}{NUMBER_PATTERN}\b",
+        re.IGNORECASE,
+    ),
+}
 DEFAULT_SOURCE_TIMEOUT_SECONDS = 8.0
 
 
@@ -305,6 +317,8 @@ def claim_keyword_blockers(item_id: str, claim: Any) -> list[str]:
             blockers.append(f"{item_id}:claim_missing_mu_value")
         if not MARKET_STATE_SIGMA_VALUE_RE.search(str(claim or "")):
             blockers.append(f"{item_id}:claim_missing_sigma_value")
+    if item_id in MOVE_POST_RESULT_VALUE_RE and not MOVE_POST_RESULT_VALUE_RE[item_id].search(str(claim or "")):
+        blockers.append(f"{item_id}:claim_missing_post_result_value")
     return blockers
 
 
@@ -516,7 +530,8 @@ def claim_template_for_item(item_id: str, template: dict[str, Any]) -> str:
         if germany is not None and draw is not None and curacao is not None:
             return (
                 "Post-result Germany odds movement versus pre-result baseline "
-                f"Germany {germany}, draw {draw}, Curacao {curacao} captured."
+                f"Germany {germany}, draw {draw}, Curacao {curacao} with "
+                "post_result_value <updated odds/delta> captured."
             )
     if item_id == "ratings_move":
         ratings = (baseline.get("ratings_snapshot") or {})
@@ -528,7 +543,8 @@ def claim_template_for_item(item_id: str, template: dict[str, Any]) -> str:
             updated = f" from {updated_at}" if updated_at else ""
             return (
                 "Post-result ratings/model movement for Germany versus pre-result "
-                f"FIFA rank baseline{updated}: Germany {germany}, Curacao {curacao} captured."
+                f"FIFA rank baseline{updated}: Germany {germany}, Curacao {curacao} "
+                "with post_result_value <updated rating/model/delta> captured."
             )
     return CLAIM_TEMPLATES.get(item_id, "<specific claim>")
 
