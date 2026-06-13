@@ -267,6 +267,19 @@ source, URL, or claim skeleton during the post-result window. The commands are
 still strict row captures, not approvals: source values, timestamps, and claim
 placeholders must reflect the actual post-result source.
 
+Print the compact operator checklist from the packet before the window and
+again immediately after the result:
+
+```bash
+python3 scripts/storm_worldcup_evidence_packet.py \
+  --packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json \
+  --print-capture-plan
+```
+
+This prints the fill order, row source roles, source-option counts, required
+claim markers, local read-only commands, and paste-ready `--capture-row`
+commands without dumping the full packet JSON.
+
 For `odds_move` and `ratings_move`, inspect
 `capture_plan.rows[].claim_must_include` before capture. Both rows now include
 `post_result_numeric_value`, which means a claim that only says "odds moved" or

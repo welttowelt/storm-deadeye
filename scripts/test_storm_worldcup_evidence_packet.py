@@ -315,6 +315,25 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertFalse(result["capture_readiness"]["ready_for_template_update"])
         self.assertEqual(result["capture_status"]["next_action"], "wait_for_result_window")
 
+    def test_capture_plan_summary_is_operator_readable(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "germany.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-13T08:30:00Z")
+
+        summary = packet.capture_plan_summary(result)
+
+        self.assertIn("Germany post-result capture plan", summary)
+        self.assertIn("template: germany-post-result-snap-template-20260612", summary)
+        self.assertIn("official_result: official_match_result", summary)
+        self.assertIn("odds_move: odds_snapshot", summary)
+        self.assertIn("post_result_numeric_value", summary)
+        self.assertIn("deadeye markets show", summary)
+        self.assertIn("--capture-row odds_move", summary)
+        self.assertIn("runner_pass_rows", summary)
+        self.assertIn("Runner: python3 scripts/storm_deadeye_loop.py", summary)
+        self.assertNotIn("<specific claim>", summary)
+
     def test_pre_window_readiness_blocks_generic_claim_template(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             template_path = Path(tmpdir) / "germany.json"
@@ -1064,6 +1083,32 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
 
         self.assertEqual(rc, 0)
         self.assertTrue(payload["capture_readiness"]["ready_for_template_update"])
+
+    def test_main_prints_capture_plan_from_packet_file(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-13T20:05:00Z")
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            output = io.StringIO()
+            with redirect_stdout(output):
+                rc = packet.main([
+                    "--packet",
+                    str(packet_path),
+                    "--print-capture-plan",
+                    "--now",
+                    "2026-06-13T20:06:00Z",
+                ])
+
+        text = output.getvalue()
+        self.assertEqual(rc, 0)
+        self.assertIn("Germany post-result capture plan", text)
+        self.assertIn("--capture-row official_result", text)
+        self.assertIn("post_result_numeric_value", text)
+        self.assertNotIn('"packet_status"', text)
 
     def test_apply_packet_refuses_unready_packet(self):
         with tempfile.TemporaryDirectory() as tmpdir:

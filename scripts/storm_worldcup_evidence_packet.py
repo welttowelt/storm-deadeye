@@ -975,6 +975,49 @@ def capture_plan(template: dict[str, Any], placeholders: list[dict[str, Any]]) -
     }
 
 
+def capture_plan_summary(packet: dict[str, Any]) -> str:
+    template = packet.get("template") or {}
+    plan = packet.get("capture_plan") or {}
+    readiness = packet.get("pre_window_readiness") or {}
+    lines = [
+        "Germany post-result capture plan",
+        f"template: {template.get('id') or 'unknown'}",
+        f"market: {template.get('market') or 'unknown'}",
+        f"result_not_before_utc: {plan.get('result_not_before_utc') or template.get('result_not_before_utc') or 'unknown'}",
+        f"result_window_open: {packet.get('result_window_open')}",
+        f"pre_window_ready: {readiness.get('ready_for_result_window')}",
+        "",
+        "Sequence:",
+    ]
+    for step in plan.get("sequence") or []:
+        lines.append(f"- {step}")
+    lines.extend(["", "Rows:"])
+    for row in plan.get("rows") or []:
+        if not isinstance(row, dict):
+            continue
+        markers = [
+            str(marker.get("label"))
+            for marker in row.get("claim_must_include") or []
+            if isinstance(marker, dict) and marker.get("label")
+        ]
+        source_options = row.get("source_options") or []
+        lines.append(f"- {row.get('id')}: {row.get('source_role')}")
+        lines.append(f"  url: {row.get('primary_url') or 'TO_FILL'}")
+        lines.append(f"  source_options: {len(source_options)}")
+        lines.append(f"  must_include: {', '.join(markers)}")
+        lines.append(f"  claim_template: {row.get('claim_template')}")
+        if row.get("read_only_command"):
+            lines.append(f"  read_only: {row.get('read_only_command')}")
+        lines.append(f"  capture: {row.get('capture_command')}")
+    lines.extend([
+        "",
+        f"Validate: {plan.get('validation_command') or 'missing'}",
+        f"Apply: {plan.get('apply_command') or 'missing'}",
+        f"Runner: {plan.get('runner_command') or 'missing'}",
+    ])
+    return "\n".join(lines)
+
+
 def build_packet(
     template_path: Path,
     *,
@@ -1166,10 +1209,11 @@ def apply_packet_to_template(
 def build_arg_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="Build a World Cup post-result evidence packet.")
     parser.add_argument("--template", type=Path, help="Template path. Defaults to the Germany template when building.")
-    parser.add_argument("--packet", type=Path, help="Packet path for --capture-row.")
+    parser.add_argument("--packet", type=Path, help="Packet path for --capture-row or --print-capture-plan.")
     parser.add_argument("--output", type=Path, help="Write the packet to this JSON file instead of stdout.")
     parser.add_argument("--validate-packet", type=Path, help="Validate an already filled packet instead of building a new one.")
     parser.add_argument("--apply-to-template", type=Path, help="Validate a filled packet and copy its captured evidence into the template.")
+    parser.add_argument("--print-capture-plan", action="store_true", help="Print a compact operator checklist from the packet capture_plan.")
     parser.add_argument("--capture-row", choices=REQUIRED_EVIDENCE_IDS, help="Capture one required evidence row in a packet.")
     parser.add_argument("--claim", help="Specific evidence claim for --capture-row.")
     parser.add_argument("--source", help="Human-readable source name for --capture-row.")
@@ -1190,6 +1234,8 @@ def build_arg_parser() -> argparse.ArgumentParser:
 def main(argv: list[str] | None = None) -> int:
     args = build_arg_parser().parse_args(argv)
     try:
+        if args.print_capture_plan and args.output:
+            raise loop.LoopError("--print-capture-plan cannot be combined with --output")
         if args.capture_row:
             if not args.packet:
                 raise loop.LoopError("--capture-row requires --packet")
@@ -1204,6 +1250,13 @@ def main(argv: list[str] | None = None) -> int:
                 capture_utc=args.capture_utc,
                 source_role=args.source_role,
                 now=args.now,
+            )
+        elif args.print_capture_plan and args.packet:
+            packet = validate_packet_file(
+                args.packet,
+                now=args.now,
+                check_sources=args.check_sources,
+                source_timeout_seconds=args.source_timeout_seconds,
             )
         elif args.apply_to_template:
             packet = apply_packet_to_template(args.apply_to_template, template_path=args.template, now=args.now)
@@ -1224,6 +1277,9 @@ def main(argv: list[str] | None = None) -> int:
     except loop.LoopError as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, indent=2, sort_keys=True))
         return 1
+    if args.print_capture_plan:
+        print(capture_plan_summary(packet))
+        return 0
     text = json.dumps(packet, indent=2, sort_keys=True)
     if args.output:
         args.output.parent.mkdir(parents=True, exist_ok=True)
