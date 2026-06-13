@@ -78,6 +78,13 @@ URLs are reachable before the window, but do not treat a reachable source as
 evidence capture and do not treat an unreachable probe as a failed evidence row
 until a human/source-capture attempt confirms it.
 
+The packet also emits `pre_window_readiness`. This is the pre-result audit:
+`pre_window_readiness.ready_for_result_window` should be `true` before the
+match window opens. It checks required rows, source roles, public URLs,
+row-specific claim templates, generated capture commands, and source
+reachability. It does not mark evidence captured, promote the template, queue a
+candidate, or approve execution.
+
 Required packet claims must be specific, not generic. The validator checks for
 these claim markers:
 
@@ -198,6 +205,10 @@ python3 scripts/storm_worldcup_evidence_packet.py \
   --source-timeout-seconds 8 \
   --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
 ```
+
+Before the window opens, confirm
+`pre_window_readiness.ready_for_result_window=true`. If it is false, fix
+`pre_window_readiness.blockers` before waiting for final whistle.
 
 After filling every required evidence row, validate the packet before copying
 anything into the template:

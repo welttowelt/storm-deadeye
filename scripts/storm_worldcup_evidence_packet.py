@@ -416,6 +416,93 @@ def source_reachability_report(
     }
 
 
+def claim_template_blockers(item_id: str, claim_template: Any) -> list[str]:
+    text = str(claim_template or "")
+    lowered = text.lower()
+    blockers: list[str] = []
+    if is_placeholder(text) or "<specific claim>" in lowered or text.strip().upper().startswith("TO_FILL"):
+        return [f"{item_id}:claim_template_placeholder"]
+    for label, terms in REQUIRED_CLAIM_KEYWORDS.get(item_id, ()):
+        if not any(term in lowered for term in terms):
+            blockers.append(f"{item_id}:claim_template_missing_{label}")
+    if item_id == "official_result" and "<score>" not in lowered and not SCORE_VALUE_RE.search(text):
+        blockers.append(f"{item_id}:claim_template_missing_score_placeholder")
+    return blockers
+
+
+def pre_window_readiness(packet: dict[str, Any]) -> dict[str, Any]:
+    blockers: list[str] = []
+    item_blockers: dict[str, list[str]] = {}
+    by_id = {
+        str(item.get("id")): item
+        for item in packet.get("evidence_placeholders") or []
+        if isinstance(item, dict)
+    }
+    plan_rows = {
+        str(row.get("id")): row
+        for row in (packet.get("capture_plan") or {}).get("rows", [])
+        if isinstance(row, dict)
+    }
+    reachability = packet.get("source_reachability") or {}
+    reachability_rows = {
+        str(row.get("id")): row
+        for row in reachability.get("rows") or []
+        if isinstance(row, dict)
+    }
+    if not reachability.get("checked"):
+        blockers.append("source_reachability_not_checked")
+    for item_id in REQUIRED_EVIDENCE_IDS:
+        row_blockers: list[str] = []
+        item = by_id.get(item_id)
+        plan = plan_rows.get(item_id)
+        if not item:
+            row_blockers.append(f"{item_id}:missing_placeholder")
+        else:
+            expected_role = EXPECTED_SOURCE_ROLES.get(item_id)
+            if expected_role and item.get("source_role") != expected_role:
+                row_blockers.append(f"{item_id}:source_role_not_{expected_role}")
+            row_blockers.extend(evidence_url_blockers(item_id, item.get("url")))
+            options = [
+                str(option)
+                for option in (item.get("source_options") or [])
+                if not is_placeholder(option)
+            ]
+            if item_id not in LOCAL_SOURCE_EVIDENCE_IDS:
+                public_options = [
+                    option for option in options
+                    if not evidence_url_blockers(item_id, option)
+                ]
+                if not public_options:
+                    row_blockers.append(f"{item_id}:source_options_missing_public_url")
+                reachability_row = reachability_rows.get(item_id) or {}
+                if reachability.get("checked") and not reachability_row.get("reachable_options"):
+                    row_blockers.append(f"{item_id}:source_options_not_reachable")
+        if not plan:
+            row_blockers.append(f"{item_id}:missing_capture_plan")
+        else:
+            claim_template = plan.get("claim_template")
+            row_blockers.extend(claim_template_blockers(item_id, claim_template))
+            command = str(plan.get("capture_command") or "")
+            if f"--capture-row {item_id}" not in command:
+                row_blockers.append(f"{item_id}:capture_command_missing_row")
+            if str(claim_template or "") not in command:
+                row_blockers.append(f"{item_id}:capture_command_missing_claim_template")
+        if row_blockers:
+            item_blockers[item_id] = row_blockers
+            blockers.extend(row_blockers)
+    return {
+        "ready_for_result_window": not blockers,
+        "required_ids": list(REQUIRED_EVIDENCE_IDS),
+        "source_reachability_checked": bool(reachability.get("checked")),
+        "source_reachability_checked_at": reachability.get("checked_at"),
+        "source_reachability_reachable_count": reachability.get("reachable_count"),
+        "source_reachability_unreachable_count": reachability.get("unreachable_count"),
+        "blockers": sorted(set(blockers)),
+        "item_blockers": item_blockers,
+        "note": "Pre-window readiness only; it does not mark evidence captured or approve queueing.",
+    }
+
+
 def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict[str, Any]:
     validated_at = now or utc_now()
     blockers: list[str] = []
@@ -506,6 +593,7 @@ def refresh_packet_status(
             check_sources=False,
             timeout_seconds=source_timeout_seconds,
         )
+    packet["pre_window_readiness"] = pre_window_readiness(packet)
     packet["capture_readiness"] = capture_readiness(packet, now=checked_at)
     packet["capture_status"] = evidence_capture_status(packet)
     return packet
@@ -747,6 +835,12 @@ def build_packet(
             window_open = False
     blockers = status.get("blockers") or []
     placeholders = evidence_placeholders(template)
+    reachability = source_reachability_report(
+        placeholders,
+        checked_at=generated_at,
+        check_sources=check_sources,
+        timeout_seconds=source_timeout_seconds,
+    )
     packet = {
         "generated_at": generated_at,
         "packet_status": "draft_post_result_evidence_packet",
@@ -771,12 +865,7 @@ def build_packet(
         "source_urls": source_urls(template),
         "evidence_placeholders": placeholders,
         "capture_plan": capture_plan(template, placeholders),
-        "source_reachability": source_reachability_report(
-            placeholders,
-            checked_at=generated_at,
-            check_sources=check_sources,
-            timeout_seconds=source_timeout_seconds,
-        ),
+        "source_reachability": reachability,
         "read_only_commands_after_result": read_only_commands(template),
         "template_update_requirements_after_capture": [
             "copy captured evidence rows into the source template",
@@ -791,6 +880,7 @@ def build_packet(
             "does not bypass fresh smoke, doctor, quote, gas, XP, concentration, or trade caps",
         ],
     }
+    packet["pre_window_readiness"] = pre_window_readiness(packet)
     packet["capture_readiness"] = capture_readiness(packet, now=generated_at)
     packet["capture_status"] = evidence_capture_status(packet)
     return packet

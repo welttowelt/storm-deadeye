@@ -276,6 +276,72 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertTrue(reachability["advisory_only"])
         self.assertEqual(reachability["url_count"], 9)
         self.assertEqual(reachability["probes"], [])
+        self.assertFalse(result["pre_window_readiness"]["ready_for_result_window"])
+        self.assertIn("source_reachability_not_checked", result["pre_window_readiness"]["blockers"])
+
+    def test_source_checked_packet_is_pre_window_ready_but_not_queue_approved(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "germany.json"
+            write_germany_template(template_path)
+
+            def fake_probe(url, *, timeout_seconds, checked_at):
+                return {
+                    "url": url,
+                    "checked_at": checked_at,
+                    "status": 200,
+                    "reachable": True,
+                }
+
+            with mock.patch.object(packet, "probe_source_url", side_effect=fake_probe):
+                result = packet.build_packet(
+                    template_path,
+                    now="2026-06-13T08:30:00Z",
+                    check_sources=True,
+                    source_timeout_seconds=0.25,
+                )
+
+        readiness = result["pre_window_readiness"]
+        self.assertTrue(readiness["ready_for_result_window"])
+        self.assertEqual(readiness["blockers"], [])
+        self.assertTrue(readiness["source_reachability_checked"])
+        self.assertEqual(readiness["source_reachability_reachable_count"], 9)
+        self.assertFalse(result["queue_allowed"])
+        self.assertFalse(result["capture_readiness"]["ready_for_template_update"])
+        self.assertEqual(result["capture_status"]["next_action"], "wait_for_result_window")
+
+    def test_pre_window_readiness_blocks_generic_claim_template(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "germany.json"
+            write_germany_template(template_path)
+
+            with mock.patch.object(
+                packet,
+                "probe_source_url",
+                return_value={
+                    "url": "https://example.com",
+                    "checked_at": "2026-06-13T08:30:00Z",
+                    "status": 200,
+                    "reachable": True,
+                },
+            ):
+                result = packet.build_packet(
+                    template_path,
+                    now="2026-06-13T08:30:00Z",
+                    check_sources=True,
+                    source_timeout_seconds=0.25,
+                )
+            for row in result["capture_plan"]["rows"]:
+                if row["id"] == "official_result":
+                    row["claim_template"] = "<specific claim>"
+                    row["capture_command"] = row["capture_command"].replace(
+                        "FIFA shows the match completed at full time with final score Germany <score> Curacao.",
+                        "<specific claim>",
+                    )
+
+            readiness = packet.pre_window_readiness(result)
+
+        self.assertFalse(readiness["ready_for_result_window"])
+        self.assertIn("official_result:claim_template_placeholder", readiness["blockers"])
 
     def test_source_reachability_probe_is_advisory_and_row_mapped(self):
         with tempfile.TemporaryDirectory() as tmpdir:
