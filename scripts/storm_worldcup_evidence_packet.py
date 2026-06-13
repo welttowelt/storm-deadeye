@@ -1003,7 +1003,12 @@ def capture_plan_summary(packet: dict[str, Any]) -> str:
         source_options = row.get("source_options") or []
         lines.append(f"- {row.get('id')}: {row.get('source_role')}")
         lines.append(f"  url: {row.get('primary_url') or 'TO_FILL'}")
-        lines.append(f"  source_options: {len(source_options)}")
+        if source_options:
+            lines.append("  source_options:")
+            for option in source_options:
+                lines.append(f"    - {option}")
+        else:
+            lines.append("  source_options: none")
         lines.append(f"  must_include: {', '.join(markers)}")
         lines.append(f"  claim_template: {row.get('claim_template')}")
         if row.get("read_only_command"):

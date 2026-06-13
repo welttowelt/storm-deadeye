@@ -327,6 +327,12 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertIn("template: germany-post-result-snap-template-20260612", summary)
         self.assertIn("official_result: official_match_result", summary)
         self.assertIn("odds_move: odds_snapshot", summary)
+        self.assertIn("source_options:", summary)
+        self.assertIn(
+            "https://www.sportsmole.co.uk/football/germany/world-cup-2026/preview/germany-vs-curacao-prediction-team-news-lineups_599044.html",
+            summary,
+        )
+        self.assertIn("https://inside.fifa.com/fifa-world-ranking/CUW?gender=men", summary)
         self.assertIn("post_result_numeric_value", summary)
         self.assertIn("deadeye markets show", summary)
         self.assertIn("--capture-row odds_move", summary)

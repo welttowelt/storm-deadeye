@@ -276,7 +276,7 @@ python3 scripts/storm_worldcup_evidence_packet.py \
   --print-capture-plan
 ```
 
-This prints the fill order, row source roles, source-option counts, required
+This prints the fill order, row source roles, source fallback URLs, required
 claim markers, local read-only commands, and paste-ready `--capture-row`
 commands without dumping the full packet JSON.
 
