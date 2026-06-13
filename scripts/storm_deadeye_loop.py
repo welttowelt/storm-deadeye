@@ -2520,7 +2520,18 @@ def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
 
 def pre_window_source_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
     refresh = summary.get("pre_window_evidence_source_refresh") or {}
-    if refresh.get("status") != "failed":
+    status = refresh.get("status")
+    if status == "refreshed":
+        refreshed = []
+        for item in refresh.get("refreshed") or []:
+            if not isinstance(item, dict):
+                continue
+            refreshed.append({
+                "id": item.get("id"),
+                "reasons": item.get("reasons") or [],
+            })
+        return {"status": "refreshed", "refreshed": refreshed}
+    if status != "failed":
         return None
     failures = []
     for item in refresh.get("failures") or []:
@@ -2711,7 +2722,6 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
         "processed",
         "promoted_templates",
         "post_result_evidence_due",
-        "pre_window_evidence_source_refresh",
     )
     for field in stable_fields:
         if field.startswith("mirrored_"):
@@ -2722,6 +2732,16 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
             return False
     if (stored.get("pre_window_evidence_regressions") or []) != (
         current.get("pre_window_evidence_regressions") or []
+    ):
+        return False
+    stored_pre_window_refresh = stored.get("pre_window_evidence_source_refresh")
+    current_pre_window_refresh = current.get("pre_window_evidence_source_refresh")
+    if current_pre_window_refresh is not None:
+        if stored_pre_window_refresh != current_pre_window_refresh:
+            return False
+    elif (
+        isinstance(stored_pre_window_refresh, dict)
+        and stored_pre_window_refresh.get("status") == "failed"
     ):
         return False
 

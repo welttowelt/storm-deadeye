@@ -538,6 +538,74 @@ class StormDeadeyeLoopTests(unittest.TestCase):
 
         self.assertFalse(loop.mailbox_keys_equivalent(base, failure))
 
+    def test_summary_key_records_successful_pre_window_source_refresh(self):
+        summary = {
+            "rankings": {
+                "overall": {"rank": 10, "gap_to_first": 915.922009, "pnl": 79.244219},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "gas_tier": "ok",
+            "pre_window_evidence_source_refresh": {
+                "status": "refreshed",
+                "refreshed": [
+                    {
+                        "id": "germany-post-result-snap-template-20260612",
+                        "packet": "/tmp/germany-post-result-evidence-packet.json",
+                        "reasons": ["source_reachability_expires_before_result_window"],
+                    }
+                ],
+            },
+        }
+
+        key = loop.summary_key(summary)
+
+        self.assertEqual(
+            key["pre_window_evidence_source_refresh"],
+            {
+                "status": "refreshed",
+                "refreshed": [
+                    {
+                        "id": "germany-post-result-snap-template-20260612",
+                        "reasons": ["source_reachability_expires_before_result_window"],
+                    }
+                ],
+            },
+        )
+
+    def test_mailbox_key_normalizes_successful_pre_window_source_refresh(self):
+        base = {
+            "rank": 10,
+            "gap": 915.922,
+            "pnl": 79.2442,
+            "gas_tier": "ok",
+            "unhealthy_filters": [],
+            "unhealthy_time_windows": [],
+            "unhealthy_filter_time_windows": [],
+            "mirrored_filters": [],
+            "mirrored_time_windows": [],
+            "mirrored_filter_time_windows": [],
+            "healthy_view_ranks": {"filters": {}, "time_windows": {}, "filter_time_windows": {}},
+            "processed": [],
+            "promoted_templates": [],
+            "post_result_evidence_due": [],
+            "pre_window_evidence_regressions": [],
+        }
+        refreshed = json.loads(json.dumps(base))
+        refreshed["pre_window_evidence_source_refresh"] = {
+            "status": "refreshed",
+            "refreshed": [
+                {
+                    "id": "germany-post-result-snap-template-20260612",
+                    "reasons": ["source_reachability_expires_before_result_window"],
+                }
+            ],
+        }
+
+        self.assertFalse(loop.mailbox_keys_equivalent(base, refreshed))
+        self.assertTrue(loop.mailbox_keys_equivalent(refreshed, base))
+
     def test_mailbox_update_migrates_legacy_scout_key_without_entry(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             mailbox = Path(tmpdir) / "mailbox.md"
