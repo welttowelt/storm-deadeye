@@ -936,6 +936,25 @@ def concentration_errors(
     return errors
 
 
+def candidate_requires_claude_execute_review(candidate: dict[str, Any], market_meta: dict[str, Any]) -> bool:
+    if bool(candidate.get("requires_claude_review")):
+        return True
+    return is_world_cup_market(market_meta)
+
+
+def claude_execute_review_approved(candidate: dict[str, Any]) -> bool:
+    review = candidate.get("claude_review") or {}
+    if not isinstance(review, dict):
+        return False
+    reviewer = str(review.get("reviewed_by") or review.get("reviewer") or "").lower()
+    status = str(review.get("status") or "").lower()
+    return (
+        bool(review.get("approved_for_execute"))
+        and "claude_storm" in reviewer
+        and status in {"approved", "approved_for_execute", "pass"}
+    )
+
+
 def run_smoke(smoke_script: Path, smoke_market: str) -> dict[str, Any]:
     started = utc_now()
     if smoke_script.exists():
@@ -1103,6 +1122,17 @@ def execute_candidate(
     dry = deadeye_json([*base_args, "--dry-run"], timeout=120)
     if not execute:
         return {"dry_run": dry, "submitted": False, "max_collateral": max_collateral}
+    if (
+        candidate_requires_claude_execute_review(candidate, market_meta)
+        and not claude_execute_review_approved(candidate)
+    ):
+        return {
+            "dry_run": dry,
+            "submitted": False,
+            "review_required": True,
+            "review_reason": "Claude_Storm execute approval missing",
+            "max_collateral": max_collateral,
+        }
     submitted = deadeye_json(base_args, timeout=180)
     return {"dry_run": dry, "submitted": True, "receipt": submitted, "max_collateral": max_collateral}
 
@@ -1120,6 +1150,7 @@ def process_candidates(
 ) -> list[dict[str, Any]]:
     processed: list[dict[str, Any]] = []
     processed_ids = set(state.get("processed_candidate_ids") or [])
+    review_required_ids = set(state.get("review_required_candidate_ids") or [])
     balance_xp = float(collateral.get("balance_xp", 0.0))
     strk_balance = float(account.get("strk_balance_strk", 0.0))
     if gas_tier(strk_balance) == "hard_stop":
@@ -1150,6 +1181,18 @@ def process_candidates(
         if not market_meta:
             processed.append({"id": candidate_id, "status": "failed", "reason": "market not found on indexer"})
             processed_ids.add(candidate_id)
+            continue
+        if (
+            candidate_id in review_required_ids
+            and args.execute
+            and candidate_requires_claude_execute_review(candidate, market_meta)
+            and not claude_execute_review_approved(candidate)
+        ):
+            processed.append({
+                "id": candidate_id,
+                "status": "skipped",
+                "reason": "awaiting Claude_Storm execute approval",
+            })
             continue
         errors = validate_candidate(candidate, market_meta)
         errors.extend(concentration_errors(candidate, market_meta, positions, markets))
@@ -1200,6 +1243,8 @@ def process_candidates(
                 journal=args.trade_journal,
             )
             status = "executed" if receipt.get("submitted") else "dry_run_ok"
+            if receipt.get("review_required"):
+                status = "review_required"
             event = {
                 "type": f"trade.{status}",
                 "timestamp": now_ts(),
@@ -1212,23 +1257,35 @@ def process_candidates(
                 "max_collateral": receipt.get("max_collateral"),
                 "submitted": receipt.get("submitted"),
             }
+            if receipt.get("review_required"):
+                event["reason"] = receipt.get("review_reason")
             append_jsonl(events_path, event)
             if receipt.get("submitted"):
                 executed_this_loop += 1
                 hour_history.append({"timestamp": event["timestamp"], "candidate_id": candidate_id})
                 state.setdefault("trade_history", []).append({"timestamp": event["timestamp"], "candidate_id": candidate_id})
-            processed.append({
+                review_required_ids.discard(candidate_id)
+            processed_item = {
                 "id": candidate_id,
                 "status": status,
                 "budget": budget,
                 "expected_value": quote.get("expected_value"),
                 "min_expected_value": min_ev,
-            })
-            processed_ids.add(candidate_id)
+            }
+            if receipt.get("review_required"):
+                processed_item["reason"] = receipt.get("review_reason")
+                review_required_ids.add(candidate_id)
+            processed.append(processed_item)
+            if not receipt.get("review_required"):
+                processed_ids.add(candidate_id)
         except Exception as exc:  # noqa: BLE001 - failures are recorded for the operator loop.
             processed.append({"id": candidate_id, "status": "failed", "reason": str(exc)})
             processed_ids.add(candidate_id)
     state["processed_candidate_ids"] = sorted(processed_ids)
+    if review_required_ids:
+        state["review_required_candidate_ids"] = sorted(review_required_ids)
+    else:
+        state.pop("review_required_candidate_ids", None)
     state["trade_history"] = trade_history_last_hour(state)
     return processed
 

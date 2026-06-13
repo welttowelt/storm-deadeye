@@ -534,6 +534,280 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(processed[0]["status"], "write_stopped")
         self.assertIn("fresh STRK balance", processed[0]["reason"])
 
+    def test_world_cup_execute_mode_requires_claude_review_after_dry_run(self):
+        market = {
+            "address": "0x2",
+            "marketType": "lognormal",
+            "category": "World Cup",
+            "title": "Germany World Cup path",
+            "isActive": True,
+            "state": {"isInitialized": True},
+        }
+        candidate = {
+            "id": "germany-post-result-candidate",
+            "market": "0x2",
+            "family": "lognormal",
+            "belief": 3.8,
+            "belief_sigma": 0.24,
+            "budget": 100.0,
+            "world_cup_post_result": True,
+            "rationale": "Official final score, lineups, odds, and ratings evidence support this post-result snap candidate.",
+            "evidence": [
+                {
+                    "claim": "Final whistle and score are official.",
+                    "source": "FIFA",
+                    "source_role": "official_match_result",
+                    "url": "https://www.fifa.com/match",
+                    "post_result": True,
+                },
+                {
+                    "claim": "Post-result odds move captured.",
+                    "source": "Odds",
+                    "url": "https://odds.example",
+                    "post_result": True,
+                },
+            ],
+        }
+        calls = []
+
+        def fake_deadeye_json(args, timeout=90, attempts=1):
+            calls.append(args)
+            if args[:2] == ["doctor", "--market"]:
+                return {"all_ok": True}
+            if args[:2] == ["trade", "quote"]:
+                return {"on_chain_will_accept": True, "expected_value": 22.0, "required_collateral": 10.0}
+            if args[:2] == ["trade", "execute"]:
+                self.assertIn("--dry-run", args)
+                return {"ok": True, "dry_run": True}
+            raise AssertionError(f"unexpected deadeye_json args: {args}")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = SimpleNamespace(execute=True, trade_journal=Path(tmpdir) / "journal.jsonl")
+            events = Path(tmpdir) / "events.jsonl"
+            state = {}
+            with (
+                mock.patch.object(
+                    loop,
+                    "account_snapshot",
+                    return_value={"account": {"strk_balance_strk": 1042.0}, "collateral": {"balance_xp": 19800.0}},
+                ),
+                mock.patch.object(loop, "deadeye_json", side_effect=fake_deadeye_json),
+            ):
+                processed = loop.process_candidates(
+                    [candidate],
+                    [market],
+                    [],
+                    {"strk_balance_strk": 1042.0},
+                    {"balance_xp": 19800.0},
+                    {"totalPnl": 83.0},
+                    state,
+                    args,
+                    events,
+                )
+
+        self.assertEqual(processed[0]["status"], "review_required")
+        self.assertIn("Claude_Storm", processed[0]["reason"])
+        self.assertNotIn("germany-post-result-candidate", state.get("processed_candidate_ids", []))
+        self.assertEqual(state["review_required_candidate_ids"], ["germany-post-result-candidate"])
+        execute_calls = [call for call in calls if call[:2] == ["trade", "execute"]]
+        self.assertEqual(len(execute_calls), 1)
+        self.assertIn("--dry-run", execute_calls[0])
+
+    def test_world_cup_review_required_candidate_is_skipped_until_approval(self):
+        market = {
+            "address": "0x2",
+            "marketType": "lognormal",
+            "category": "World Cup",
+            "title": "Germany World Cup path",
+            "isActive": True,
+            "state": {"isInitialized": True},
+        }
+        candidate = {
+            "id": "germany-post-result-candidate",
+            "market": "0x2",
+            "family": "lognormal",
+            "belief": 3.8,
+            "belief_sigma": 0.24,
+            "budget": 100.0,
+            "world_cup_post_result": True,
+            "rationale": "Official final score, lineups, odds, and ratings evidence support this post-result snap candidate.",
+            "evidence": [
+                {
+                    "claim": "Final whistle and score are official.",
+                    "source": "FIFA",
+                    "source_role": "official_match_result",
+                    "url": "https://www.fifa.com/match",
+                    "post_result": True,
+                },
+                {
+                    "claim": "Post-result odds move captured.",
+                    "source": "Odds",
+                    "url": "https://odds.example",
+                    "post_result": True,
+                },
+            ],
+        }
+        state = {"review_required_candidate_ids": ["germany-post-result-candidate"]}
+        args = SimpleNamespace(execute=True, trade_journal=Path("/tmp/storm-deadeye-test-journal.jsonl"))
+        with mock.patch.object(loop, "deadeye_json", side_effect=AssertionError("pending review should not dry-run again")):
+            processed = loop.process_candidates(
+                [candidate],
+                [market],
+                [],
+                {"strk_balance_strk": 1042.0},
+                {"balance_xp": 19800.0},
+                {"totalPnl": 83.0},
+                state,
+                args,
+                Path("/tmp/storm-deadeye-test-events.jsonl"),
+            )
+
+        self.assertEqual(processed[0]["status"], "skipped")
+        self.assertIn("awaiting Claude_Storm", processed[0]["reason"])
+        self.assertEqual(state["review_required_candidate_ids"], ["germany-post-result-candidate"])
+
+    def test_world_cup_execute_mode_can_submit_with_claude_review(self):
+        market = {
+            "address": "0x2",
+            "marketType": "lognormal",
+            "category": "World Cup",
+            "title": "Germany World Cup path",
+            "isActive": True,
+            "state": {"isInitialized": True},
+        }
+        candidate = {
+            "id": "germany-post-result-approved",
+            "market": "0x2",
+            "family": "lognormal",
+            "belief": 3.8,
+            "belief_sigma": 0.24,
+            "budget": 100.0,
+            "world_cup_post_result": True,
+            "claude_review": {
+                "reviewed_by": "Claude_Storm",
+                "status": "approved",
+                "approved_for_execute": True,
+                "reviewed_at": "2026-06-14T20:15:00Z",
+            },
+            "rationale": "Official final score, lineups, odds, and ratings evidence support this post-result snap candidate.",
+            "evidence": [
+                {
+                    "claim": "Final whistle and score are official.",
+                    "source": "FIFA",
+                    "source_role": "official_match_result",
+                    "url": "https://www.fifa.com/match",
+                    "post_result": True,
+                },
+                {
+                    "claim": "Post-result odds move captured.",
+                    "source": "Odds",
+                    "url": "https://odds.example",
+                    "post_result": True,
+                },
+            ],
+        }
+        execute_calls = []
+
+        def fake_deadeye_json(args, timeout=90, attempts=1):
+            if args[:2] == ["doctor", "--market"]:
+                return {"all_ok": True}
+            if args[:2] == ["trade", "quote"]:
+                return {"on_chain_will_accept": True, "expected_value": 22.0, "required_collateral": 10.0}
+            if args[:2] == ["trade", "execute"]:
+                execute_calls.append(args)
+                return {"ok": True, "dry_run": "--dry-run" in args}
+            raise AssertionError(f"unexpected deadeye_json args: {args}")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = SimpleNamespace(execute=True, trade_journal=Path(tmpdir) / "journal.jsonl")
+            state = {"review_required_candidate_ids": ["germany-post-result-approved"]}
+            with (
+                mock.patch.object(
+                    loop,
+                    "account_snapshot",
+                    return_value={"account": {"strk_balance_strk": 1042.0}, "collateral": {"balance_xp": 19800.0}},
+                ),
+                mock.patch.object(loop, "deadeye_json", side_effect=fake_deadeye_json),
+            ):
+                processed = loop.process_candidates(
+                    [candidate],
+                    [market],
+                    [],
+                    {"strk_balance_strk": 1042.0},
+                    {"balance_xp": 19800.0},
+                    {"totalPnl": 83.0},
+                    state,
+                    args,
+                    Path(tmpdir) / "events.jsonl",
+                )
+
+        self.assertEqual(processed[0]["status"], "executed")
+        self.assertEqual(state["processed_candidate_ids"], ["germany-post-result-approved"])
+        self.assertNotIn("review_required_candidate_ids", state)
+        self.assertEqual(len(execute_calls), 2)
+        self.assertIn("--dry-run", execute_calls[0])
+        self.assertNotIn("--dry-run", execute_calls[1])
+
+    def test_non_world_cup_execute_mode_can_submit_without_claude_review(self):
+        market = {
+            "address": "0x1",
+            "marketType": "normal",
+            "category": "Economics",
+            "title": "US Inflation CPI",
+            "isActive": True,
+            "state": {"isInitialized": True},
+        }
+        candidate = {
+            "id": "cpi-submit",
+            "market": "0x1",
+            "family": "normal",
+            "belief": 3.8,
+            "belief_sigma": 0.16,
+            "budget": 100.0,
+            "rationale": "BLS and nowcast evidence imply a cooler CPI print than the current curve.",
+            "evidence": [{"claim": "CPI source", "source": "BLS", "url": "https://www.bls.gov/cpi/"}],
+        }
+        execute_calls = []
+
+        def fake_deadeye_json(args, timeout=90, attempts=1):
+            if args[:2] == ["doctor", "--market"]:
+                return {"all_ok": True}
+            if args[:2] == ["trade", "quote"]:
+                return {"on_chain_will_accept": True, "expected_value": 22.0, "required_collateral": 10.0}
+            if args[:2] == ["trade", "execute"]:
+                execute_calls.append(args)
+                return {"ok": True, "dry_run": "--dry-run" in args}
+            raise AssertionError(f"unexpected deadeye_json args: {args}")
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            args = SimpleNamespace(execute=True, trade_journal=Path(tmpdir) / "journal.jsonl")
+            state = {}
+            with (
+                mock.patch.object(
+                    loop,
+                    "account_snapshot",
+                    return_value={"account": {"strk_balance_strk": 1042.0}, "collateral": {"balance_xp": 19800.0}},
+                ),
+                mock.patch.object(loop, "deadeye_json", side_effect=fake_deadeye_json),
+            ):
+                processed = loop.process_candidates(
+                    [candidate],
+                    [market],
+                    [],
+                    {"strk_balance_strk": 1042.0},
+                    {"balance_xp": 19800.0},
+                    {"totalPnl": 83.0},
+                    state,
+                    args,
+                    Path(tmpdir) / "events.jsonl",
+                )
+
+        self.assertEqual(processed[0]["status"], "executed")
+        self.assertEqual(state["processed_candidate_ids"], ["cpi-submit"])
+        self.assertEqual(len(execute_calls), 2)
+        self.assertIn("--dry-run", execute_calls[0])
+        self.assertNotIn("--dry-run", execute_calls[1])
+
     def test_smoke_script_retries_one_read_only_failure(self):
         script = Path("/tmp/storm-deadeye-smoke-retry.sh")
         results = [

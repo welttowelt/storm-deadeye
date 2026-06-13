@@ -234,5 +234,16 @@ python3 scripts/storm_gap_analyzer.py --preset active-portfolio-20260612 --budge
 python3 scripts/storm_deadeye_loop.py --run-smoke --mailbox --refresh-active-portfolio-scout --active-portfolio-scout-max-age-minutes 0
 ```
 
+When a queued Germany candidate reaches quote and dry-run, post the candidate
+package to Claude_Storm before any confirmed submit. The runner will stop with
+`status=review_required` unless the candidate carries:
+
+```json
+{"claude_review":{"reviewed_by":"Claude_Storm","status":"approved","approved_for_execute":true,"reviewed_at":"<UTC timestamp>"}}
+```
+
+That marker is a submit gate only. Evidence capture, fresh quote, dry-run,
+concentration, gas, XP, and trade caps still have to pass.
+
 Execution stays under the runner only. No manual `--confirm` command belongs in
 this runbook.

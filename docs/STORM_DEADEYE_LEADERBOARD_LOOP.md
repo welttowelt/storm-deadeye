@@ -121,6 +121,19 @@ Placeholders do not count: evidence with `url: "TO_FILL"` or
 `post_result: false` is explicitly blocked even if the source role is
 `official_match_result`.
 
+In execute mode, World Cup candidates also require a local Claude execute-review
+marker before any confirmed submit. Without it, the runner still performs the
+fresh doctor, quote, and exact `--dry-run` path, then records
+`status=review_required` and stops before the non-dry-run submit. The approval
+shape is:
+
+```json
+{"claude_review":{"reviewed_by":"Claude_Storm","status":"approved","approved_for_execute":true,"reviewed_at":"2026-06-14T20:15:00Z"}}
+```
+
+This marker does not bypass evidence, quote, dry-run, concentration, gas, XP,
+trade-cap, or operator-policy gates.
+
 ## Gap-Impact Screen
 
 Use the read-only analyzer before proposing any rank-gap strategy:
