@@ -382,7 +382,7 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                 "rows": 66,
                 "ev_floor_rows": 18,
                 "runner_pass_rows": 0,
-                "top_signals": [],
+                "runner_pass_signals": [],
             },
         )
         self.assertEqual(key["processed"], [{"id": "a", "status": "dry_run_ok"}])
@@ -615,7 +615,7 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             self.assertEqual(mailbox.read_text(encoding="utf-8"), "# Mailbox\n")
             self.assertEqual(state["last_mailbox_key"], loop.summary_key(summary))
 
-    def test_mailbox_update_records_real_scout_signal_change_after_migration(self):
+    def test_mailbox_update_ignores_blocked_quote_signal_ev_drift_after_migration(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             mailbox = Path(tmpdir) / "mailbox.md"
             mailbox.write_text("# Mailbox\n", encoding="utf-8")
@@ -652,6 +652,49 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             }
             state = {"last_mailbox_key": loop.summary_key(summary)}
             summary["active_portfolio_scout"]["top_signals"][0]["expected_value"] = 24.2
+
+            updated = loop.append_mailbox_if_changed(mailbox, state, summary)
+
+            self.assertFalse(updated)
+            self.assertEqual(mailbox.read_text(encoding="utf-8"), "# Mailbox\n")
+
+    def test_mailbox_update_records_runner_pass_scout_signal_change_after_migration(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            mailbox = Path(tmpdir) / "mailbox.md"
+            mailbox.write_text("# Mailbox\n", encoding="utf-8")
+            summary = {
+                "rankings": {
+                    "overall": {"rank": 10, "gap_to_first": 915.922009, "pnl": 79.244219},
+                    "filters": {},
+                    "time_windows": {},
+                    "filter_time_windows": {},
+                },
+                "markets": {"active_tradeable": 11},
+                "account": {"strk_balance_strk": 1042.0},
+                "collateral": {"balance_xp": 19832.0},
+                "gas_tier": "ok",
+                "active_portfolio_scout": {
+                    "coverage": {
+                        "active_tradeable_markets": 11,
+                        "covered_active_tradeable_markets": 11,
+                        "coverage_complete": True,
+                    },
+                    "rows": 66,
+                    "ev_floor_rows": 18,
+                    "runner_pass_rows": 1,
+                    "runner_pass_signals": [
+                        {
+                            "label": "Germany higher",
+                            "budget": 100,
+                            "expected_value": 21.8469,
+                            "would_pass_current_runner": True,
+                            "blockers": [],
+                        }
+                    ],
+                },
+            }
+            state = {"last_mailbox_key": loop.summary_key(summary)}
+            summary["active_portfolio_scout"]["runner_pass_signals"][0]["expected_value"] = 24.2
 
             updated = loop.append_mailbox_if_changed(mailbox, state, summary)
 
@@ -1316,7 +1359,10 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(summary["rows"], 3)
         self.assertEqual(summary["ev_floor_rows"], 2)
         self.assertEqual(summary["runner_pass_rows"], 1)
-        self.assertEqual(summary["top_signals"][0]["label"], "CPI")
+        self.assertEqual(summary["blocked_quote_rows"], 1)
+        self.assertEqual(summary["runner_pass_signals"][0]["label"], "Germany")
+        self.assertEqual(summary["blocked_quote_signals"][0]["label"], "CPI")
+        self.assertEqual(summary["top_signals"][0]["label"], "Germany")
         serialized = json.dumps(summary, sort_keys=True)
         self.assertNotIn("indexer_url", serialized)
         self.assertNotIn("trader", serialized)

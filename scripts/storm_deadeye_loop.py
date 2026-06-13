@@ -1918,24 +1918,34 @@ def latest_active_portfolio_scout(state_dir: Path) -> dict[str, Any] | None:
             item for item in results
             if (item.get("runner_gate") or {}).get("would_pass_current_runner") is True
         ]
-        top_signals: list[dict[str, Any]] = []
-        for item in results[:5]:
+        blocked_quote = [
+            item for item in ev_floor
+            if (item.get("runner_gate") or {}).get("would_pass_current_runner") is not True
+        ]
+
+        def summarize_signal(item: dict[str, Any]) -> dict[str, Any]:
             quote = item.get("quote") or {}
             gate = item.get("runner_gate") or {}
-            top_signals.append({
+            return {
                 "label": item.get("label"),
                 "budget": item.get("budget"),
                 "expected_value": quote.get("expected_value"),
                 "blockers": gate.get("blockers") or [],
                 "would_pass_current_runner": bool(gate.get("would_pass_current_runner")),
-            })
+            }
+
+        runner_pass_signals = [summarize_signal(item) for item in runner_pass[:5]]
+        blocked_quote_signals = [summarize_signal(item) for item in blocked_quote[:5]]
         return {
             "generated_at": payload.get("generated_at"),
             "coverage": payload.get("coverage"),
             "rows": len(results),
             "ev_floor_rows": len(ev_floor),
             "runner_pass_rows": len(runner_pass),
-            "top_signals": top_signals,
+            "blocked_quote_rows": len(blocked_quote),
+            "runner_pass_signals": runner_pass_signals,
+            "blocked_quote_signals": blocked_quote_signals,
+            "top_signals": runner_pass_signals,
         }
     return None
 
@@ -2392,27 +2402,36 @@ def scout_key(summary: dict[str, Any]) -> dict[str, Any] | None:
     if not scout:
         return None
     coverage = scout.get("coverage") or {}
-    top_signals = []
-    for item in (scout.get("top_signals") or [])[:5]:
+    raw_runner_pass_signals = scout.get("runner_pass_signals")
+    if raw_runner_pass_signals is None:
+        raw_runner_pass_signals = [
+            item for item in scout.get("top_signals") or []
+            if item.get("would_pass_current_runner") is True
+        ]
+    runner_pass_signals = []
+    for item in (raw_runner_pass_signals or [])[:5]:
         expected_value = item.get("expected_value")
         if expected_value is not None:
             expected_value = round(float(expected_value), 4)
-        top_signals.append({
+        runner_pass_signals.append({
             "label": item.get("label"),
             "budget": item.get("budget"),
             "expected_value": expected_value,
             "would_pass_current_runner": bool(item.get("would_pass_current_runner")),
             "blockers": item.get("blockers") or [],
         })
-    return {
+    key = {
         "active_tradeable": coverage.get("active_tradeable_markets"),
         "covered": coverage.get("covered_active_tradeable_markets"),
         "coverage_complete": coverage.get("coverage_complete"),
         "rows": scout.get("rows"),
         "ev_floor_rows": scout.get("ev_floor_rows"),
         "runner_pass_rows": scout.get("runner_pass_rows"),
-        "top_signals": top_signals,
+        "runner_pass_signals": runner_pass_signals,
     }
+    if scout.get("blocked_quote_rows") is not None:
+        key["blocked_quote_rows"] = scout.get("blocked_quote_rows")
+    return key
 
 
 def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
@@ -2683,11 +2702,16 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
         "rows",
         "ev_floor_rows",
         "runner_pass_rows",
+        "blocked_quote_rows",
     )
     for field in scout_fields:
+        if field == "blocked_quote_rows" and field not in stored_scout:
+            continue
         if stored_scout.get(field) != current_scout.get(field):
             return False
-    if "top_signals" in stored_scout and stored_scout.get("top_signals") != current_scout.get("top_signals"):
+    if (stored_scout.get("runner_pass_signals") or []) != (
+        current_scout.get("runner_pass_signals") or []
+    ):
         return False
 
     stored_refresh = stored.get("active_portfolio_scout_refresh") or {}
@@ -2759,7 +2783,8 @@ def format_active_portfolio_scout(summary: dict[str, Any]) -> str:
         f"coverage={coverage.get('covered_active_tradeable_markets')}/"
         f"{coverage.get('active_tradeable_markets')}, "
         f"ev_floor_rows={scout.get('ev_floor_rows')}, "
-        f"runner_pass_rows={scout.get('runner_pass_rows')}"
+        f"runner_pass_rows={scout.get('runner_pass_rows')}, "
+        f"blocked_quote_rows={scout.get('blocked_quote_rows')}"
     )
 
 
