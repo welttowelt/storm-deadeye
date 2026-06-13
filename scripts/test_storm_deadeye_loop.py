@@ -1484,6 +1484,103 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(due[0]["result_not_before_utc"], "2026-06-14T20:00:00Z")
         self.assertIn("missing_official_result_evidence", due[0]["blockers"])
 
+    def test_post_result_evidence_due_includes_packet_status_when_available(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text(json.dumps({
+                "generated_at": "2026-06-13T07:16:53Z",
+                "result_window_open": False,
+                "capture_status": {
+                    "next_action": "wait_for_result_window",
+                    "missing_ids": ["official_result"],
+                    "blocker_count": 29,
+                },
+                "capture_readiness": {"ready_for_template_update": False},
+                "capture_plan": {"rows": [{"id": "official_result"}]},
+                "source_reachability": {
+                    "checked": True,
+                    "checked_at": "2026-06-13T07:16:53Z",
+                    "url_count": 9,
+                    "reachable_count": 9,
+                    "unreachable_count": 0,
+                    "advisory_only": True,
+                },
+            }), encoding="utf-8")
+            templates = [
+                {
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2026-06-14T20:00:00Z",
+                    "blockers": ["missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ]
+
+            due = loop.post_result_evidence_due(
+                templates,
+                now=loop.parse_utc_timestamp("2026-06-14T20:30:00Z"),
+                state_dir=state_dir,
+            )
+
+        self.assertEqual(len(due), 1)
+        packet_status = due[0]["evidence_packet"]
+        self.assertTrue(packet_status["exists"])
+        self.assertEqual(packet_status["generated_at"], "2026-06-13T07:16:53Z")
+        self.assertEqual(packet_status["next_action"], "wait_for_result_window")
+        self.assertEqual(packet_status["missing_ids"], ["official_result"])
+        self.assertEqual(packet_status["capture_plan_rows"], 1)
+        self.assertEqual(packet_status["source_reachability"]["reachable_count"], 9)
+        self.assertTrue(packet_status["source_reachability"]["advisory_only"])
+
+    def test_post_result_evidence_due_marks_missing_packet(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            templates = [
+                {
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2026-06-14T20:00:00Z",
+                    "blockers": ["missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ]
+
+            due = loop.post_result_evidence_due(
+                templates,
+                now=loop.parse_utc_timestamp("2026-06-14T20:30:00Z"),
+                state_dir=Path(tmpdir),
+            )
+
+        self.assertEqual(len(due), 1)
+        self.assertFalse(due[0]["evidence_packet"]["exists"])
+        self.assertTrue(str(due[0]["evidence_packet"]["path"]).endswith("germany-post-result-evidence-packet.json"))
+
+    def test_post_result_evidence_due_reports_unreadable_packet(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            state_dir = Path(tmpdir)
+            packet_path = state_dir / "germany-post-result-evidence-packet.json"
+            packet_path.write_text("{not-json", encoding="utf-8")
+            templates = [
+                {
+                    "id": "germany-post-result-snap-template-20260612",
+                    "label": "Germany higher",
+                    "result_not_before_utc": "2026-06-14T20:00:00Z",
+                    "blockers": ["missing_official_result_evidence"],
+                    "opportunity_status": "weak_watch",
+                }
+            ]
+
+            due = loop.post_result_evidence_due(
+                templates,
+                now=loop.parse_utc_timestamp("2026-06-14T20:30:00Z"),
+                state_dir=state_dir,
+            )
+
+        self.assertEqual(len(due), 1)
+        packet_status = due[0]["evidence_packet"]
+        self.assertTrue(packet_status["exists"])
+        self.assertIn("unreadable", packet_status["error"])
+
     def test_mailbox_update_names_post_result_evidence_due(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             mailbox = Path(tmpdir) / "mailbox.md"

@@ -442,6 +442,8 @@ def next_template_window(
 def post_result_evidence_due(
     templates: list[dict[str, Any]],
     now: datetime | None = None,
+    *,
+    state_dir: Path | None = None,
 ) -> list[dict[str, Any]]:
     now = now or datetime.now(timezone.utc)
     due: list[dict[str, Any]] = []
@@ -465,7 +467,7 @@ def post_result_evidence_due(
             continue
         if not (blockers & evidence_blockers):
             continue
-        due.append({
+        item = {
             "id": template.get("id"),
             "label": template.get("label"),
             "result_not_before_utc": window.isoformat().replace("+00:00", "Z"),
@@ -473,8 +475,61 @@ def post_result_evidence_due(
             "quote_expected_value_xp": template.get("quote_expected_value_xp"),
             "belief_gap_improvement_xp": template.get("belief_gap_improvement_xp"),
             "blockers": sorted(blockers),
-        })
+        }
+        if state_dir is not None:
+            item["evidence_packet"] = evidence_packet_status_for_template(state_dir, template)
+        due.append(item)
     return sorted(due, key=lambda item: (str(item.get("result_not_before_utc")), str(item.get("id"))))
+
+
+def evidence_packet_path_for_template(state_dir: Path, template: dict[str, Any]) -> Path | None:
+    template_id = str(template.get("id") or template.get("file") or "")
+    if not template_id:
+        return None
+    slug = template_id.split("-post-result-", 1)[0]
+    if not slug or slug == template_id:
+        return None
+    return state_dir / f"{slug}-post-result-evidence-packet.json"
+
+
+def evidence_packet_status_for_template(state_dir: Path, template: dict[str, Any]) -> dict[str, Any]:
+    packet_path = evidence_packet_path_for_template(state_dir, template)
+    if packet_path is None:
+        return {"exists": False, "path": None}
+    if not packet_path.exists():
+        return {"exists": False, "path": str(packet_path)}
+    try:
+        packet = load_json(packet_path, {})
+    except (OSError, json.JSONDecodeError) as exc:
+        return {
+            "exists": True,
+            "path": str(packet_path),
+            "error": f"packet unreadable: {exc.__class__.__name__}",
+        }
+    if not isinstance(packet, dict):
+        return {"exists": True, "path": str(packet_path), "error": "packet is not a JSON object"}
+    capture_status = packet.get("capture_status") or {}
+    capture_readiness = packet.get("capture_readiness") or {}
+    source_reachability = packet.get("source_reachability") or {}
+    return {
+        "exists": True,
+        "path": str(packet_path),
+        "generated_at": packet.get("generated_at"),
+        "result_window_open": bool(packet.get("result_window_open")),
+        "next_action": capture_status.get("next_action"),
+        "ready_for_template_update": bool(capture_readiness.get("ready_for_template_update")),
+        "missing_ids": capture_status.get("missing_ids") or [],
+        "blocker_count": capture_status.get("blocker_count"),
+        "capture_plan_rows": len((packet.get("capture_plan") or {}).get("rows") or []),
+        "source_reachability": {
+            "checked": bool(source_reachability.get("checked")),
+            "checked_at": source_reachability.get("checked_at"),
+            "url_count": source_reachability.get("url_count"),
+            "reachable_count": source_reachability.get("reachable_count"),
+            "unreachable_count": source_reachability.get("unreachable_count"),
+            "advisory_only": bool(source_reachability.get("advisory_only")),
+        },
+    }
 
 
 def candidate_from_template(template: dict[str, Any]) -> dict[str, Any]:
@@ -1871,7 +1926,10 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
             templates,
             queueable_opportunities_only=True,
         ),
-        "post_result_evidence_due": post_result_evidence_due(templates),
+        "post_result_evidence_due": post_result_evidence_due(
+            templates,
+            state_dir=Path(summary.get("state_dir") or DEFAULT_STATE_DIR),
+        ),
         "template_promotion": summary.get("template_promotion"),
         "active_portfolio_scout": summary.get("active_portfolio_scout"),
         "active_portfolio_scout_refresh": summary.get("active_portfolio_scout_refresh"),
@@ -1891,7 +1949,10 @@ def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dic
         return False
     overall = summary["rankings"]["overall"]
     processed = summary.get("processed_candidates") or []
-    due_templates = post_result_evidence_due(summary.get("templates") or [])
+    due_templates = post_result_evidence_due(
+        summary.get("templates") or [],
+        state_dir=Path(summary.get("state_dir") or DEFAULT_STATE_DIR),
+    )
     gas = summary.get("account", {}).get("strk_balance_strk")
     xp = summary.get("collateral", {}).get("balance_xp")
     lines = [
