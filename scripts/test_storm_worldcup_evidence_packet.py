@@ -183,6 +183,28 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertEqual(validated["capture_status"]["next_action"], "fill_required_evidence")
         self.assertEqual(validated["capture_status"]["missing_ids"], list(packet.REQUIRED_EVIDENCE_IDS))
 
+    def test_validate_packet_blocks_wrong_source_role_for_required_row(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_packet_evidence(result)
+            for item in result["evidence_placeholders"]:
+                if item["id"] == "odds_move":
+                    item["source_role"] = "team_news"
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:06:00Z")
+
+        self.assertFalse(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertIn(
+            "odds_move:source_role_not_odds_snapshot",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertEqual(validated["capture_status"]["missing_ids"], ["odds_move"])
+
     def test_main_writes_packet_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

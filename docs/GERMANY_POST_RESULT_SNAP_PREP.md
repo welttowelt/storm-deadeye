@@ -37,15 +37,20 @@ candidate. The template stays disabled until all of these are true:
 
 Capture these before promoting or queueing:
 
-- Official result: final score, completed/final marker, source URL, capture UTC.
-- Lineups: starting XI, substitutions, notable absences, source URL, capture UTC.
-- Injuries/suspensions: pre-match and in-match changes that affect Germany's
-  later tournament path.
-- Odds move: at least one pre-result snapshot and one post-result snapshot for
-  Germany outright odds or path odds.
-- Ratings move: model/ratings source before and after, if available.
-- Market state: `deadeye markets show <market> --output json` after result.
-- Quote: quote JSON after result using fresh belief and sigma.
+- Official result, `source_role: "official_match_result"`: final score,
+  completed/final marker, source URL, capture UTC.
+- Lineups, `source_role: "official_lineups"`: starting XI, substitutions,
+  notable absences, source URL, capture UTC.
+- Injuries/suspensions, `source_role: "team_news"`: pre-match and in-match
+  changes that affect Germany's later tournament path.
+- Odds move, `source_role: "odds_snapshot"`: at least one pre-result snapshot
+  and one post-result snapshot for Germany outright odds or path odds.
+- Ratings move, `source_role: "ratings_snapshot"`: model/ratings source before
+  and after, if available.
+- Market state, `source_role: "deadeye_market_state"`: `deadeye markets show
+  <market> --output json` after result.
+- Quote, `source_role: "deadeye_quote_scout"`: quote JSON after result using
+  fresh belief and sigma.
 - Dry-run: exact intended execute path with `--dry-run` before any confirm path.
 
 ## Pre-Result Baseline

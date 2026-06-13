@@ -27,6 +27,15 @@ REQUIRED_EVIDENCE_IDS = (
     "market_state",
     "quote_scout",
 )
+EXPECTED_SOURCE_ROLES = {
+    "official_result": "official_match_result",
+    "confirmed_lineups": "official_lineups",
+    "injuries_suspensions": "team_news",
+    "odds_move": "odds_snapshot",
+    "ratings_move": "ratings_snapshot",
+    "market_state": "deadeye_market_state",
+    "quote_scout": "deadeye_quote_scout",
+}
 CAPTURED_STATUSES = {"captured", "complete", "filled"}
 PLACEHOLDER_VALUES = {"", "TO_FILL", "<MARKET>"}
 
@@ -190,8 +199,9 @@ def evidence_item_blockers(item: dict[str, Any]) -> list[str]:
         blockers.append(f"{item_id}:url_placeholder")
     if not valid_capture_utc(item.get("capture_utc")):
         blockers.append(f"{item_id}:capture_utc_invalid")
-    if item_id == "official_result" and str(item.get("source_role") or "") != "official_match_result":
-        blockers.append("official_result:source_role_not_official_match_result")
+    expected_source_role = EXPECTED_SOURCE_ROLES.get(item_id)
+    if expected_source_role and str(item.get("source_role") or "") != expected_source_role:
+        blockers.append(f"{item_id}:source_role_not_{expected_source_role}")
     return blockers
 
 
