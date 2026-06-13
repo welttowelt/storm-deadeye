@@ -106,7 +106,10 @@ future template result window still blocking promotion, and
 `next_durable_template_window`, the earliest blocked window among
 `runner_candidate` or `durable_watch` templates that also clear stored EV and
 durability blockers. An EV-blocked durable watch remains visible in
-`templates`, but it is not shown as the next durable strike clock.
+`templates`, but it is not shown as the next durable strike clock. Window
+summaries include `result_window_seconds_until_open` and `next_action:
+wait_for_result_window`, so the operator can distinguish waiting from missing
+evidence or queue readiness.
 After a template's `result_not_before_utc` has passed, `last_summary` also
 reports `post_result_evidence_due` when official result evidence is still
 missing. That field is part of the mailbox-change key, so the hourly loop can

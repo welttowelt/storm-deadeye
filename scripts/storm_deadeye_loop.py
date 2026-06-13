@@ -449,10 +449,13 @@ def next_template_window(
     if not candidates:
         return None
     window, template = min(candidates, key=lambda item: item[0])
+    seconds_until_open = max(0.0, (window - now).total_seconds())
     return {
         "id": template.get("id"),
         "label": template.get("label"),
         "result_not_before_utc": window.isoformat().replace("+00:00", "Z"),
+        "result_window_seconds_until_open": seconds_until_open,
+        "next_action": "wait_for_result_window",
         "opportunity_status": template.get("opportunity_status"),
         "quote_expected_value_xp": template.get("quote_expected_value_xp"),
         "belief_gap_improvement_xp": template.get("belief_gap_improvement_xp"),

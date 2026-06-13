@@ -2414,6 +2414,8 @@ class StormDeadeyeLoopTests(unittest.TestCase):
 
         self.assertEqual(next_window["id"], "argentina-template")
         self.assertEqual(next_window["result_not_before_utc"], "2026-06-13T20:00:00Z")
+        self.assertEqual(next_window["result_window_seconds_until_open"], 108000.0)
+        self.assertEqual(next_window["next_action"], "wait_for_result_window")
 
         next_durable_window = loop.next_template_window(
             templates,
@@ -2423,6 +2425,7 @@ class StormDeadeyeLoopTests(unittest.TestCase):
 
         self.assertEqual(next_durable_window["id"], "france-template")
         self.assertEqual(next_durable_window["result_not_before_utc"], "2026-06-16T22:00:00Z")
+        self.assertEqual(next_durable_window["result_window_seconds_until_open"], 374400.0)
 
     def test_post_result_evidence_due_after_window(self):
         templates = [
