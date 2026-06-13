@@ -94,6 +94,10 @@ Team news and lineup baseline:
 - Current baseline: Germany injury context is Lennart Karl out of the squad,
   Assan Ouedraogo called in, Neuer expected/targeted to start after calf
   management, and no fresh Curacao injury issue reported by the preview set.
+- Source check on `2026-06-13T06:35Z`: the Bulinews preview still exposes the
+  same operational watch items: Karl injury/withdrawal, Neuer start plan,
+  Brown/Raum left-back sensitivity, Nmecha/Pavlovic midfield baseline, and no
+  fresh Curacao injury concern.
 - Current lineup watch: Germany likely Neuer; Kimmich, Tah, Schlotterbeck,
   left-back still Brown/Raum-sensitive; central midfield Nmecha/Pavlovic or
   Goretzka/Pavlovic; Sane, Musiala, Wirtz; Havertz. Curacao likely built around
@@ -109,6 +113,9 @@ Ratings/form baseline:
 - Current baseline: Germany are treated as a heavy favorite with Neuer's return,
   Kimmich/Tah/Schlotterbeck/Raum or Brown defensive structure, Wirtz/Musiala
   creativity, and uncertainty concentrated at left-back and central midfield.
+- Source check on `2026-06-13T06:35Z`: the Bundesliga context still frames the
+  midfield as the uncertain area and keeps Musiala/Wirtz as the key attacking
+  creators to compare against post-result ratings/model movement.
 - Post-result delta to capture: any ratings/model movement after the final
   score, especially if the result or goal margin changes Germany's path odds.
 
@@ -122,6 +129,10 @@ Odds baseline:
   favorite, draw as a longshot, Curacao as a very longshot, and the main market
   discussion centered on goal margin and total goals rather than Germany
   outright.
+- Numeric pre-result odds snapshot on `2026-06-13T06:35Z` from SportyTrader
+  full-time result best-odds summary: Germany `1.06`, draw `19.5`, Curacao
+  `60`. Use this as the minimum post-result odds delta anchor; still capture a
+  fresh post-result odds page because bookmaker screens can move or disappear.
 - Post-result delta to capture: Germany outright/path odds, Group E odds,
   round-of-32/quarterfinal path odds, and any goal-difference driven repricing.
 

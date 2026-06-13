@@ -35,6 +35,16 @@ def write_germany_template(path: Path):
             "team_news_urls": ["https://bulinews.com/germany-curacao-preview-team-news-and-predicted-lineups"],
             "ratings_context_urls": ["https://www.bundesliga.com/example"],
             "odds_context_urls": ["https://www.sportytrader.com/example"],
+            "odds_snapshot_captured_at": "2026-06-13T06:35:00Z",
+            "odds_snapshot": {
+                "source": "SportyTrader full-time result best-odds summary",
+                "url": "https://www.sportytrader.com/en/odds/germany-curacao-7937446/",
+                "decimal_odds": {
+                    "germany": 1.06,
+                    "draw": 19.5,
+                    "curacao": 60.0,
+                },
+            },
         },
         "post_result_capture_required": [
             "official completed-match marker",
@@ -162,6 +172,19 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         self.assertFalse(status_rows["official_result"]["captured"])
         self.assertFalse(status_rows["official_result"]["claim_ready"])
         self.assertTrue(status_rows["official_result"]["url_ready"])
+
+    def test_packet_preserves_numeric_pre_result_odds_snapshot(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            template_path = Path(tmpdir) / "germany.json"
+            write_germany_template(template_path)
+
+            result = packet.build_packet(template_path, now="2026-06-13T06:36:00Z")
+
+        snapshot = result["pre_result_baseline"]["odds_snapshot"]
+        self.assertEqual(snapshot["source"], "SportyTrader full-time result best-odds summary")
+        self.assertEqual(snapshot["decimal_odds"]["germany"], 1.06)
+        self.assertEqual(snapshot["decimal_odds"]["draw"], 19.5)
+        self.assertEqual(snapshot["decimal_odds"]["curacao"], 60.0)
 
     def test_filled_packet_capture_readiness_passes_after_window(self):
         with tempfile.TemporaryDirectory() as tmpdir:
