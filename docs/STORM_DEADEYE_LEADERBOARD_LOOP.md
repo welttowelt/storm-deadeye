@@ -108,7 +108,9 @@ market-state shift. For World Cup markets, it performs explicit read-only
 `deadeye markets show` checks across all active tradeable World Cup markets
 discovered from the indexer list plus prepared post-result templates, so a
 post-result repricing can trigger a scout even if filtered leaderboard views are
-still mirrored or unavailable.
+still mirrored or unavailable. A World Cup market-state read failure is treated
+as a health regression for the mailbox-change key; routine fresh/refreshed scout
+timestamps still stay quiet.
 
 ## Candidate Queue
 

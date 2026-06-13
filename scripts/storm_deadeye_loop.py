@@ -1997,11 +1997,30 @@ def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
         "watched_template_market_state_shift",
         "world_cup_market_state_shift",
     }
-    if refresh.get("status") != "failed" and signal_reasons.intersection(reasons):
-        return {
+    watch_failures: dict[str, Any] = {}
+    for field in ("world_cup_market_state_failures", "watched_template_market_state_failures"):
+        failures = []
+        for item in refresh.get(field) or []:
+            if not isinstance(item, dict):
+                continue
+            failures.append({
+                "address": canonical_address(item.get("address")),
+                "error": str(item.get("error") or "")[:160],
+            })
+        if failures:
+            failures.sort(key=lambda item: str(item.get("address")))
+            watch_failures[field] = {
+                "count": len(failures),
+                "failures": failures[:10],
+                "truncated": len(failures) > 10,
+            }
+    if refresh.get("status") != "failed" and (signal_reasons.intersection(reasons) or watch_failures):
+        key = {
             "status": refresh.get("status"),
             "reasons": reasons,
         }
+        key.update(watch_failures)
+        return key
     if refresh.get("status") != "failed":
         return None
     failed = {
@@ -2011,6 +2030,7 @@ def scout_refresh_key(summary: dict[str, Any]) -> dict[str, Any] | None:
     }
     if reasons:
         failed["reasons"] = reasons
+    failed.update(watch_failures)
     return failed
 
 
@@ -2150,7 +2170,21 @@ def mailbox_keys_equivalent(stored: Any, current: dict[str, Any]) -> bool:
 
     stored_refresh = stored.get("active_portfolio_scout_refresh") or {}
     current_refresh = current.get("active_portfolio_scout_refresh") or {}
-    if stored_refresh.get("status") == "failed" or current_refresh.get("status") == "failed":
+    def is_routine_refresh_key(refresh: dict[str, Any]) -> bool:
+        if not refresh:
+            return True
+        if refresh.get("status") == "failed":
+            return False
+        if refresh.get("reasons"):
+            return False
+        return not (
+            refresh.get("world_cup_market_state_failures")
+            or refresh.get("watched_template_market_state_failures")
+        )
+
+    if is_routine_refresh_key(stored_refresh) and is_routine_refresh_key(current_refresh):
+        return True
+    if stored_refresh or current_refresh:
         return stored_refresh == current_refresh
     return True
 
@@ -2226,15 +2260,21 @@ def format_active_portfolio_scout_refresh(summary: dict[str, Any]) -> str:
         prefix_parts.append("World Cup market state shift")
     prefix = "; ".join(prefix_parts)
     prefix = f"{prefix}; " if prefix else ""
+    failure_parts = []
+    if refresh.get("world_cup_market_state_failures"):
+        failure_parts.append(f"World Cup read failures={len(refresh.get('world_cup_market_state_failures') or [])}")
+    if refresh.get("watched_template_market_state_failures"):
+        failure_parts.append(f"template read failures={len(refresh.get('watched_template_market_state_failures') or [])}")
+    failure_suffix = f", {', '.join(failure_parts)}" if failure_parts else ""
     if status == "fresh":
         age = refresh.get("previous_age_seconds")
         age_text = f", age_seconds={age:.0f}" if isinstance(age, (int, float)) else ""
-        return f"{prefix}fresh{age_text}"
+        return f"{prefix}fresh{age_text}{failure_suffix}"
     if status == "refreshed":
-        return f"{prefix}refreshed generated_at={refresh.get('generated_at')}"
+        return f"{prefix}refreshed generated_at={refresh.get('generated_at')}{failure_suffix}"
     if status == "failed":
-        return f"{prefix}failed"
-    return prefix + str(status or "unknown")
+        return f"{prefix}failed{failure_suffix}"
+    return prefix + str(status or "unknown") + failure_suffix
 
 
 def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:

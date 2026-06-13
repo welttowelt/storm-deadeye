@@ -372,6 +372,79 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             },
         )
 
+    def test_summary_key_records_world_cup_market_state_read_failures(self):
+        summary = {
+            "rankings": {
+                "overall": {"rank": 10, "gap_to_first": 915.922009, "pnl": 79.244219},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "gas_tier": "ok",
+            "active_portfolio_scout_refresh": {
+                "status": "fresh",
+                "attempted": False,
+                "world_cup_market_state_failures": [
+                    {
+                        "address": "0x001",
+                        "watch_ids": ["Germany"],
+                        "error": "temporary read failure",
+                    }
+                ],
+            },
+        }
+
+        key = loop.summary_key(summary)
+
+        self.assertEqual(
+            key["active_portfolio_scout_refresh"],
+            {
+                "status": "fresh",
+                "reasons": [],
+                "world_cup_market_state_failures": {
+                    "count": 1,
+                    "failures": [{"address": "0x1", "error": "temporary read failure"}],
+                    "truncated": False,
+                },
+            },
+        )
+        self.assertIn(
+            "World Cup read failures=1",
+            loop.format_active_portfolio_scout_refresh(summary),
+        )
+
+    def test_mailbox_key_detects_nonfailed_world_cup_read_failure(self):
+        base = {
+            "rank": 10,
+            "gap": 915.922,
+            "pnl": 79.2442,
+            "gas_tier": "ok",
+            "unhealthy_filters": [],
+            "unhealthy_time_windows": [],
+            "unhealthy_filter_time_windows": [],
+            "mirrored_filters": [],
+            "mirrored_time_windows": [],
+            "mirrored_filter_time_windows": [],
+            "healthy_view_ranks": {"filters": {}, "time_windows": {}, "filter_time_windows": {}},
+            "active_portfolio_scout": {"runner_pass_rows": 0},
+            "active_portfolio_scout_refresh": None,
+            "processed": [],
+            "promoted_templates": [],
+            "post_result_evidence_due": [],
+        }
+        failure = json.loads(json.dumps(base))
+        failure["active_portfolio_scout_refresh"] = {
+            "status": "fresh",
+            "reasons": [],
+            "world_cup_market_state_failures": {
+                "count": 1,
+                "failures": [{"address": "0x1", "error": "temporary read failure"}],
+                "truncated": False,
+            },
+        }
+
+        self.assertFalse(loop.mailbox_keys_equivalent(base, failure))
+
     def test_mailbox_update_migrates_legacy_scout_key_without_entry(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             mailbox = Path(tmpdir) / "mailbox.md"
