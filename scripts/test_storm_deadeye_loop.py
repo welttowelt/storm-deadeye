@@ -2261,6 +2261,12 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                                 {"label": "numeric_score_value"},
                             ],
                             "capture_utc_must_be_at_or_after": "2026-06-14T20:00:00Z",
+                            "capture_command": (
+                                "python3 scripts/storm_worldcup_evidence_packet.py "
+                                "--packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json "
+                                "--capture-row official_result --claim 'FIFA shows final score Germany 3-0 Curacao.' "
+                                "--url https://www.fifa.com/match"
+                            ),
                         }
                     ]
                 },
@@ -2316,6 +2322,10 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(
             packet_status["next_capture_rows"][0]["claim_marker_labels"],
             ["completion_marker", "numeric_score_value"],
+        )
+        self.assertIn(
+            "--capture-row official_result",
+            packet_status["next_capture_rows"][0]["capture_command"],
         )
         self.assertTrue(packet_status["pre_window_readiness"]["ready_for_result_window"])
         self.assertEqual(packet_status["pre_window_readiness"]["blockers"], [])
@@ -2762,7 +2772,7 @@ class StormDeadeyeLoopTests(unittest.TestCase):
             packet_path.write_text(json.dumps({
                 "capture_status": {
                     "next_action": "wait_for_result_window",
-                    "missing_ids": ["official_result"],
+                    "missing_ids": ["official_result", "quote_scout"],
                     "blocker_count": 29,
                 },
                 "capture_readiness": {"ready_for_template_update": False},
@@ -2775,6 +2785,12 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                             "source_options": ["https://www.fifa.com/match"],
                             "claim_template": "FIFA shows final score Germany <score> Curacao.",
                             "claim_must_include": [{"label": "completion_marker"}],
+                            "capture_command": (
+                                "python3 scripts/storm_worldcup_evidence_packet.py "
+                                "--packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json "
+                                "--capture-row official_result --claim 'FIFA shows final score Germany 3-0 Curacao.' "
+                                "--url https://www.fifa.com/match"
+                            ),
                         },
                         {
                             "id": "quote_scout",
@@ -2783,6 +2799,12 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                             "source_options": ["local-cli"],
                             "claim_template": "Fresh quote scout runner_pass_rows <count>.",
                             "claim_must_include": [{"label": "runner_pass_rows"}],
+                            "capture_command": (
+                                "python3 scripts/storm_worldcup_evidence_packet.py "
+                                "--packet ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json "
+                                "--capture-row quote_scout --claim 'Fresh quote scout generated_at 2026-06-14T20:05:00Z runner_pass_rows 1.' "
+                                "--url local-cli"
+                            ),
                         }
                     ]
                 },
@@ -2838,6 +2860,9 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertIn("official_result", text)
         self.assertIn("next_capture_rows", text)
         self.assertIn("source_options", text)
+        self.assertIn("capture_command", text)
+        self.assertIn("--capture-row official_result", text)
+        self.assertIn("--capture-row quote_scout", text)
         self.assertIn("reachable", text)
         self.assertIn("local", text)
         self.assertIn("official_match_result", text)

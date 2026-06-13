@@ -635,6 +635,7 @@ def evidence_packet_next_capture_rows(packet: dict[str, Any], missing_ids: list[
             "claim_marker_labels": marker_labels,
             "capture_utc_must_be_at_or_after": row.get("capture_utc_must_be_at_or_after"),
             "read_only_command": row.get("read_only_command"),
+            "capture_command": row.get("capture_command"),
         })
     return rows
 
