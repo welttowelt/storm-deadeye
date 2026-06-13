@@ -631,6 +631,48 @@ class StormDeadeyeLoopTests(unittest.TestCase):
 
         self.assertTrue(loop.mailbox_keys_equivalent(base, mirrored))
 
+    def test_summary_key_ignores_external_smoke_floor_telemetry(self):
+        summary = {
+            "rankings": {
+                "overall": {"rank": 10, "gap_to_first": 915.922009, "pnl": 79.244219},
+                "filters": {},
+                "time_windows": {},
+                "filter_time_windows": {},
+            },
+            "gas_tier": "ok",
+            "processed_candidates": [],
+            "templates": [],
+            "external_smoke_floor": {
+                "ok": False,
+                "minimum_version": "deadeye 0.1.20",
+                "network_free": True,
+                "real_deadeye_invoked": False,
+                "cases": [
+                    {
+                        "mode": "stale",
+                        "ok": False,
+                        "post_version_commands": [["markets", "list"]],
+                    }
+                ],
+            },
+        }
+        base_key = loop.summary_key(summary)
+        summary["external_smoke_floor"] = {
+            "ok": True,
+            "minimum_version": "deadeye 0.1.20",
+            "network_free": True,
+            "real_deadeye_invoked": False,
+            "cases": [
+                {
+                    "mode": "good",
+                    "ok": True,
+                    "post_version_commands": [["markets", "list"]],
+                }
+            ],
+        }
+
+        self.assertEqual(base_key, loop.summary_key(summary))
+
     def test_mailbox_key_records_real_filtered_board_rank_change(self):
         base = {
             "rank": 10,
