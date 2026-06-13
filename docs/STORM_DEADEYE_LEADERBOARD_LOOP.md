@@ -87,7 +87,8 @@ recorded as unhealthy rather than empty, and filtered rank/gap calculations use
 matching filtered trader stats instead of overall wallet P&L.
 
 When the external read-only smoke script is present, the runner allows one
-retry before failing the tick. The smoke gate still has to pass before any
+retry before failing the tick. External and built-in smoke must report
+`deadeye >= 0.1.20`; stale or missing smoke versions fail closed before any
 candidate can reach quote, dry-run, or submit.
 
 To let the runner append a mailbox update only when rank, health, gas tier,

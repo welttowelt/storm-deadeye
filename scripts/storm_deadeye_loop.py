@@ -47,6 +47,8 @@ GAS_STRONG_WARN = 50.0
 GAS_HARD_STOP = 25.0
 MIN_RATIONALE_CHARS = 40
 MIN_EXECUTE_EV = 10.0
+MIN_DEADEYE_VERSION = (0, 1, 20)
+MIN_DEADEYE_VERSION_TEXT = "0.1.20"
 CAMPAIGN_LOSS_HALT_XP = 1500.0
 MAX_LOTS_PER_MARKET = 2
 MAX_LOTS_PER_SETTLEMENT = 2
@@ -1092,13 +1094,26 @@ def run_smoke(smoke_script: Path, smoke_market: str) -> dict[str, Any]:
         for attempt in range(1, SMOKE_SCRIPT_ATTEMPTS + 1):
             result = run_cmd(["zsh", str(smoke_script), smoke_market], timeout=90, check=False)
             summary = (result.stdout or result.stderr).strip().splitlines()[-3:]
-            attempts.append({"attempt": attempt, "returncode": result.returncode, "summary": summary})
+            version = smoke_output_version(result.stdout + "\n" + result.stderr)
+            version_error = smoke_version_error(version)
+            attempts.append({
+                "attempt": attempt,
+                "returncode": result.returncode,
+                "summary": summary,
+                "version": version,
+                "version_error": version_error,
+            })
             if result.returncode == 0:
+                if version_error:
+                    if attempt < SMOKE_SCRIPT_ATTEMPTS:
+                        time.sleep(SMOKE_SCRIPT_RETRY_DELAY_SECONDS)
+                        continue
+                    raise LoopError(version_error)
                 return {
                     "ok": True,
                     "started_at": started,
                     "script": str(smoke_script),
-                    "version": smoke_output_version(result.stdout + "\n" + result.stderr),
+                    "version": version,
                     "attempts": attempts,
                     "summary": result.stdout.strip().splitlines()[-1:],
                 }
@@ -1110,17 +1125,40 @@ def run_smoke(smoke_script: Path, smoke_market: str) -> dict[str, Any]:
             + " | ".join(str(line) for line in last["summary"])
         )
     version = run_cmd(["deadeye", "--version"], timeout=15, attempts=3)
+    version_text = version.stdout.strip()
+    version_error = smoke_version_error(version_text)
+    if version_error:
+        raise LoopError(version_error)
     run_cmd(["deadeye", "markets", "list", "--limit", "3", "--output", "plain"], timeout=45, attempts=3)
     deadeye_json(["markets", "show", smoke_market], timeout=45, attempts=3)
     doctor = deadeye_json(["doctor", "--market", smoke_market], timeout=60, attempts=3)
     if not doctor.get("all_ok"):
         raise LoopError("built-in smoke doctor was not all_ok")
-    return {"ok": True, "started_at": started, "script": "built-in", "version": version.stdout.strip()}
+    return {"ok": True, "started_at": started, "script": "built-in", "version": version_text}
 
 
 def smoke_output_version(text: str) -> str | None:
     match = re.search(r"\bdeadeye\s+[0-9][^\s]*", text)
     return match.group(0) if match else None
+
+
+def parse_deadeye_version(version_text: str | None) -> tuple[int, int, int] | None:
+    match = re.search(r"\bdeadeye\s+(\d+)\.(\d+)\.(\d+)", str(version_text or ""))
+    if not match:
+        return None
+    return (int(match.group(1)), int(match.group(2)), int(match.group(3)))
+
+
+def smoke_version_error(version_text: str | None) -> str | None:
+    parsed = parse_deadeye_version(version_text)
+    if parsed is None:
+        return f"smoke version missing; expected deadeye >= {MIN_DEADEYE_VERSION_TEXT}"
+    if parsed < MIN_DEADEYE_VERSION:
+        return (
+            f"smoke version {version_text} below required deadeye >= {MIN_DEADEYE_VERSION_TEXT}; "
+            "run deadeye update before leaderboard execution"
+        )
+    return None
 
 
 def monitor(indexer_url: str, trader: str) -> dict[str, Any]:

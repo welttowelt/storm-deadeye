@@ -879,12 +879,51 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(run_cmd.call_count, 2)
         sleep.assert_called_once_with(loop.SMOKE_SCRIPT_RETRY_DELAY_SECONDS)
 
+    def test_smoke_script_rejects_stale_deadeye_version(self):
+        script = Path("/tmp/storm-deadeye-smoke-old-version.sh")
+        results = [
+            loop.CmdResult(["zsh", str(script), "0x1"], 0, "PASS  version: deadeye 0.1.19\n== RESULT: ALL-PASS ==\n", ""),
+            loop.CmdResult(["zsh", str(script), "0x1"], 0, "PASS  version: deadeye 0.1.19\n== RESULT: ALL-PASS ==\n", ""),
+        ]
+        with (
+            mock.patch.object(Path, "exists", return_value=True),
+            mock.patch.object(loop, "run_cmd", side_effect=results) as run_cmd,
+            mock.patch.object(loop.time, "sleep") as sleep,
+        ):
+            with self.assertRaisesRegex(loop.LoopError, "below required deadeye >= 0.1.20"):
+                loop.run_smoke(script, "0x1")
+
+        self.assertEqual(run_cmd.call_count, 2)
+        sleep.assert_called_once_with(loop.SMOKE_SCRIPT_RETRY_DELAY_SECONDS)
+
+    def test_builtin_smoke_rejects_stale_deadeye_version_before_market_reads(self):
+        script = Path("/tmp/storm-deadeye-no-smoke.sh")
+        with (
+            mock.patch.object(Path, "exists", return_value=False),
+            mock.patch.object(
+                loop,
+                "run_cmd",
+                return_value=loop.CmdResult(["deadeye", "--version"], 0, "deadeye 0.1.19\n", ""),
+            ) as run_cmd,
+            mock.patch.object(loop, "deadeye_json", side_effect=AssertionError("market reads should not run")),
+        ):
+            with self.assertRaisesRegex(loop.LoopError, "below required deadeye >= 0.1.20"):
+                loop.run_smoke(script, "0x1")
+
+        self.assertEqual(run_cmd.call_count, 1)
+
     def test_smoke_output_version_extracts_deadeye_version(self):
         self.assertEqual(
             loop.smoke_output_version("PASS  version: deadeye 0.1.20\n== RESULT: ALL-PASS =="),
             "deadeye 0.1.20",
         )
         self.assertIsNone(loop.smoke_output_version("PASS version\n== RESULT: ALL-PASS =="))
+
+    def test_smoke_version_error_requires_0_1_20_or_newer(self):
+        self.assertIsNone(loop.smoke_version_error("deadeye 0.1.20"))
+        self.assertIsNone(loop.smoke_version_error("deadeye 0.1.21"))
+        self.assertIn("below required", loop.smoke_version_error("deadeye 0.1.19"))
+        self.assertIn("version missing", loop.smoke_version_error(None))
 
     def test_run_cmd_retries_read_only_cli_blip(self):
         procs = [
