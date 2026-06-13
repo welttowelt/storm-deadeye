@@ -326,6 +326,47 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
         )
         self.assertEqual(validated["capture_status"]["missing_ids"], ["odds_move"])
 
+    def test_validate_packet_blocks_non_http_url_for_public_evidence(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_packet_evidence(result)
+            for item in result["evidence_placeholders"]:
+                if item["id"] == "official_result":
+                    item["url"] = "local-cli"
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:06:00Z")
+
+        self.assertFalse(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertIn(
+            "official_result:url_not_http",
+            validated["capture_readiness"]["blockers"],
+        )
+        status_rows = {row["id"]: row for row in validated["capture_status"]["rows"]}
+        self.assertFalse(status_rows["official_result"]["url_ready"])
+        self.assertEqual(validated["capture_status"]["missing_ids"], ["official_result"])
+
+    def test_validate_packet_allows_local_cli_for_deadeye_evidence(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_realistic_germany_result_evidence(result)
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:08:00Z")
+
+        status_rows = {row["id"]: row for row in validated["capture_status"]["rows"]}
+        self.assertTrue(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertTrue(status_rows["market_state"]["url_ready"])
+        self.assertTrue(status_rows["quote_scout"]["url_ready"])
+
     def test_validate_packet_blocks_generic_claim_for_required_row(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             root = Path(tmpdir)

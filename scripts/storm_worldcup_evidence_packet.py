@@ -14,6 +14,7 @@ import re
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import storm_deadeye_loop as loop
 
@@ -37,6 +38,7 @@ EXPECTED_SOURCE_ROLES = {
     "market_state": "deadeye_market_state",
     "quote_scout": "deadeye_quote_scout",
 }
+LOCAL_SOURCE_EVIDENCE_IDS = {"market_state", "quote_scout"}
 REQUIRED_CLAIM_KEYWORDS = {
     "official_result": (
         ("completion_marker", ("completed", "final", "full-time", "full time", "final whistle", "final-whistle", "ft")),
@@ -236,14 +238,27 @@ def evidence_item_blockers(item: dict[str, Any]) -> list[str]:
         blockers.append(f"{item_id}:claim_placeholder")
     else:
         blockers.extend(claim_keyword_blockers(item_id, item.get("claim")))
-    if is_placeholder(item.get("url")):
-        blockers.append(f"{item_id}:url_placeholder")
+    blockers.extend(evidence_url_blockers(item_id, item.get("url")))
     if not valid_capture_utc(item.get("capture_utc")):
         blockers.append(f"{item_id}:capture_utc_invalid")
     expected_source_role = EXPECTED_SOURCE_ROLES.get(item_id)
     if expected_source_role and str(item.get("source_role") or "") != expected_source_role:
         blockers.append(f"{item_id}:source_role_not_{expected_source_role}")
     return blockers
+
+
+def evidence_url_blockers(item_id: str, url: Any) -> list[str]:
+    if is_placeholder(url):
+        return [f"{item_id}:url_placeholder"]
+    text = str(url or "").strip()
+    if item_id in LOCAL_SOURCE_EVIDENCE_IDS and text == "local-cli":
+        return []
+    parsed = urlparse(text)
+    if parsed.scheme in {"http", "https"} and bool(parsed.netloc):
+        return []
+    if item_id in LOCAL_SOURCE_EVIDENCE_IDS:
+        return [f"{item_id}:url_not_local_cli_or_http"]
+    return [f"{item_id}:url_not_http"]
 
 
 def capture_readiness(packet: dict[str, Any], *, now: str | None = None) -> dict[str, Any]:
@@ -339,7 +354,7 @@ def evidence_capture_status(packet: dict[str, Any]) -> dict[str, Any]:
             "claim_ready": bool(item)
             and not is_placeholder(claim)
             and not str(claim or "").strip().upper().startswith("TO_FILL"),
-            "url_ready": bool(item) and not is_placeholder((item or {}).get("url")),
+            "url_ready": bool(item) and not evidence_url_blockers(item_id, (item or {}).get("url")),
             "capture_utc_ready": bool(item) and valid_capture_utc((item or {}).get("capture_utc")),
             "blockers": blockers or ([] if item_id in captured_ids else [f"{item_id}:missing"]),
         })

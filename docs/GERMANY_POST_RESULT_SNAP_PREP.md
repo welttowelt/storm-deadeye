@@ -53,6 +53,10 @@ Capture these before promoting or queueing:
   fresh belief and sigma.
 - Dry-run: exact intended execute path with `--dry-run` before any confirm path.
 
+Public evidence rows must use a real `http://` or `https://` source URL. The
+only rows allowed to use `local-cli` are `market_state` and `quote_scout`,
+because those are produced by local read-only Deadeye commands.
+
 Required packet claims must be specific, not generic. The validator checks for
 these claim markers:
 
