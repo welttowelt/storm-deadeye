@@ -2578,6 +2578,14 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertTrue(
             packet_status["pre_window_readiness"]["source_reachability_refresh_can_cover_result_window"]
         )
+        self.assertEqual(
+            packet_status["pre_window_readiness"]["source_reachability_refresh_not_before_utc"],
+            "2026-06-13T20:00:00Z",
+        )
+        self.assertEqual(
+            packet_status["pre_window_readiness"]["source_reachability_seconds_until_refresh_can_cover"],
+            0.0,
+        )
 
     def test_summary_key_records_pre_window_evidence_regression(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -2725,8 +2733,17 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     templates,
                     now=loop.parse_utc_timestamp("2099-06-13T10:00:00Z"),
                 )
+                readiness = loop.pre_window_evidence_readiness(
+                    templates,
+                    now=loop.parse_utc_timestamp("2099-06-13T10:00:00Z"),
+                    state_dir=state_dir,
+                )
+                pre_window = readiness[0]["evidence_packet"]["pre_window_readiness"]
 
         self.assertEqual(result, {"status": "fresh", "attempted": False})
+        self.assertFalse(pre_window["source_reachability_refresh_can_cover_result_window"])
+        self.assertEqual(pre_window["source_reachability_refresh_not_before_utc"], "2099-06-13T20:00:00Z")
+        self.assertEqual(pre_window["source_reachability_seconds_until_refresh_can_cover"], 36000.0)
         run_cmd.assert_not_called()
 
     def test_pre_window_source_refresh_covers_result_window_before_sources_expire(self):
@@ -2761,12 +2778,21 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                     templates,
                     now=loop.parse_utc_timestamp("2099-06-13T20:00:00Z"),
                 )
+                readiness = loop.pre_window_evidence_readiness(
+                    templates,
+                    now=loop.parse_utc_timestamp("2099-06-13T20:00:00Z"),
+                    state_dir=state_dir,
+                )
+                pre_window = readiness[0]["evidence_packet"]["pre_window_readiness"]
 
         self.assertEqual(result["status"], "refreshed")
         self.assertEqual(
             result["refreshed"][0]["reasons"],
             ["source_reachability_expires_before_result_window"],
         )
+        self.assertTrue(pre_window["source_reachability_refresh_can_cover_result_window"])
+        self.assertEqual(pre_window["source_reachability_refresh_not_before_utc"], "2099-06-13T20:00:00Z")
+        self.assertEqual(pre_window["source_reachability_seconds_until_refresh_can_cover"], 0.0)
         args = run_cmd.call_args.args[0]
         self.assertIn("--validate-packet", args)
         self.assertIn(str(packet_path), args)

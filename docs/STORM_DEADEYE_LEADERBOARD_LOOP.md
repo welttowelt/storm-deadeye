@@ -127,7 +127,10 @@ noise. The loop automatically refreshes public source reachability for the next
 pre-window packet when that check is missing or stale; this only updates the
 local evidence packet and never captures post-result evidence, promotes a
 template, queues a candidate, or touches on-chain state. Refresh failures are
-mailbox-visible.
+mailbox-visible. When an existing source check would expire before the result
+window, the summary exposes `source_reachability_refresh_not_before_utc` and
+`source_reachability_seconds_until_refresh_can_cover`; before that timestamp a
+new check would still age out too early, so the runner waits.
 
 ## Monitor Tick
 

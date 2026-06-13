@@ -693,6 +693,12 @@ def evidence_packet_status_for_template(
         result_window_dt = None
     source_expires_before_result_window = False
     source_refresh_can_cover_result_window = False
+    source_refresh_not_before_utc = None
+    source_seconds_until_refresh_can_cover = None
+    if result_window_dt is not None:
+        refresh_not_before_dt = result_window_dt - timedelta(seconds=source_max_age_seconds)
+        source_refresh_not_before_utc = refresh_not_before_dt.isoformat().replace("+00:00", "Z")
+        source_seconds_until_refresh_can_cover = max(0.0, (refresh_not_before_dt - now_utc).total_seconds())
     if source_checked and source_expires_at and result_window_dt is not None:
         source_expires_at_dt = parse_utc_timestamp(source_expires_at)
         source_expires_before_result_window = source_expires_at_dt < result_window_dt
@@ -726,6 +732,8 @@ def evidence_packet_status_for_template(
             "source_reachability_stale": source_stale,
             "source_reachability_expires_before_result_window": source_expires_before_result_window,
             "source_reachability_refresh_can_cover_result_window": source_refresh_can_cover_result_window,
+            "source_reachability_refresh_not_before_utc": source_refresh_not_before_utc,
+            "source_reachability_seconds_until_refresh_can_cover": source_seconds_until_refresh_can_cover,
             "source_reachability_checked_at_missing": source_checked_at_missing,
             "source_reachability_reachable_count": pre_window_readiness.get("source_reachability_reachable_count"),
             "source_reachability_unreachable_count": pre_window_readiness.get("source_reachability_unreachable_count"),
