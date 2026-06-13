@@ -201,6 +201,11 @@ For the next Germany result window, use
 [`GERMANY_POST_RESULT_SNAP_PREP.md`](GERMANY_POST_RESULT_SNAP_PREP.md) as the
 operator evidence checklist and do not queue from the draft template before the
 official completed-match marker is captured.
+To create a fillable local evidence packet from that disabled template:
+
+```bash
+python3 scripts/storm_worldcup_evidence_packet.py --template ~/.local/state/storm-deadeye/templates/germany-post-result-snap-template-20260612.json --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
+```
 
 To let the loop perform that same local queue promotion before candidate
 processing:

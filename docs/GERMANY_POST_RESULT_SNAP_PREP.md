@@ -116,6 +116,14 @@ ratings move. Do not propose pre-result execution. Please ACK.
 
 ## Post-Result Commands
 
+Build the fillable evidence packet first:
+
+```bash
+python3 scripts/storm_worldcup_evidence_packet.py \
+  --template ~/.local/state/storm-deadeye/templates/germany-post-result-snap-template-20260612.json \
+  --output ~/.local/state/storm-deadeye/germany-post-result-evidence-packet.json
+```
+
 Read-only refresh sequence:
 
 ```bash
