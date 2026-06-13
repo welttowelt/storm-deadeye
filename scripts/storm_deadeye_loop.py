@@ -19,7 +19,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
@@ -672,8 +672,31 @@ def evidence_packet_status_for_template(
     )
     source_age_seconds = timestamp_age_seconds(pre_window_source_checked_at, now=now)
     source_max_age_seconds = max(0.0, pre_window_source_max_age_hours * 3600.0)
+    now_utc = now or datetime.now(timezone.utc)
     source_checked = bool(pre_window_readiness.get("source_reachability_checked"))
     source_checked_at_missing = bool(source_checked and not pre_window_source_checked_at)
+    source_expires_at = None
+    source_seconds_until_stale = None
+    if pre_window_source_checked_at:
+        try:
+            source_checked_at_dt = parse_utc_timestamp(pre_window_source_checked_at)
+            source_expires_at_dt = source_checked_at_dt + timedelta(seconds=source_max_age_seconds)
+            source_expires_at = source_expires_at_dt.isoformat().replace("+00:00", "Z")
+            source_seconds_until_stale = max(0.0, (source_expires_at_dt - now_utc).total_seconds())
+        except (TypeError, ValueError, OverflowError):
+            source_expires_at = None
+            source_seconds_until_stale = None
+    result_window_dt = None
+    try:
+        result_window_dt = parse_utc_timestamp(template.get("result_not_before_utc"))
+    except (TypeError, ValueError):
+        result_window_dt = None
+    source_expires_before_result_window = False
+    source_refresh_can_cover_result_window = False
+    if source_checked and source_expires_at and result_window_dt is not None:
+        source_expires_at_dt = parse_utc_timestamp(source_expires_at)
+        source_expires_before_result_window = source_expires_at_dt < result_window_dt
+        source_refresh_can_cover_result_window = now_utc + timedelta(seconds=source_max_age_seconds) >= result_window_dt
     source_stale = bool(
         source_checked
         and source_age_seconds is not None
@@ -698,7 +721,11 @@ def evidence_packet_status_for_template(
             "source_reachability_checked_at": pre_window_source_checked_at,
             "source_reachability_age_seconds": source_age_seconds,
             "source_reachability_max_age_hours": pre_window_source_max_age_hours,
+            "source_reachability_expires_at": source_expires_at,
+            "source_reachability_seconds_until_stale": source_seconds_until_stale,
             "source_reachability_stale": source_stale,
+            "source_reachability_expires_before_result_window": source_expires_before_result_window,
+            "source_reachability_refresh_can_cover_result_window": source_refresh_can_cover_result_window,
             "source_reachability_checked_at_missing": source_checked_at_missing,
             "source_reachability_reachable_count": pre_window_readiness.get("source_reachability_reachable_count"),
             "source_reachability_unreachable_count": pre_window_readiness.get("source_reachability_unreachable_count"),
@@ -755,6 +782,11 @@ def pre_window_source_refresh_targets(
                 reasons.append("source_reachability_checked_at_missing")
             if pre_window.get("source_reachability_stale"):
                 reasons.append("source_reachability_stale")
+            if (
+                pre_window.get("source_reachability_expires_before_result_window")
+                and pre_window.get("source_reachability_refresh_can_cover_result_window")
+            ):
+                reasons.append("source_reachability_expires_before_result_window")
         if not reasons:
             continue
         packet_path = evidence_packet_path_for_template(state_dir, item)
