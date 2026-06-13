@@ -53,6 +53,17 @@ Capture these before promoting or queueing:
   fresh belief and sigma.
 - Dry-run: exact intended execute path with `--dry-run` before any confirm path.
 
+Required packet claims must be specific, not generic. The validator checks for
+these claim markers:
+
+- `official_result`: completion marker plus score.
+- `confirmed_lineups`: lineup or starting XI.
+- `injuries_suspensions`: injury, suspension, booking, or absence.
+- `odds_move`: odds.
+- `ratings_move`: rating or model.
+- `market_state`: market/Deadeye plus state, mu, sigma, or distribution.
+- `quote_scout`: quote plus scout, EV, or expected value.
+
 ## Pre-Result Baseline
 
 Captured for comparison on `2026-06-13T05:37Z`. Treat these as scout context,

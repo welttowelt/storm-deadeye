@@ -64,11 +64,20 @@ def write_germany_template(path: Path):
 
 
 def fill_packet_evidence(result: dict):
+    claims = {
+        "official_result": "Official final score and completed marker captured for Germany vs Curacao.",
+        "confirmed_lineups": "Confirmed lineups, starting XI, substitutes, and late absences captured.",
+        "injuries_suspensions": "Injuries, suspensions, bookings, and absences checked for path impact.",
+        "odds_move": "Post-result Germany odds movement versus the pre-result baseline captured.",
+        "ratings_move": "Post-result ratings/model movement versus baseline captured.",
+        "market_state": "Fresh post-result Deadeye market state distribution captured.",
+        "quote_scout": "Fresh active-portfolio quote scout EV captured after result/state shift.",
+    }
     for item in result["evidence_placeholders"]:
         item["status"] = "captured"
         item["post_result"] = True
         item["capture_utc"] = "2026-06-14T20:04:00Z"
-        item["claim"] = f"Captured post-result evidence for {item['id']}."
+        item["claim"] = claims[item["id"]]
         if item["url"] == "TO_FILL":
             item["url"] = "https://example.com/evidence"
 
@@ -204,6 +213,32 @@ class StormWorldCupEvidencePacketTests(unittest.TestCase):
             validated["capture_readiness"]["blockers"],
         )
         self.assertEqual(validated["capture_status"]["missing_ids"], ["odds_move"])
+
+    def test_validate_packet_blocks_generic_claim_for_required_row(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            root = Path(tmpdir)
+            template_path = root / "germany.json"
+            packet_path = root / "packet.json"
+            write_germany_template(template_path)
+            result = packet.build_packet(template_path, now="2026-06-14T20:05:00Z")
+            fill_packet_evidence(result)
+            for item in result["evidence_placeholders"]:
+                if item["id"] == "official_result":
+                    item["claim"] = "Captured post-result evidence for official_result."
+            packet_path.write_text(json.dumps(result), encoding="utf-8")
+
+            validated = packet.validate_packet_file(packet_path, now="2026-06-14T20:06:00Z")
+
+        self.assertFalse(validated["capture_readiness"]["ready_for_template_update"])
+        self.assertIn(
+            "official_result:claim_missing_completion_marker",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertIn(
+            "official_result:claim_missing_score",
+            validated["capture_readiness"]["blockers"],
+        )
+        self.assertEqual(validated["capture_status"]["missing_ids"], ["official_result"])
 
     def test_main_writes_packet_file(self):
         with tempfile.TemporaryDirectory() as tmpdir:

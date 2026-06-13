@@ -36,6 +36,32 @@ EXPECTED_SOURCE_ROLES = {
     "market_state": "deadeye_market_state",
     "quote_scout": "deadeye_quote_scout",
 }
+REQUIRED_CLAIM_KEYWORDS = {
+    "official_result": (
+        ("completion_marker", ("completed", "final", "full-time", "full time")),
+        ("score", ("score",)),
+    ),
+    "confirmed_lineups": (
+        ("lineup", ("lineup", "lineups", "starting xi", "starting xis")),
+    ),
+    "injuries_suspensions": (
+        ("injury_or_suspension", ("injur", "suspens", "booking", "absence", "absences")),
+    ),
+    "odds_move": (
+        ("odds", ("odds",)),
+    ),
+    "ratings_move": (
+        ("ratings_or_model", ("rating", "ratings", "model")),
+    ),
+    "market_state": (
+        ("market", ("market", "deadeye")),
+        ("state", ("state", "mu", "sigma", "distribution")),
+    ),
+    "quote_scout": (
+        ("quote", ("quote",)),
+        ("scout_or_ev", ("scout", "ev", "expected value")),
+    ),
+}
 CAPTURED_STATUSES = {"captured", "complete", "filled"}
 PLACEHOLDER_VALUES = {"", "TO_FILL", "<MARKET>"}
 
@@ -175,6 +201,15 @@ def valid_capture_utc(value: Any) -> bool:
     return True
 
 
+def claim_keyword_blockers(item_id: str, claim: Any) -> list[str]:
+    text = str(claim or "").lower()
+    blockers: list[str] = []
+    for label, terms in REQUIRED_CLAIM_KEYWORDS.get(item_id, ()):
+        if not any(term in text for term in terms):
+            blockers.append(f"{item_id}:claim_missing_{label}")
+    return blockers
+
+
 def result_window_open_from_packet(packet: dict[str, Any], *, now: str | None = None) -> bool | None:
     template = packet.get("template") or {}
     raw_window = template.get("result_not_before_utc")
@@ -195,6 +230,8 @@ def evidence_item_blockers(item: dict[str, Any]) -> list[str]:
         blockers.append(f"{item_id}:post_result_not_true")
     if is_placeholder(item.get("claim")) or str(item.get("claim") or "").strip().upper().startswith("TO_FILL"):
         blockers.append(f"{item_id}:claim_placeholder")
+    else:
+        blockers.extend(claim_keyword_blockers(item_id, item.get("claim")))
     if is_placeholder(item.get("url")):
         blockers.append(f"{item_id}:url_placeholder")
     if not valid_capture_utc(item.get("capture_utc")):
