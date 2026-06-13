@@ -1261,6 +1261,42 @@ def refresh_active_portfolio_scout_if_stale(
     return result
 
 
+def post_result_scout_refresh_key(due_templates: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    key: list[dict[str, Any]] = []
+    for item in due_templates:
+        key.append({
+            "id": item.get("id"),
+            "result_not_before_utc": item.get("result_not_before_utc"),
+            "blockers": sorted(str(blocker) for blocker in (item.get("blockers") or [])),
+        })
+    return sorted(key, key=lambda item: (str(item.get("result_not_before_utc")), str(item.get("id"))))
+
+
+def maybe_refresh_active_portfolio_scout(
+    state: dict[str, Any],
+    state_dir: Path,
+    *,
+    max_age_minutes: float,
+    due_templates: list[dict[str, Any]],
+) -> dict[str, Any]:
+    due_key = post_result_scout_refresh_key(due_templates)
+    state_key = "last_post_result_scout_refresh_key"
+    if not due_key:
+        state.pop(state_key, None)
+    force_due_refresh = bool(due_key) and state.get(state_key) != due_key
+    refresh = refresh_active_portfolio_scout_if_stale(
+        state_dir,
+        max_age_minutes=max_age_minutes,
+        force=force_due_refresh,
+    )
+    if force_due_refresh:
+        refresh["reason"] = "post_result_evidence_due"
+        refresh["due_templates"] = due_key
+        if refresh.get("status") != "failed":
+            state[state_key] = due_key
+    return refresh
+
+
 def scout_key(summary: dict[str, Any]) -> dict[str, Any] | None:
     scout = summary.get("active_portfolio_scout")
     if not scout:
@@ -1460,15 +1496,16 @@ def format_active_portfolio_scout_refresh(summary: dict[str, Any]) -> str:
     if not refresh:
         return "not requested"
     status = refresh.get("status")
+    prefix = "post-result evidence due; " if refresh.get("reason") == "post_result_evidence_due" else ""
     if status == "fresh":
         age = refresh.get("previous_age_seconds")
         age_text = f", age_seconds={age:.0f}" if isinstance(age, (int, float)) else ""
-        return f"fresh{age_text}"
+        return f"{prefix}fresh{age_text}"
     if status == "refreshed":
-        return f"refreshed generated_at={refresh.get('generated_at')}"
+        return f"{prefix}refreshed generated_at={refresh.get('generated_at')}"
     if status == "failed":
-        return "failed"
-    return str(status or "unknown")
+        return f"{prefix}failed"
+    return prefix + str(status or "unknown")
 
 
 def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
@@ -1648,10 +1685,14 @@ def main(argv: list[str] | None = None) -> int:
             smoke_result = run_smoke(args.smoke_script, args.smoke_market)
             state["last_smoke"] = smoke_result
         scout_refresh = None
+        templates = load_template_status(args.templates)
+        due_templates = post_result_evidence_due(templates)
         if args.refresh_active_portfolio_scout:
-            scout_refresh = refresh_active_portfolio_scout_if_stale(
+            scout_refresh = maybe_refresh_active_portfolio_scout(
+                state,
                 args.state.parent,
                 max_age_minutes=args.active_portfolio_scout_max_age_minutes,
+                due_templates=due_templates,
             )
         snap = account_snapshot()
         account = snap["account"]
@@ -1690,7 +1731,7 @@ def main(argv: list[str] | None = None) -> int:
             "positions_count": len(monitoring["positions"]),
             "processed_candidates": processed,
             "template_promotion": template_promotion,
-            "templates": load_template_status(args.templates),
+            "templates": templates,
             "active_portfolio_scout": latest_active_portfolio_scout(args.state.parent),
             "active_portfolio_scout_refresh": scout_refresh,
             "state_dir": str(args.state.parent),

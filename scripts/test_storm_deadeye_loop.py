@@ -833,6 +833,127 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertNotIn("--indexer-url", cmd)
         self.assertNotIn("--trader", cmd)
 
+    def test_post_result_scout_refresh_key_is_stable(self):
+        due = [
+            {
+                "id": "germany-template",
+                "result_not_before_utc": "2026-06-14T20:00:00Z",
+                "blockers": ["missing_world_cup_post_result", "evidence_url_to_fill"],
+            },
+            {
+                "id": "argentina-template",
+                "result_not_before_utc": "2026-06-17T04:00:00Z",
+                "blockers": ["missing_official_result_evidence"],
+            },
+        ]
+
+        key = loop.post_result_scout_refresh_key(list(reversed(due)))
+
+        self.assertEqual(
+            key,
+            [
+                {
+                    "id": "germany-template",
+                    "result_not_before_utc": "2026-06-14T20:00:00Z",
+                    "blockers": ["evidence_url_to_fill", "missing_world_cup_post_result"],
+                },
+                {
+                    "id": "argentina-template",
+                    "result_not_before_utc": "2026-06-17T04:00:00Z",
+                    "blockers": ["missing_official_result_evidence"],
+                },
+            ],
+        )
+
+    def test_due_post_result_template_forces_scout_refresh_once(self):
+        state = {}
+        due = [
+            {
+                "id": "germany-template",
+                "result_not_before_utc": "2026-06-14T20:00:00Z",
+                "blockers": ["missing_official_result_evidence"],
+            }
+        ]
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "refreshed", "attempted": True},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=due,
+            )
+
+        self.assertEqual(result["reason"], "post_result_evidence_due")
+        self.assertEqual(result["due_templates"], loop.post_result_scout_refresh_key(due))
+        self.assertTrue(refresh.call_args.kwargs["force"])
+        self.assertEqual(state["last_post_result_scout_refresh_key"], loop.post_result_scout_refresh_key(due))
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            repeat = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=due,
+            )
+
+        self.assertEqual(repeat["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertNotIn("reason", repeat)
+
+    def test_due_post_result_refresh_failure_retries_later(self):
+        state = {}
+        due = [
+            {
+                "id": "germany-template",
+                "result_not_before_utc": "2026-06-14T20:00:00Z",
+                "blockers": ["missing_official_result_evidence"],
+            }
+        ]
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "failed", "attempted": True, "returncode": 1},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=due,
+            )
+
+        self.assertEqual(result["reason"], "post_result_evidence_due")
+        self.assertTrue(refresh.call_args.kwargs["force"])
+        self.assertNotIn("last_post_result_scout_refresh_key", state)
+
+    def test_empty_due_templates_clear_due_refresh_guard(self):
+        due_key = [{"id": "germany-template", "result_not_before_utc": "2026-06-14T20:00:00Z", "blockers": []}]
+        state = {"last_post_result_scout_refresh_key": due_key}
+
+        with mock.patch.object(
+            loop,
+            "refresh_active_portfolio_scout_if_stale",
+            return_value={"status": "fresh", "attempted": False},
+        ) as refresh:
+            result = loop.maybe_refresh_active_portfolio_scout(
+                state,
+                Path("/tmp/storm-deadeye-state"),
+                max_age_minutes=60,
+                due_templates=[],
+            )
+
+        self.assertEqual(result["status"], "fresh")
+        self.assertFalse(refresh.call_args.kwargs["force"])
+        self.assertNotIn("last_post_result_scout_refresh_key", state)
+
     def test_next_template_window_picks_earliest_future_window(self):
         templates = [
             {
