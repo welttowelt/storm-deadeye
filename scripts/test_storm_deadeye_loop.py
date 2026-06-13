@@ -1332,6 +1332,23 @@ class StormDeadeyeLoopTests(unittest.TestCase):
                 "filter_time_windows": {},
             },
             "processed_candidates": [{"id": "candidate-1", "status": "dry_run_ok"}],
+            "external_smoke_floor": {
+                "ok": False,
+                "smoke_script": "/tmp/claude/smoke.sh",
+                "minimum_version": "deadeye 0.1.20",
+                "network_free": True,
+                "real_deadeye_invoked": False,
+                "cases": [
+                    {
+                        "mode": "stale",
+                        "ok": False,
+                        "reason": "stale version path ran commands after version check",
+                        "returncode": 0,
+                        "commands": [["--version"], ["markets", "list"]],
+                        "post_version_commands": [["markets", "list"]],
+                    }
+                ],
+            },
             "active_portfolio_scout": {
                 "generated_at": "2026-06-12T17:05:52Z",
                 "coverage": {
@@ -1371,11 +1388,14 @@ class StormDeadeyeLoopTests(unittest.TestCase):
         self.assertEqual(compact["active_portfolio_scout"]["coverage"]["covered_active_tradeable_markets"], 11)
         self.assertEqual(compact["active_portfolio_scout"]["runner_pass_rows"], 0)
         self.assertEqual(compact["processed_candidates"], [{"id": "candidate-1", "status": "dry_run_ok"}])
+        self.assertFalse(compact["external_smoke_floor"]["ok"])
+        self.assertEqual(compact["external_smoke_floor"]["cases"][0]["mode"], "stale")
+        self.assertEqual(compact["external_smoke_floor"]["cases"][0]["post_version_command_count"], 1)
         self.assertEqual(compact["next_template_window"]["id"], "germany-template")
         self.assertEqual(compact["next_template_window"]["result_not_before_utc"], "2026-06-14T20:00:00Z")
         self.assertIsNone(compact["next_durable_template_window"])
         serialized = json.dumps(compact, sort_keys=True)
-        for forbidden in ("rpc_url", "indexer_url", "raw_hex", "trade_journal", "script"):
+        for forbidden in ("rpc_url", "indexer_url", "raw_hex", "trade_journal", "script", "commands"):
             self.assertNotIn(forbidden, serialized)
 
     def test_public_loop_summary_uses_compact_no_raw_output(self):

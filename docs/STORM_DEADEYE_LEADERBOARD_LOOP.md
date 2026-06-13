@@ -171,6 +171,13 @@ the real CLI, RPC, indexer, wallet config, or any on-chain path. It passes only
 when `deadeye 0.1.20` reaches the read-only probes and stale, missing, or
 unparseable version output fails before any market reads.
 
+To include that acceptance status in a normal sanitized loop summary without
+making it a routine mailbox-change trigger:
+
+```bash
+python3 scripts/storm_deadeye_loop.py --run-smoke --verify-external-smoke-floor
+```
+
 To let the runner append a mailbox update only when rank, health, gas tier,
 candidate processing, template readiness, scout signal counts, or scout-refresh
 failures change:

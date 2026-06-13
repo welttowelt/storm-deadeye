@@ -23,6 +23,7 @@ from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any
 
+import verify_external_smoke_floor as smoke_floor
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STATE_DIR = Path.home() / ".local" / "state" / "storm-deadeye"
@@ -2977,11 +2978,45 @@ def compact_last_summary(summary: dict[str, Any]) -> dict[str, Any]:
         "active_portfolio_scout": summary.get("active_portfolio_scout"),
         "active_portfolio_scout_refresh": summary.get("active_portfolio_scout_refresh"),
         "pre_window_evidence_source_refresh": summary.get("pre_window_evidence_source_refresh"),
+        "external_smoke_floor": compact_external_smoke_floor(summary.get("external_smoke_floor")),
     }
 
 
 def public_loop_summary(summary: dict[str, Any]) -> dict[str, Any]:
     return compact_last_summary(summary)
+
+
+def compact_external_smoke_floor(result: Any) -> dict[str, Any] | None:
+    if not isinstance(result, dict):
+        return None
+    cases = []
+    for case in result.get("cases") or []:
+        if not isinstance(case, dict):
+            continue
+        post_version_command_count = len(case.get("post_version_commands") or [])
+        reason = str(case.get("reason") or "")
+        if post_version_command_count and not case.get("ok"):
+            reason = (
+                f"{case.get('mode')} version reached {post_version_command_count} "
+                "post-version probe(s); expected fail before market reads"
+            )
+        cases.append({
+            "mode": case.get("mode"),
+            "ok": bool(case.get("ok")),
+            "reason": reason[:240],
+            "returncode": case.get("returncode"),
+            "post_version_command_count": post_version_command_count,
+        })
+    compact: dict[str, Any] = {
+        "ok": bool(result.get("ok")),
+        "minimum_version": result.get("minimum_version"),
+        "network_free": bool(result.get("network_free")),
+        "real_deadeye_invoked": bool(result.get("real_deadeye_invoked")),
+        "cases": cases,
+    }
+    if result.get("error"):
+        compact["error"] = str(result.get("error"))[:240]
+    return compact
 
 
 def append_mailbox_if_changed(mailbox: Path, state: dict[str, Any], summary: dict[str, Any]) -> bool:
@@ -3104,6 +3139,17 @@ def build_arg_parser() -> argparse.ArgumentParser:
     parser.add_argument("--mailbox-path", type=Path, default=DEFAULT_MAILBOX)
     parser.add_argument("--smoke-script", type=Path, default=DEFAULT_SMOKE_SCRIPT)
     parser.add_argument("--smoke-market", default=DEFAULT_SMOKE_MARKET)
+    parser.add_argument(
+        "--verify-external-smoke-floor",
+        action="store_true",
+        help="Run the offline external smoke version-floor verifier and include its sanitized result.",
+    )
+    parser.add_argument(
+        "--external-smoke-floor-timeout",
+        type=float,
+        default=12.0,
+        help="Per-case timeout for the offline external smoke version-floor verifier.",
+    )
     parser.add_argument("--templates", type=Path, default=DEFAULT_TEMPLATES)
     parser.add_argument(
         "--promote-ready-templates",
@@ -3135,6 +3181,13 @@ def main(argv: list[str] | None = None) -> int:
         if args.run_smoke:
             smoke_result = run_smoke(args.smoke_script, args.smoke_market)
             state["last_smoke"] = smoke_result
+        external_smoke_floor = None
+        if args.verify_external_smoke_floor:
+            external_smoke_floor = smoke_floor.verify_smoke_script(
+                args.smoke_script,
+                market=args.smoke_market,
+                timeout=args.external_smoke_floor_timeout,
+            )
         scout_refresh = None
         templates = load_template_status(args.templates)
         pre_window_evidence_source_refresh = maybe_refresh_pre_window_evidence_sources(
@@ -3192,6 +3245,7 @@ def main(argv: list[str] | None = None) -> int:
             "generated_at": utc_now(),
             "execute_mode": bool(args.execute),
             "smoke": smoke_result,
+            "external_smoke_floor": external_smoke_floor,
             "account": account,
             "collateral": collateral,
             "gas_tier": gas_tier(float(account.get("strk_balance_strk", 0.0))),
